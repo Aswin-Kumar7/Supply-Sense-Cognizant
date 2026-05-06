@@ -1,0 +1,111 @@
+"""
+Supplier API endpoints.
+"""
+
+from uuid import UUID
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.services.supplier_service import SupplierService
+from app.schemas.supplier import SupplierListResponse, SupplierResponse
+
+router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
+
+
+@router.get("", response_model=SupplierListResponse)
+async def list_suppliers(
+    limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all suppliers with pagination."""
+    service = SupplierService(db)
+    return await service.get_all_suppliers(limit=limit, offset=offset)
+
+
+@router.get("/{supplier_id}", response_model=SupplierResponse)
+async def get_supplier(
+    supplier_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single supplier by ID."""
+    service = SupplierService(db)
+    return await service.get_supplier(supplier_id)
+
+
+@router.get("/{supplier_id}/dependencies")
+async def get_supplier_dependencies(
+    supplier_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get dependency tree for a supplier."""
+    service = SupplierService(db)
+    return await service.get_dependencies(supplier_id)
+
+
+@router.get("/dependencies/all")
+async def get_all_dependencies(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all supplier dependency relationships."""
+    service = SupplierService(db)
+    return await service.get_all_dependencies()
+
+
+@router.get("/{supplier_id}/alternate-suppliers")
+async def get_alternate_suppliers_for_supplier(
+    supplier_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return alternate suppliers that can cover SKUs supplied by this supplier.
+    Joins alternate_suppliers → skus → suppliers to return full supplier detail.
+    """
+    result = await db.execute(text("""
+        SELECT
+            als.id                  AS alternate_id,
+            s.id                    AS supplier_id,
+            s.name                  AS supplier_name,
+            s.city,
+            s.state,
+            s.region,
+            s.category,
+            s.reliability_score,
+            s.lead_time_days        AS base_lead_time_days,
+            als.cost_premium_pct,
+            als.lead_time_days      AS alt_lead_time_days,
+            als.quality_score,
+            sk.name                 AS sku_name,
+            sk.sku_code
+        FROM alternate_suppliers als
+        JOIN skus sk ON sk.id = als.sku_id
+        JOIN suppliers s  ON s.id  = als.supplier_id
+        WHERE sk.supplier_id = :sid
+        ORDER BY als.cost_premium_pct ASC
+        LIMIT 20
+    """), {"sid": str(supplier_id)})
+    rows = result.fetchall()
+    return {
+        "supplier_id": str(supplier_id),
+        "count": len(rows),
+        "alternates": [
+            {
+                "alternate_id": str(r[0]),
+                "supplier_id": str(r[1]),
+                "supplier_name": r[2],
+                "city": r[3],
+                "state": r[4],
+                "region": r[5],
+                "category": r[6],
+                "reliability_score": float(r[7]),
+                "lead_time_days": r[10],
+                "cost_premium_pct": float(r[9]),
+                "quality_score": float(r[11]),
+                "covers_sku": r[12],
+                "sku_code": r[13],
+            }
+            for r in rows
+        ],
+    }

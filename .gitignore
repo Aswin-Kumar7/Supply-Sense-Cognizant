@@ -1,0 +1,77 @@
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+build/
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Node / Frontend ───────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# ── Environment & Secrets ─────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.env
+
+# ── AWS credentials (never commit) ────────────────────────────────────────
+.aws/
+credentials
+
+# ── Databases (local dev artifacts) ──────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+postgres_data/
+
+# ── IDE ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+.vs/
+
+# ── OS ────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ──────────────────────────────────────────────────────────────────
+*.log
+logs/
+*.log.*
+
+# ── Docker volumes ────────────────────────────────────────────────────────
+postgres_data/
+redis_data/
+
+# ── Claude / AI assistant session files ──────────────────────────────────
+.claude/
+*.jsonl
+MEMORY.md
+
+# ── Kiro spec outputs (generated, not source) ─────────────────────────────
+.kiro/
+
+# ── Misc dev utilities ────────────────────────────────────────────────────
+check_db.py
+scratch/
+tmp/
+.kiro
