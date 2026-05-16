@@ -63,6 +63,69 @@ def _record_tool_call(tool_name: str, input_str: str, output_str: str) -> None:
         _SESSION_TOOL_HISTORY[sid].append(entry)
 
 
+def _run_async_from_thread(coro, loop: asyncio.AbstractEventLoop, timeout: float = 30.0):
+    """
+    Schedule *coro* on *loop* (which is running on another thread) and block
+    until it completes, then return the result.
+
+    This is the correct pattern for calling async DB functions from synchronous
+    Strands tool callbacks that run inside asyncio.to_thread().  The tool thread
+    has no event loop of its own; run_coroutine_threadsafe() schedules the
+    coroutine on the caller's event loop and gives us a concurrent.futures.Future
+    we can wait on safely without risk of deadlock (the event loop is free to
+    execute the coroutine while we wait on .result()).
+    """
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result(timeout=timeout)
+
+
+def _extract_json(text: str) -> dict | None:
+    """
+    Robustly extract the first complete JSON object from a string.
+
+    Strands returns the full agent response as a string that typically contains
+    one JSON object embedded in prose.  Simple bracket search fails on nested
+    braces; this implementation tracks depth to find the correct closing brace.
+    Returns None if no valid JSON object is found.
+    """
+    import re
+    # Try direct parse first (response might already be pure JSON)
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Scan for the first '{' and walk to the matching '}'
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i, ch in enumerate(text[start:], start):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : i + 1])
+                except (json.JSONDecodeError, ValueError):
+                    return None
+    return None
+
+
 # ── Strands SDK import with graceful fallback ──────────────────────────────
 try:
     from strands import Agent, tool
@@ -119,14 +182,24 @@ _AGENT_SYSTEM_SUFFIX = (
 )
 
 
-def _make_bedrock_model() -> Any | None:
-    """Return a BedrockModel backed by an explicit boto3 Session so credentials
-    from the environment (.env → AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) are
-    used directly instead of relying on Strands' implicit credential chain.
+_SHARED_BEDROCK_MODEL: Any = None
+
+
+def _get_bedrock_model() -> Any | None:
+    """
+    Return a cached BedrockModel backed by an explicit boto3 Session.
+
+    The model is created once at first call and reused across all agents and
+    requests.  Per-request Agent objects still capture their own ``db`` session
+    in tool closures, so sharing the model is safe — the model itself holds no
+    request-scoped state.
 
     NOTE: boto_session and region_name are mutually exclusive in BedrockModel;
     the region is embedded in the Session object.
     """
+    global _SHARED_BEDROCK_MODEL
+    if _SHARED_BEDROCK_MODEL is not None:
+        return _SHARED_BEDROCK_MODEL
     if not STRANDS_AVAILABLE:
         return None
     try:
@@ -136,10 +209,11 @@ def _make_bedrock_model() -> Any | None:
             aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
             region_name=os.environ.get("AWS_REGION", settings.aws_region),
         )
-        return BedrockModel(
+        _SHARED_BEDROCK_MODEL = BedrockModel(
             model_id=settings.bedrock_model_id,
             boto_session=boto_session,
         )
+        return _SHARED_BEDROCK_MODEL
     except Exception as exc:
         logger.warning(f"BedrockModel init failed: {exc}")
         return None
@@ -275,38 +349,46 @@ class RiskAssessmentAgent:
     def __init__(self, db: AsyncSession):
         self.db = db
         self._strands_agent: Any = None
+        # Capture the running event loop so sync tool callbacks (called from
+        # inside asyncio.to_thread) can schedule async DB operations back onto it.
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         self._init_agent()
 
     def _init_agent(self):
-        model = _make_bedrock_model()
+        model = _get_bedrock_model()
         if model is None:
+            return
+        if self._loop is None:
+            logger.warning("RiskAssessmentAgent: no running event loop — tools will be unavailable")
             return
         try:
             db = self.db
+            loop = self._loop
 
-            # Tools are sync wrappers that the Strands SDK calls.
-            # @tool decorator is no-op when strands not installed.
             @tool
             def get_supplier_risk_score(supplier_id: str) -> str:
                 """Get comprehensive risk score and factor breakdown for a supplier."""
-                result = asyncio.get_event_loop().run_until_complete(
-                    _get_supplier_risk_score_impl(supplier_id, db)
+                result = _run_async_from_thread(
+                    _get_supplier_risk_score_impl(supplier_id, db), loop
                 )
                 return json.dumps(result)
 
             @tool
             def get_cascade_impact(supplier_id: str, impact_score: float) -> str:
                 """Compute cascade propagation impact across supplier dependencies."""
-                result = asyncio.get_event_loop().run_until_complete(
-                    _get_cascade_impact_impl(supplier_id, impact_score, db)
+                result = _run_async_from_thread(
+                    _get_cascade_impact_impl(supplier_id, impact_score, db), loop
                 )
                 return json.dumps(result)
 
             @tool
             def get_delivery_history(supplier_id: str) -> str:
                 """Query database for 90-day delivery performance statistics."""
-                result = asyncio.get_event_loop().run_until_complete(
-                    _get_delivery_history_impl(supplier_id, db)
+                result = _run_async_from_thread(
+                    _get_delivery_history_impl(supplier_id, db), loop
                 )
                 return json.dumps(result)
 
@@ -333,12 +415,10 @@ class RiskAssessmentAgent:
                 "Return a JSON with: overall_score, risk_level, key_factors, confidence, recommendation."
             )
             response = await asyncio.to_thread(self._strands_agent, prompt)
-            text = str(response)
-            if "{" in text:
-                start = text.index("{")
-                end = text.rindex("}") + 1
-                return json.loads(text[start:end])
-            return {"error": "No structured JSON in Strands response", "raw": text[:500], "status": "error"}
+            parsed = _extract_json(str(response))
+            if parsed is not None:
+                return parsed
+            return {"error": "No structured JSON in Strands response", "raw": str(response)[:500], "status": "error"}
         except Exception as exc:
             logger.warning(f"RiskAssessmentAgent Strands call failed: {exc}")
             return {"error": str(exc), "status": "error"}
@@ -395,11 +475,23 @@ async def _calculate_tfe_impl(
         for d in disruptions_q.scalars().all()
     ]
 
+    # Query real 30-day delivery history instead of using hardcoded constants.
+    cutoff_30d = date.today() - timedelta(days=30)
+    delivery_q = await db.execute(text("""
+        SELECT
+            COUNT(*)                                       AS total_deliveries,
+            COUNT(*) FILTER (WHERE delay_days > 0)        AS late_count,
+            COALESCE(SUM(sla_penalty_inr), 0)             AS total_penalties_inr
+        FROM delivery_records
+        WHERE supplier_id = :sid AND order_date >= :cutoff
+    """), {"sid": supplier_id, "cutoff": cutoff_30d})
+    d_row = delivery_q.fetchone()
+    d_total = d_row[0] or 1  # avoid division by zero
     delivery_stats = {
-        "total_deliveries": 30,
-        "late_pct": 0.15,
-        "avg_delay_days": days_to_stockout / max(1, len(skus)),
-        "total_penalties_inr": sla_penalty_per_day * days_to_stockout,
+        "total_deliveries": d_total,
+        "late_pct": round((d_row[1] or 0) / d_total, 3),
+        "avg_delay_days": round(days_to_stockout / max(1, len(skus)), 1),
+        "total_penalties_inr": float(d_row[2] or 0),
     }
 
     exposure = financial_engine.compute_supplier_exposure(
@@ -423,11 +515,18 @@ async def _get_alternate_suppliers_impl(
     category: str, exclude_city: str, db: AsyncSession
 ) -> list[dict]:
     """Tool implementation: query alternate suppliers by category excluding a city."""
+    # Also filter out suppliers that currently have active disruptions so we
+    # never recommend switching to an already-disrupted alternate.
     result = await db.execute(text("""
-        SELECT id, name, city, state, reliability_score, lead_time_days, risk_zone
-        FROM suppliers
-        WHERE category = :cat AND city != :excl
-        ORDER BY reliability_score DESC
+        SELECT s.id, s.name, s.city, s.state, s.reliability_score, s.lead_time_days, s.risk_zone
+        FROM suppliers s
+        WHERE s.category = :cat
+          AND s.city != :excl
+          AND NOT EXISTS (
+              SELECT 1 FROM disruptions d
+              WHERE d.supplier_id = s.id AND d.is_active = TRUE
+          )
+        ORDER BY s.reliability_score DESC
         LIMIT 5
     """), {"cat": category, "excl": exclude_city})
     rows = result.fetchall()
@@ -455,15 +554,15 @@ async def _simulate_mitigation_impl(
     from app.models.disruption import Disruption
     from app.services.risk_intelligence import RiskIntelligenceService
 
-    svc = RiskIntelligenceService(db)
-    exposure = await svc._compute_supplier_exposure(
-        (await db.execute(
-            select(Supplier).where(Supplier.id == supplier_id)
-        )).scalar_one()
-    )
+    # Fetch supplier once — reuse for both exposure calculation and attribute access.
     supplier = (await db.execute(
         select(Supplier).where(Supplier.id == supplier_id)
     )).scalar_one_or_none()
+    if not supplier:
+        return {"error": f"Supplier {supplier_id} not found"}
+
+    svc = RiskIntelligenceService(db)
+    exposure = await svc._compute_supplier_exposure(supplier)
 
     sim = financial_engine.simulate_mitigation(
         exposure, supplier.reliability_score if supplier else 0.8, supplier.lead_time_days if supplier else 7
@@ -491,14 +590,22 @@ class PrescriptiveActionAgent:
     def __init__(self, db: AsyncSession):
         self.db = db
         self._strands_agent: Any = None
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         self._init_agent()
 
     def _init_agent(self):
-        model = _make_bedrock_model()
+        model = _get_bedrock_model()
         if model is None:
+            return
+        if self._loop is None:
+            logger.warning("PrescriptiveActionAgent: no running event loop — tools will be unavailable")
             return
         try:
             db = self.db
+            loop = self._loop
 
             @tool
             def calculate_tfe(
@@ -508,24 +615,25 @@ class PrescriptiveActionAgent:
                 sla_penalty_per_day: float,
             ) -> str:
                 """Calculate Total Financial Exposure for a disrupted supplier."""
-                result = asyncio.get_event_loop().run_until_complete(
-                    _calculate_tfe_impl(supplier_id, days_to_stockout, daily_revenue, sla_penalty_per_day, db)
+                result = _run_async_from_thread(
+                    _calculate_tfe_impl(supplier_id, days_to_stockout, daily_revenue, sla_penalty_per_day, db),
+                    loop,
                 )
                 return json.dumps(result)
 
             @tool
             def get_alternate_suppliers(category: str, exclude_city: str) -> str:
                 """Find alternate suppliers in the same category excluding the disrupted city."""
-                result = asyncio.get_event_loop().run_until_complete(
-                    _get_alternate_suppliers_impl(category, exclude_city, db)
+                result = _run_async_from_thread(
+                    _get_alternate_suppliers_impl(category, exclude_city, db), loop
                 )
                 return json.dumps(result)
 
             @tool
             def simulate_mitigation(supplier_id: str, action_type: str) -> str:
                 """Calculate TFE before and after applying a mitigation action."""
-                result = asyncio.get_event_loop().run_until_complete(
-                    _simulate_mitigation_impl(supplier_id, action_type, db)
+                result = _run_async_from_thread(
+                    _simulate_mitigation_impl(supplier_id, action_type, db), loop
                 )
                 return json.dumps(result)
 
@@ -552,12 +660,10 @@ class PrescriptiveActionAgent:
                 "Return JSON with: action_type, title, description, tfe_inr, reduction_pct, alternate_supplier."
             )
             response = await asyncio.to_thread(self._strands_agent, prompt)
-            text = str(response)
-            if "{" in text:
-                start = text.index("{")
-                end = text.rindex("}") + 1
-                return json.loads(text[start:end])
-            return {"error": "No structured JSON in Strands response", "raw": text[:500], "status": "error"}
+            parsed = _extract_json(str(response))
+            if parsed is not None:
+                return parsed
+            return {"error": "No structured JSON in Strands response", "raw": str(response)[:500], "status": "error"}
         except Exception as exc:
             logger.warning(f"PrescriptiveActionAgent Strands call failed: {exc}")
             return {"error": str(exc), "status": "error"}
@@ -582,14 +688,28 @@ async def _query_suppliers_impl(filter_params: dict, db: AsyncSession) -> list[d
     category = filter_params.get("category")
     limit = min(int(filter_params.get("limit", 10)), 50)
 
+    # Map risk_level strings to reliability_score thresholds so the filter
+    # is actually applied (previously risk_level was extracted but never used).
+    _risk_level_thresholds = {
+        "critical": (0.0, 0.4),
+        "high":     (0.0, 0.6),
+        "medium":   (0.4, 0.75),
+        "low":      (0.75, 1.01),
+    }
+
     conditions = ["1=1"]
     params: dict = {}
     if region:
-        conditions.append("s.region = :region")
-        params["region"] = region
+        conditions.append("s.region ILIKE :region")
+        params["region"] = f"%{region}%"
     if category:
         conditions.append("s.category = :category")
         params["category"] = category
+    if risk_level and risk_level in _risk_level_thresholds:
+        lo, hi = _risk_level_thresholds[risk_level]
+        conditions.append("s.reliability_score >= :rl_lo AND s.reliability_score < :rl_hi")
+        params["rl_lo"] = lo
+        params["rl_hi"] = hi
 
     query = f"""
         SELECT s.id, s.name, s.city, s.state, s.region, s.category,
@@ -679,14 +799,22 @@ class ConversationalAdvisorAgent:
     def __init__(self, db: AsyncSession):
         self.db = db
         self._strands_agent: Any = None
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         self._init_agent()
 
     def _init_agent(self):
-        model = _make_bedrock_model()
+        model = _get_bedrock_model()
         if model is None:
+            return
+        if self._loop is None:
+            logger.warning("ConversationalAdvisorAgent: no running event loop — tools will be unavailable")
             return
         try:
             db = self.db
+            loop = self._loop
 
             @tool
             def query_suppliers(filter_params_json: str) -> str:
@@ -695,9 +823,7 @@ class ConversationalAdvisorAgent:
                     params = json.loads(filter_params_json)
                 except json.JSONDecodeError:
                     params = {}
-                result = asyncio.get_event_loop().run_until_complete(
-                    _query_suppliers_impl(params, db)
-                )
+                result = _run_async_from_thread(_query_suppliers_impl(params, db), loop)
                 out = json.dumps(result)
                 _record_tool_call("query_suppliers", filter_params_json, out)
                 return out
@@ -705,9 +831,7 @@ class ConversationalAdvisorAgent:
             @tool
             def get_financial_summary() -> str:
                 """Return aggregated Total Financial Exposure (TFE) across all at-risk suppliers in Indian Rupees."""
-                result = asyncio.get_event_loop().run_until_complete(
-                    _get_financial_summary_impl(db)
-                )
+                result = _run_async_from_thread(_get_financial_summary_impl(db), loop)
                 payload = {
                     "total_financial_exposure_inr": result.get("total_financial_exposure_inr"),
                     "total_revenue_at_risk_inr": result.get("total_revenue_at_risk_inr"),
@@ -725,8 +849,8 @@ class ConversationalAdvisorAgent:
                     ids = json.loads(supplier_ids_json)
                 except json.JSONDecodeError:
                     ids = []
-                result = asyncio.get_event_loop().run_until_complete(
-                    _run_scenario_impl(ids, disruption_type, db)
+                result = _run_async_from_thread(
+                    _run_scenario_impl(ids, disruption_type, db), loop
                 )
                 out = json.dumps(result)
                 _record_tool_call("run_scenario", f"{supplier_ids_json}|{disruption_type}", out)
@@ -833,78 +957,58 @@ _SIGNAL_INTEL_SYSTEM = (
 
 async def _classify_event_impl(event: dict) -> dict:
     """
-    Tool implementation: classify a disruption event.
-    Uses Bedrock as a fallback classification source (only called after Strands
-    approval has been granted). If Bedrock is unavailable, falls back to rule-based.
-    Returns event_type, severity, confidence, affected_region, estimated_duration_days.
-    """
-    from app.core.bedrock import bedrock
-    from app.core.fallback_manager import request_fallback_approval
+    Tool implementation: deterministic rule-based disruption event classification.
 
-    event_description = event.get("description", event.get("disruption_type", "unknown"))
+    The SignalIntelligenceAgent's Strands LLM handles "smart" classification by
+    calling this tool and reasoning over its output.  Calling Bedrock here as
+    well would create an LLM-within-LLM pattern (wasted tokens, double latency,
+    circular reasoning).  Rule-based classification in the tool is correct:
+    it provides structured facts; the outer LLM does the reasoning.
+    """
+    type_mapping = {
+        "cyclone": "weather",
+        "flood": "weather",
+        "storm": "weather",
+        "earthquake": "weather",
+        "drought": "weather",
+        "strike": "labor",
+        "protest": "geopolitical",
+        "war": "geopolitical",
+        "sanctions": "geopolitical",
+        "port_congestion": "logistics",
+        "shipping_delay": "logistics",
+        "transport": "logistics",
+        "power_outage": "infrastructure",
+        "road_closure": "infrastructure",
+        "bridge_collapse": "infrastructure",
+    }
+    duration_mapping = {
+        "weather": 5,
+        "geopolitical": 14,
+        "logistics": 3,
+        "labor": 7,
+        "infrastructure": 10,
+    }
+
+    disruption_type = event.get("disruption_type", event.get("description", "")).lower()
     region = event.get("region", "unknown")
     severity_hint = event.get("severity", "")
 
-    system_prompt = (
-        "You are a supply chain disruption classifier. "
-        "Classify the following event into exactly one type: weather, geopolitical, logistics, labor, infrastructure. "
-        "Assess severity (low, medium, high, critical), confidence (0.0-1.0), and estimated duration in days."
-    )
-    user_prompt = (
-        f"Classify this supply chain disruption event:\n"
-        f"Description: {event_description}\n"
-        f"Region: {region}\n"
-        f"Severity hint: {severity_hint}\n\n"
-        f"Return JSON with: event_type, severity, confidence, affected_region, estimated_duration_days"
-    )
+    event_type = "logistics"  # default
+    for key, val in type_mapping.items():
+        if key in disruption_type:
+            event_type = val
+            break
 
-    result = await bedrock.invoke_structured(system_prompt, user_prompt)
-
-    if not result:
-        # Bedrock unavailable — use rule-based classification
-        type_mapping = {
-            "cyclone": "weather",
-            "flood": "weather",
-            "storm": "weather",
-            "earthquake": "weather",
-            "drought": "weather",
-            "strike": "labor",
-            "protest": "geopolitical",
-            "war": "geopolitical",
-            "sanctions": "geopolitical",
-            "port_congestion": "logistics",
-            "shipping_delay": "logistics",
-            "transport": "logistics",
-            "power_outage": "infrastructure",
-            "road_closure": "infrastructure",
-            "bridge_collapse": "infrastructure",
-        }
-        disruption_type = event.get("disruption_type", "").lower()
-        event_type = "logistics"  # default
-        for key, val in type_mapping.items():
-            if key in disruption_type:
-                event_type = val
-                break
-
-        severity_mapping = {"critical": "critical", "high": "high", "medium": "medium", "low": "low"}
-        severity = severity_mapping.get(severity_hint, "medium")
-
-        duration_mapping = {"weather": 5, "geopolitical": 14, "logistics": 3, "labor": 7, "infrastructure": 10}
-
-        result = {
-            "event_type": event_type,
-            "severity": severity,
-            "confidence": 0.6,
-            "affected_region": region,
-            "estimated_duration_days": duration_mapping.get(event_type, 7),
-        }
+    severity_mapping = {"critical": "critical", "high": "high", "medium": "medium", "low": "low"}
+    severity = severity_mapping.get(severity_hint.lower(), "medium")
 
     return {
-        "event_type": result.get("event_type", "logistics"),
-        "severity": result.get("severity", "medium"),
-        "confidence": float(result.get("confidence", 0.5)),
-        "affected_region": result.get("affected_region", region),
-        "estimated_duration_days": int(result.get("estimated_duration_days", 7)),
+        "event_type": event_type,
+        "severity": severity,
+        "confidence": 0.65,
+        "affected_region": region,
+        "estimated_duration_days": duration_mapping.get(event_type, 7),
     }
 
 
@@ -915,14 +1019,17 @@ async def _find_affected_suppliers_impl(
     Tool implementation: find suppliers affected by geographic proximity to the event region.
     Queries suppliers in the same region or state, ordered by proximity relevance.
     """
-    # Query suppliers in the affected region or matching state/city
+    # Use ILIKE pattern matching so partial names ("North" matches "North India",
+    # "Chennai" matches "Tamil Nadu / Chennai" etc.) resolve correctly.
     result = await db.execute(text("""
         SELECT id, name, city, state, region, category, reliability_score, lead_time_days, risk_zone
         FROM suppliers
-        WHERE region = :region OR state = :region OR city = :region
+        WHERE region ILIKE :pattern
+           OR state  ILIKE :pattern
+           OR city   ILIKE :pattern
         ORDER BY reliability_score ASC
         LIMIT 20
-    """), {"region": region})
+    """), {"pattern": f"%{region}%"})
     rows = result.fetchall()
 
     return [
@@ -950,14 +1057,22 @@ class SignalIntelligenceAgent:
     def __init__(self, db: AsyncSession):
         self.db = db
         self._strands_agent: Any = None
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         self._init_agent()
 
     def _init_agent(self):
-        model = _make_bedrock_model()
+        model = _get_bedrock_model()
         if model is None:
+            return
+        if self._loop is None:
+            logger.warning("SignalIntelligenceAgent: no running event loop — tools will be unavailable")
             return
         try:
             db = self.db
+            loop = self._loop
 
             @tool
             def classify_event(event_json: str) -> str:
@@ -966,9 +1081,7 @@ class SignalIntelligenceAgent:
                     event = json.loads(event_json)
                 except json.JSONDecodeError:
                     event = {"description": event_json}
-                result = asyncio.get_event_loop().run_until_complete(
-                    _classify_event_impl(event)
-                )
+                result = _run_async_from_thread(_classify_event_impl(event), loop)
                 out = json.dumps(result)
                 _record_tool_call("classify_event", event_json[:200], out)
                 return out
@@ -976,8 +1089,8 @@ class SignalIntelligenceAgent:
             @tool
             def find_affected_suppliers(region: str, event_type: str) -> str:
                 """Find suppliers potentially affected by a disruption event based on geographic proximity to the event region."""
-                result = asyncio.get_event_loop().run_until_complete(
-                    _find_affected_suppliers_impl(region, event_type, db)
+                result = _run_async_from_thread(
+                    _find_affected_suppliers_impl(region, event_type, db), loop
                 )
                 out = json.dumps(result)
                 _record_tool_call("find_affected_suppliers", f"{region}|{event_type}", out)
@@ -1014,11 +1127,8 @@ class SignalIntelligenceAgent:
                 "estimated_duration_days, affected_supplier_ids."
             )
             response = await asyncio.to_thread(self._strands_agent, prompt)
-            text_response = str(response)
-            if "{" in text_response:
-                start = text_response.index("{")
-                end = text_response.rindex("}") + 1
-                parsed = json.loads(text_response[start:end])
+            parsed = _extract_json(str(response))
+            if parsed is not None:
                 confidence = float(parsed.get("confidence", 0.5))
                 report = {
                     "event_type": parsed.get("event_type", "logistics"),
@@ -1423,18 +1533,51 @@ class SupervisorAgent:
     async def process_scenario(self, scenario_name: str, preset: dict) -> dict:
         """
         Process a triggered scenario preset through the full agent pipeline.
+        Looks up the highest-risk supplier in the scenario region so Risk Assessment
+        and Prescriptive Action agents are not skipped due to a blank supplier_id.
         Returns assembled ActionCard payload for SSE streaming.
         """
+        region = preset.get("region", "")
+        severity = preset["severity"]
+
+        # Pick the most at-risk supplier in the affected region so the full
+        # pipeline runs (Risk Assessment + Prescriptive Action both gate on
+        # supplier_id being non-empty).
+        representative_supplier_id = ""
+        representative_supplier_name = f"{preset['name']} — Multi-supplier event"
+        representative_city = ""
+        representative_state = ""
+
+        if region:
+            try:
+                row = (await self.db.execute(text("""
+                    SELECT s.id, s.name, s.city, s.state
+                    FROM suppliers s
+                    LEFT JOIN disruptions d ON d.supplier_id = s.id AND d.is_active = TRUE
+                    WHERE s.region ILIKE :pattern
+                       OR s.state  ILIKE :pattern
+                       OR s.city   ILIKE :pattern
+                    ORDER BY s.reliability_score ASC
+                    LIMIT 1
+                """), {"pattern": f"%{region}%"})).fetchone()
+                if row:
+                    representative_supplier_id = str(row[0])
+                    representative_supplier_name = row[1]
+                    representative_city = row[2] or ""
+                    representative_state = row[3] or ""
+            except Exception as exc:
+                logger.warning(f"process_scenario: could not fetch representative supplier — {exc}")
+
         event = {
-            "supplier_id": "",  # Scenario affects multiple suppliers
-            "supplier_name": f"{preset['name']} — Multi-supplier event",
-            "severity": preset["severity"],
+            "supplier_id": representative_supplier_id,
+            "supplier_name": representative_supplier_name,
+            "severity": severity,
             "disruption_type": scenario_name,
-            "region": preset["region"],
-            "city": "",
-            "state": "",
+            "region": region,
+            "city": representative_city,
+            "state": representative_state,
             "estimated_impact_inr": preset.get("affected_suppliers", 1) * 250000,
-            "days_to_stockout": 7 if preset["severity"] == "critical" else 14,
+            "days_to_stockout": 7 if severity == "critical" else 14,
             "sku_count": preset.get("affected_suppliers", 1) * 3,
         }
 

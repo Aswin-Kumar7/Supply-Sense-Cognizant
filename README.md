@@ -20,42 +20,42 @@ Tier-1 and Tier-2 suppliers in Indian retail constantly face unforeseen disrupti
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        React 18 + TypeScript Frontend               │
 │                                                                     │
-│  Dashboard  ·  Risk Monitor  ·  SKU Forecast                       │
-│  Risk Detail  ·  Suppliers  ·  Alternates  ·  Settings             │
+│  Dashboard  ·  Risk Monitor  ·  SKU Forecast                        │
+│  Risk Detail  ·  Suppliers  ·  Alternates  ·  Settings              │
 │                                                                     │
 │  useWeightedRiskAnalysis()  <--  localStorage weights               │
-│  TanStack Query (30s stale, 10m gc)  ·  SSE real-time feed         │
-│  Recharts  ·  react-simple-maps (India heatmap)                    │
+│  TanStack Query (30s stale, 10m gc)  ·  SSE real-time feed          │
+│  Recharts  ·  react-simple-maps (India heatmap)                     │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ REST + SSE  /api/v1/...
 ┌──────────────────────────────▼──────────────────────────────────────┐
 │                     FastAPI  (Python 3.12, async)                   │
 │                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │                  Service Layer                                │  │
-│  │  RiskEngine  ·  StockoutEngine  ·  CascadeEngine            │  │
-│  │  FinancialEngine  ·  ProcurementAgent  ·  SyntheticEngine   │  │
-│  │  RiskIntelligence  ·  DashboardService  ·  DisruptionSvc    │  │
-│  └──────────────────────┬───────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                  Service Layer                               │   │
+│  │  RiskEngine  ·  StockoutEngine  ·  CascadeEngine             │   │
+│  │  FinancialEngine  ·  ProcurementAgent  ·  SyntheticEngine    │   │
+│  │  RiskIntelligence  ·  DashboardService  ·  DisruptionSvc     │   │
+│  └──────────────────────┬───────────────────────────────────────┘   │
 │                         │                                           │
-│  ┌──────────────────────▼───────────────────────────────────────┐  │
-│  │               AWS Strands Multi-Agent Pipeline               │  │
-│  │                                                              │  │
-│  │  Supervisor --> Signal Intelligence                          │  │
-│  │             --> Risk Assessment                              │  │
-│  │             --> Prescriptive Action                          │  │
-│  │                                                              │  │
-│  │  BedrockModel (Claude 3 Haiku · us-east-1)                  │  │
-│  │  AWS Guardrails (ID: big59xwx9384)                          │  │
-│  └──────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────▼───────────────────────────────────────┐   │
+│  │               AWS Strands Multi-Agent Pipeline               │   │
+│  │                                                              │   │
+│  │  Supervisor --> Signal Intelligence                          │   │ 
+│  │             --> Risk Assessment                              │   │ 
+│  │             --> Prescriptive Action                          │   │
+│  │                                                              │   │ 
+│  │  BedrockModel (Claude 3 Haiku · us-east-1)                   │   │
+│  │  AWS Guardrails (ID: big59xwx9384)                           │   │
+│  └──────────────────────────────────────────────────────────────┘   │ 
 │                                                                     │
-│  Async Event Bus (asyncio pub/sub) --> SSE fan-out to clients      │
+│  Async Event Bus (asyncio pub/sub) --> SSE fan-out to clients       │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │ asyncpg  SQLAlchemy 2.0
 ┌──────────────────────────────▼──────────────────────────────────────┐
 │              AWS RDS PostgreSQL  (us-east-1)                        │
 │  suppliers · skus · disruptions · delivery_records                  │
-│  risk_snapshots · action_cards · festivals · analysis_cache        │
+│  risk_snapshots · action_cards · festivals · analysis_cache         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 

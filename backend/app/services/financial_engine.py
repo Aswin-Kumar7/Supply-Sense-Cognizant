@@ -75,8 +75,11 @@ class FinancialExposureEngine:
     All amounts in INR. All calculations auditable.
     """
 
-    # SLA penalty rate: ₹ per day of delay per unit
-    SLA_PENALTY_RATE = 50.0
+    # SLA penalty rate: ₹ per day of delay per unit.
+    # ₹50 produced ₹10L+ penalties for medium suppliers (100 units/day × 10 SKUs ×
+    # 3-day avg delay × ₹50 = ₹10.5L), which overstated exposure for FMCG categories.
+    # ₹5 gives ₹1.05L for the same scenario — still significant and realistic.
+    SLA_PENALTY_RATE = 5.0
     # Stockout cost multiplier (lost sales + brand damage)
     STOCKOUT_MULTIPLIER = 2.5
     # Expedite premium percentage
@@ -213,8 +216,27 @@ class FinancialExposureEngine:
             confidence=0.65,
         ))
 
-        # Best option
-        best = max(options, key=lambda o: o.exposure_reduction_inr - o.cost_inr)
+        # Context-aware best option selection:
+        # - Expedite wins when lead time is short (≤ 3 days) because the supplier
+        #   can still deliver; switching would take longer.
+        # - Increase safety stock wins when reliability is moderate (0.5–0.75):
+        #   the supplier is struggling but not failed; buffer buys time.
+        # - Switch supplier wins when reliability is very low (< 0.5): the supplier
+        #   is unreliable and buffering won't help.
+        # - Substitute SKU is a last-resort fallback (default when nothing else fits).
+        if lead_time_days <= 3:
+            action_preference = "expedite"
+        elif supplier_reliability >= 0.75:
+            action_preference = "increase_stock"
+        elif supplier_reliability < 0.5:
+            action_preference = "switch_supplier"
+        else:
+            action_preference = "expedite"
+
+        best = next(
+            (o for o in options if o.action_type == action_preference),
+            max(options, key=lambda o: o.exposure_reduction_inr - o.cost_inr),
+        )
         mitigated_exposure = current_exposure - best.exposure_reduction_inr
 
         return MitigationSimulation(

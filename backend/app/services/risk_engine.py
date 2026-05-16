@@ -188,10 +188,18 @@ class RiskScoringEngine:
         )
 
     def _compute_delivery_risk(self, reliability: float, stats: dict) -> float:
-        """Convert reliability metrics to risk score."""
-        base_risk = 1.0 - reliability
-        late_penalty = stats.get("late_pct", 0) * 0.3
-        return min(1.0, base_risk + late_penalty)
+        """
+        Convert reliability metrics to a composite delivery-risk score [0, 1].
+
+        reliability and late_pct both reflect delivery failures, so they must
+        not be summed — that double-counts the same underlying phenomenon.
+        Instead we treat them as independent dimensions with independent weights:
+          - reliability_risk: overall track-record (60% weight — wider history)
+          - timeliness_risk:  recent on-time rate    (40% weight — current snapshot)
+        """
+        reliability_risk = 1.0 - reliability
+        timeliness_risk = stats.get("late_pct", 0)
+        return min(1.0, 0.6 * reliability_risk + 0.4 * timeliness_risk)
 
     def _compute_disruption_risk(self, disruptions: list[dict]) -> float:
         """Aggregate active disruption severity into single risk score."""
@@ -211,11 +219,15 @@ class RiskScoringEngine:
         return "low"
 
     def _score_to_level(self, score: float) -> str:
-        if score >= 0.7:
+        """
+        Map composite risk score to human-readable level.
+        Thresholds match the README specification (critical ≥ 0.80).
+        """
+        if score >= 0.80:
             return "critical"
-        elif score >= 0.5:
+        elif score >= 0.60:
             return "high"
-        elif score >= 0.3:
+        elif score >= 0.40:
             return "medium"
         return "low"
 

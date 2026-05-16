@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     app_version: str = "0.5.0"
     environment: str = "development"
 
-    # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@database-1.c25uokww4a3c.us-east-1.rds.amazonaws.com:5432/supplysense"
+    # Database — must be set via DATABASE_URL env var or .env file; no default to prevent
+    # accidental connections to production. Raises ValidationError at startup if missing.
+    database_url: str
 
     # AWS Bedrock
     aws_region: str = "us-east-1"

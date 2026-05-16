@@ -151,15 +151,21 @@ class RiskIntelligenceService:
     async def _compute_inventory_pressure(self, supplier_id: UUID) -> float:
         """Compute inventory pressure: how many SKUs are below safety stock."""
         result = await self.db.execute(text("""
-            SELECT 
-                COUNT(*) as total,
-                COUNT(*) FILTER (WHERE current_stock <= safety_stock) as critical,
-                COUNT(*) FILTER (WHERE current_stock <= reorder_point) as low
+            SELECT
+                COUNT(*)                                                           AS total,
+                COUNT(*) FILTER (WHERE current_stock <= safety_stock)              AS critical,
+                COUNT(*) FILTER (
+                    WHERE current_stock > safety_stock
+                      AND current_stock <= reorder_point
+                )                                                                  AS low
             FROM skus WHERE supplier_id = :sid
         """), {"sid": str(supplier_id)})
         row = result.fetchone()
         total = row[0] or 1
         critical = row[1] or 0
+        # "low" bin is now exclusive: above safety_stock but still below reorder_point.
+        # Previously it overlapped with "critical" (both counted SKUs ≤ safety_stock),
+        # inflating the pressure score by up to 0.3 per critical SKU.
         low = row[2] or 0
         return min(1.0, (critical * 0.6 + low * 0.3) / total)
 

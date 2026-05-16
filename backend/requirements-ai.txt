@@ -1,4 +1,4 @@
 # Optional: AWS Strands Agents SDK
 # Install separately: pip install -r requirements-ai.txt
 # The backend falls back gracefully if this is absent.
-strands-agents==0.1.0
+strands-agents>=1.40.0

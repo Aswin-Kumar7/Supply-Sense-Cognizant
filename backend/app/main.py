@@ -5,6 +5,19 @@ Enterprise-grade supply chain resilience platform.
 Module 2: Real-time operational visibility and live monitoring.
 """
 
+# Load .env into os.environ FIRST — before any boto3 / Strands import reads
+# AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.  pydantic-settings alone does
+# not put unrecognised .env keys into os.environ, so boto3's credential chain
+# would find nothing without this call.
+from pathlib import Path
+_env_file = Path(__file__).parent.parent / ".env"
+if _env_file.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_file, override=False)
+    except ImportError:
+        pass  # python-dotenv not installed; fall back to existing os.environ
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
