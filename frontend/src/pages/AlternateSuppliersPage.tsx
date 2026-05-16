@@ -171,21 +171,25 @@ function VendorRow({ supplierId, supplierName, city, region, reliability, leadTi
     <div style={{
       background: '#fff',
       border: '1px solid var(--border)',
-      borderRadius: '0.5rem',
+      borderRadius: '0.625rem',
       overflow: 'hidden',
       boxShadow: 'var(--shadow-sm)',
     }}>
       <div
         onClick={() => setOpen(o => !o)}
         style={{
-          display: 'flex', alignItems: 'center', gap: '1rem',
-          padding: '1.25rem',
+          display: 'grid',
+          gridTemplateColumns: '44px 1.5fr 1fr 100px 100px 100px 120px',
+          alignItems: 'center',
+          gap: '1.5rem',
+          padding: '1rem 1.5rem',
           cursor: 'pointer',
           background: open ? 'var(--bg-hover)' : '#fff',
           borderBottom: open ? '1px solid var(--border)' : 'none',
           transition: 'background 200ms',
         }}
       >
+        {/* Icon */}
         <div style={{
           width: 44, height: 44, borderRadius: '8px',
           background: '#fff', border: '1px solid var(--border)',
@@ -195,28 +199,57 @@ function VendorRow({ supplierId, supplierName, city, region, reliability, leadTi
           <Building2 size={22} strokeWidth={1.5} />
         </div>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#000' }}>{supplierName}</div>
-            <div style={{ fontSize: '0.6875rem', padding: '2px 8px', borderRadius: '4px', background: '#000', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Tier {tier}
-            </div>
+        {/* Name & Tier */}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#000', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {supplierName}
           </div>
-          <div style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', marginTop: '4px', fontWeight: 500 }}>
-            {city} · {region} · {(reliability * 100).toFixed(0)}% reliability · {leadTime}d lead time
+          <div style={{ marginTop: '4px' }}>
+            <span style={{ fontSize: '0.625rem', padding: '2px 6px', borderRadius: '4px', background: '#000', color: '#fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Tier {tier}
+            </span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexShrink: 0 }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#000', lineHeight: 1 }}>{isLoading ? '…' : uniqueAlts.length}</div>
-            <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '4px' }}>Verified Alts</div>
+        {/* Location */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+          <MapPin size={14} color="var(--ink-4)" />
+          <span style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {city}, {region}
+          </span>
+        </div>
+
+        {/* Reliability */}
+        <div>
+          <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px', letterSpacing: '0.05em' }}>Reliability</div>
+          <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', fontFamily: 'JetBrains Mono' }}>
+            {(reliability * 100).toFixed(0)}%
           </div>
+        </div>
+
+        {/* Lead Time */}
+        <div>
+          <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px', letterSpacing: '0.05em' }}>Lead Time</div>
+          <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', fontFamily: 'JetBrains Mono' }}>
+            {leadTime}d
+          </div>
+        </div>
+
+        {/* Alts Count */}
+        <div>
+          <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px', letterSpacing: '0.05em' }}>Verified Alts</div>
+          <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', fontFamily: 'JetBrains Mono' }}>
+            {isLoading ? '…' : uniqueAlts.length}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button
             onClick={e => { e.stopPropagation(); navigate(`/companies/${supplierId}`) }}
             style={{ 
               fontSize: '0.75rem', fontWeight: 700, color: '#000', background: '#fff', border: '1px solid var(--border)', 
-              padding: '0.625rem 1.25rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.5rem 1rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.375rem',
               transition: 'all 200ms ease'
             }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = '#000'; e.currentTarget.style.background = 'var(--bg-hover)' }}
