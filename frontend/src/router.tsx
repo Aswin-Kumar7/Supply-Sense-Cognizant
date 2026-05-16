@@ -13,6 +13,7 @@ const CompaniesPage          = React.lazy(() => import('./pages/CompaniesPage'))
 const CompanyDetailPage      = React.lazy(() => import('./pages/CompanyDetailPage'))
 const AlternateSuppliersPage = React.lazy(() => import('./pages/AlternateSuppliersPage'))
 const SettingsPage           = React.lazy(() => import('./pages/SettingsPage'))
+const HelpPage               = React.lazy(() => import('./pages/HelpPage'))
 
 function LazyRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -60,6 +61,10 @@ export const router = createBrowserRouter([
       {
         path: 'settings',
         element: <LazyRoute><SettingsPage /></LazyRoute>,
+      },
+      {
+        path: 'help',
+        element: <LazyRoute><HelpPage /></LazyRoute>,
       },
     ],
   },
