@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # Database — must be set via DATABASE_URL env var or .env file; no default to prevent
     # accidental connections to production. Raises ValidationError at startup if missing.
     database_url: str
+    # SSL settings for Aurora/RDS — set DB_SSL_MODE=require and DB_SSL_CERT_PATH=./global-bundle.pem
+    db_ssl_mode: str = ""          # e.g. "require", "verify-full", or "" to disable
+    db_ssl_cert_path: str = ""     # path to AWS global-bundle.pem
 
     # AWS Bedrock
     aws_region: str = "us-east-1"
