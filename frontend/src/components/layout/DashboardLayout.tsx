@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { TopBar } from './TopBar'
 import { Sidebar } from './Sidebar'
 import { FallbackApprovalBanner } from '../ui/FallbackApprovalBanner'
@@ -11,6 +11,7 @@ export function DashboardLayout() {
   const sync = useGlobalSync()
   const location = useLocation()
   const mainRef = useRef<HTMLElement>(null)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     if (mainRef.current) {
@@ -20,17 +21,18 @@ export function DashboardLayout() {
 
   return (
     <GlobalSyncContext.Provider value={sync}>
-      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-app)' }}>
-        <Sidebar />
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-          <TopBar />
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-app)' }}>
+        <TopBar collapsed={collapsed} setCollapsed={setCollapsed} />
+        
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
           <main
             ref={mainRef}
             style={{
               flex: 1,
               overflowY: 'auto',
               overflowX: 'hidden',
-              padding: '1.75rem',
+              padding: '2rem',
             }}
           >
             <FallbackApprovalBanner />

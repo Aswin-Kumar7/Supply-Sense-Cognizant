@@ -64,10 +64,6 @@ export const api = {
   // Risk Intelligence
   getSupplierRisks: () => request<SupplierRiskAnalysis[]>('/risk/suppliers'),
   getSupplierRisk: (id: string) => request<SupplierRiskAnalysis>(`/risk/suppliers/${id}`),
-  getSupplierRiskHistory: (id: string, days = 30) =>
-    request<{ supplier_id: string; days: number; count: number; history: { date: string; risk_score: number; risk_level: string }[] }>(
-      `/risk/suppliers/${id}/history?days=${days}`
-    ),
   getCascadeAnalysis: (id: string) => request<CascadeAnalysis>(`/risk/cascade/${id}`),
   getStockoutForecasts: () => request<StockoutSummary>('/risk/stockout'),
   getFinancialExposure: () => request<FinancialSummary>('/risk/financial'),

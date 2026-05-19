@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useSuppliers, useRiskAnalysis } from '../hooks/useQueries'
 import { api } from '../services/api'
 import { Badge } from '../components/ui/Badge'
+import { Building2, MapPin, Search, ChevronRight, ChevronDown, Activity, Map as MapIcon, Filter, ArrowUpRight } from 'lucide-react'
 import type { Supplier, SupplierRiskAnalysis, AlternateSupplierRecord } from '../types'
 
 const REGIONS = ['All', 'North', 'South', 'East', 'West', 'Central']
@@ -13,9 +14,9 @@ function Skeleton() {
 }
 
 function reliabilityColor(score: number) {
-  if (score >= 0.85) return '#059669'
-  if (score >= 0.70) return '#D97706'
-  return '#DC2626'
+  if (score >= 0.85) return '#4A8B50'
+  if (score >= 0.70) return '#D29729'
+  return '#c55b55'
 }
 
 /* ── Inline Alternates Panel ─────────────────────────────────────────── */
@@ -34,68 +35,29 @@ function AlternatesPanel({ supplierId, primaryLead }: { supplierId: string; prim
     }, []).slice(0, 3)
   }, [data])
 
-  if (isLoading) {
-    return (
-      <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid #E2E8F0' }}>
-        {[1,2].map(i => <div key={i} className="skeleton" style={{ flex: 1, height: 72, borderRadius: 8 }} />)}
-      </div>
-    )
-  }
+  if (isLoading) return <div style={{ paddingTop: '0.5rem' }}><div className="skeleton" style={{ height: 60, borderRadius: '4px' }} /></div>
 
-  if (uniqueAlts.length === 0) {
-    return (
-      <div style={{ paddingTop: '0.75rem', borderTop: '1px solid #E2E8F0', fontSize: '0.75rem', color: 'var(--ink-4)', textAlign: 'center', padding: '0.75rem' }}>
-        No alternates configured
-      </div>
-    )
-  }
+  if (uniqueAlts.length === 0) return null
 
   return (
-    <div style={{ paddingTop: '0.75rem', borderTop: '1px solid #E2E8F0' }}>
-      <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-        Alternate Suppliers ({uniqueAlts.length})
+    <div style={{ paddingTop: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border)' }}>
+      <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
+        Recommended Alternates
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-        {uniqueAlts.map(alt => {
-          const leadDelta = alt.lead_time_days - primaryLead
-          const isPreferred = alt.cost_premium_pct < 10 && (alt.reliability_score ?? alt.quality_score) >= 0.85
-          return (
-            <div key={alt.supplier_id} style={{
-              display: 'flex', alignItems: 'center', gap: '0.625rem',
-              padding: '0.5rem 0.625rem',
-              background: isPreferred ? '#F0FDF4' : 'var(--bg-hover)',
-              border: `1px solid ${isPreferred ? '#BBF7D0' : 'var(--border)'}`,
-              borderRadius: '0.5rem',
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {alt.supplier_name}
-                  {isPreferred && (
-                    <span style={{ marginLeft: '0.375rem', fontSize: '0.5rem', background: '#DCFCE7', color: '#059669', border: '1px solid #BBF7D0', borderRadius: '999px', padding: '1px 5px', fontWeight: 700 }}>
-                      PREFERRED
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: '0.5625rem', color: 'var(--ink-3)' }}>{alt.city} · {alt.region}</div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.375rem', flexShrink: 0 }}>
-                <span style={{
-                  fontSize: '0.5625rem', fontWeight: 700, padding: '2px 6px', borderRadius: '999px',
-                  background: alt.cost_premium_pct < 10 ? '#DCFCE7' : '#FEF3C7',
-                  color: alt.cost_premium_pct < 10 ? '#059669' : '#D97706',
-                }}>
-                  +{alt.cost_premium_pct.toFixed(0)}%
-                </span>
-                <span style={{
-                  fontSize: '0.5625rem', fontWeight: 600, padding: '2px 6px', borderRadius: '999px',
-                  background: 'var(--border-strong)', color: leadDelta > 0 ? '#D97706' : leadDelta < 0 ? '#059669' : 'var(--ink-3)',
-                }}>
-                  {alt.lead_time_days}d{leadDelta !== 0 ? ` (${leadDelta > 0 ? '+' : ''}${leadDelta})` : ''}
-                </span>
-              </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        {uniqueAlts.map(alt => (
+          <div key={alt.supplier_id} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0.375rem 0',
+            borderBottom: '1px solid #f8f8f8'
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#000', overflow: 'hidden', textOverflow: 'ellipsis' }}>{alt.supplier_name}</div>
+              <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)' }}>{alt.city} · +{alt.cost_premium_pct.toFixed(0)}% COST</div>
             </div>
-          )
-        })}
+            <ArrowUpRight size={10} color="var(--ink-4)" />
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -104,131 +66,69 @@ function AlternatesPanel({ supplierId, primaryLead }: { supplierId: string; prim
 /* ── Company card ─────────────────────────────────────────────────────── */
 function CompanyCard({ supplier, risk }: { supplier: Supplier; risk?: SupplierRiskAnalysis }) {
   const navigate = useNavigate()
-  const [showAlts, setShowAlts] = useState(false)
-
   const riskLevel = risk?.risk_level ?? 'low'
   const riskScore = risk?.overall_score ?? 0
-
-  const accentColor: Record<string, string> = { critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669' }
+  const accentColor: Record<string, string> = { critical: '#c55b55', high: '#D29729', medium: '#52bde0', low: '#4A8B50' }
   const accent = accentColor[riskLevel]
-  const initials = supplier.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
 
   return (
-    <div style={{
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border)',
-      borderRadius: '0.875rem',
-      overflow: 'hidden',
-      boxShadow: 'var(--shadow-xs)',
-      transition: 'box-shadow 150ms',
-      display: 'flex', flexDirection: 'column',
-    }}
-    onMouseEnter={e => (e.currentTarget.style.boxShadow = 'var(--shadow-md)')}
-    onMouseLeave={e => (e.currentTarget.style.boxShadow = 'var(--shadow-xs)')}
+    <div 
+      onClick={() => navigate(`/companies/${supplier.id}`)}
+      style={{
+        background: '#fff',
+        border: '1px solid var(--border)',
+        borderRadius: '0.5rem',
+        boxShadow: 'var(--shadow-sm)',
+        transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+        display: 'flex', flexDirection: 'column',
+        cursor: 'pointer',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = '#000'
+        e.currentTarget.style.boxShadow = 'var(--shadow-md)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'var(--border)'
+        e.currentTarget.style.boxShadow = 'var(--shadow-sm)'
+      }}
     >
-      {/* Risk level accent bar */}
-      <div style={{ height: '3px', background: accent }} />
-
-      <div style={{ padding: '1.125rem', display: 'flex', flexDirection: 'column', gap: '0.875rem', flex: 1 }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+      <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.875rem' }}>
           <div style={{
-            width: '42px', height: '42px', borderRadius: '0.625rem', flexShrink: 0,
-            background: `linear-gradient(135deg, ${accent}22, ${accent}10)`,
-            border: `1px solid ${accent}30`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '0.875rem', fontWeight: 800, color: accent,
+            width: '40px', height: '40px', borderRadius: '8px', flexShrink: 0,
+            background: '#fff', border: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000'
           }}>
-            {initials}
+            <Building2 size={20} strokeWidth={1.5} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#000', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>
               {supplier.name}
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--ink-3)', marginTop: '2px' }}>
-              {supplier.city}, {supplier.state} · Tier {supplier.tier}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginTop: '3px' }}>
+              <MapPin size={12} color="var(--ink-4)" />
+              <span style={{ fontSize: '0.75rem', color: 'var(--ink-3)', fontWeight: 500 }}>{supplier.city} · Tier {supplier.tier}</span>
             </div>
           </div>
           <Badge level={riskLevel} />
         </div>
 
-        {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
-          {[
-            { label: 'Reliability', value: `${(supplier.reliability_score * 100).toFixed(0)}%`, color: reliabilityColor(supplier.reliability_score) },
-            { label: 'Lead Time',   value: `${supplier.lead_time_days}d`,                        color: 'var(--ink-1)' },
-            { label: 'Risk Score',  value: `${(riskScore * 100).toFixed(0)}%`,                   color: accent },
-          ].map(stat => (
-            <div key={stat.label} style={{ textAlign: 'center', padding: '0.5rem', background: 'var(--bg-hover)', borderRadius: '0.5rem' }}>
-              <div style={{ fontSize: '1.0625rem', fontWeight: 700, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
-              <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', marginTop: '3px', fontWeight: 500 }}>{stat.label}</div>
-            </div>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0' }}>
+          <div style={{ flex: 1, textAlign: 'left' }}>
+            <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.25rem', letterSpacing: '0.05em' }}>Reliability</div>
+            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#000', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{(supplier.reliability_score * 100).toFixed(0)}%</div>
+          </div>
+          <div style={{ width: '1px', height: '24px', background: 'var(--border)' }} />
+          <div style={{ flex: 1, textAlign: 'left', paddingLeft: '0.5rem' }}>
+            <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.25rem', letterSpacing: '0.05em' }}>Lead Time</div>
+            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#000', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{supplier.lead_time_days}d</div>
+          </div>
+          <div style={{ width: '1px', height: '24px', background: 'var(--border)' }} />
+          <div style={{ flex: 1, textAlign: 'left', paddingLeft: '0.5rem' }}>
+            <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '0.25rem', letterSpacing: '0.05em' }}>Risk Index</div>
+            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: accent, fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{(riskScore * 100).toFixed(0)}%</div>
+          </div>
         </div>
-
-        {/* Risk bar */}
-        <div style={{ height: '5px', background: 'var(--border-strong)', borderRadius: '999px', overflow: 'hidden' }}>
-          <div style={{
-            width: `${(riskScore * 100).toFixed(0)}%`, height: '100%',
-            background: accent, borderRadius: '999px',
-            transition: 'width 0.6s cubic-bezier(0.34,1.56,0.64,1)',
-          }} />
-        </div>
-
-        {/* Region + category */}
-        <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', textTransform: 'capitalize' }}>
-          {supplier.category} · {supplier.region} region
-        </div>
-
-        {/* Alternates panel */}
-        {showAlts && (
-          <AlternatesPanel supplierId={supplier.id} primaryLead={supplier.lead_time_days} />
-        )}
-      </div>
-
-      {/* Action bar */}
-      <div style={{
-        display: 'flex', borderTop: '1px solid #F1F5F9',
-        background: 'var(--bg-app)',
-      }}>
-        <button
-          onClick={() => navigate(`/companies/${supplier.id}`)}
-          style={{
-            flex: 1, padding: '0.625rem',
-            background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: '0.75rem', fontWeight: 600, color: '#2563EB',
-            fontFamily: 'inherit',
-            borderRight: '1px solid #F1F5F9',
-            transition: 'background 120ms',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = '#EFF6FF')}
-          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-        >
-          View Details →
-        </button>
-        <button
-          onClick={e => { e.stopPropagation(); setShowAlts(v => !v) }}
-          style={{
-            flex: 1, padding: '0.625rem',
-            background: showAlts ? '#F0FDF4' : 'none',
-            border: 'none', cursor: 'pointer',
-            fontSize: '0.75rem', fontWeight: 600,
-            color: showAlts ? '#059669' : 'var(--ink-3)',
-            fontFamily: 'inherit',
-            transition: 'background 120ms',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
-          }}
-          onMouseEnter={e => { if (!showAlts) e.currentTarget.style.background = '#F0FDF4' }}
-          onMouseLeave={e => { if (!showAlts) e.currentTarget.style.background = 'none' }}
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-            <circle cx="4" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
-            <circle cx="12" cy="4" r="2" stroke="currentColor" strokeWidth="1.5"/>
-            <circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="1.5"/>
-            <path d="M6.5 7l3-2M6.5 9l3 2" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round"/>
-          </svg>
-          {showAlts ? 'Hide Alternates' : 'Alt. Suppliers'}
-        </button>
       </div>
     </div>
   )
@@ -278,91 +178,106 @@ export default function CompaniesPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      {/* Enterprise Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>
-            FMCG Vendors
-          </h1>
-          <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)' }}>
-            {suppliers.length} Tier-1 primary vendors · {criticalCount > 0 && <span style={{ color: '#DC2626', fontWeight: 600 }}>{criticalCount} critical</span>} click a card to view details or expand alternates
-          </p>
-        </div>
-        <div style={{
-          padding: '0.5rem 0.875rem',
-          background: '#EFF6FF', border: '1px solid #BFDBFE',
-          borderRadius: '0.625rem', fontSize: '0.75rem', color: '#2563EB', fontWeight: 600,
-        }}>
-          Tier-1 · FMCG
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-        <input
-          className="input"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name, city, state…"
-          style={{ width: '240px' }}
-        />
-
-        {/* Region filter */}
-        <div style={{ display: 'flex', gap: '0.25rem', background: 'var(--border-strong)', borderRadius: '0.625rem', padding: '0.25rem' }}>
-          {REGIONS.map(r => (
-            <button
-              key={r}
-              onClick={() => setRegion(r)}
-              style={{
-                padding: '0.3125rem 0.625rem', borderRadius: '0.375rem',
-                fontSize: '0.75rem', fontWeight: region === r ? 600 : 500,
-                background: region === r ? 'var(--bg-card)' : 'transparent',
-                color: region === r ? 'var(--ink-1)' : 'var(--ink-3)',
-                border: 'none', cursor: 'pointer',
-                boxShadow: region === r ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                transition: 'all 150ms', fontFamily: 'inherit',
-              }}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <span 
+              onClick={() => navigate('/')}
+              style={{ color: 'var(--ink-4)', fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
             >
-              {r}
-            </button>
-          ))}
+              Dashboard / Suppliers
+            </span>
+          </div>
+          <h1 style={{ fontSize: '1.875rem', fontWeight: 600, color: '#000000', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+            Vendor Directory
+          </h1>
         </div>
 
-        <select
-          value={sortBy}
-          onChange={e => setSortBy(e.target.value as typeof sortBy)}
-          className="input"
-          style={{ width: 'auto' }}
-        >
-          <option value="risk">Sort: Highest Risk</option>
-          <option value="reliability">Sort: Lowest Reliability</option>
-          <option value="name">Sort: Name A–Z</option>
-        </select>
+        <div style={{ display: 'flex', gap: '2.5rem' }}>
+          <div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Active Vendors</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 500, color: '#000000', lineHeight: 1 }}>
+              {suppliers.length}
+            </div>
+          </div>
+          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: '2.5rem' }}>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Strategic Risks</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 500, color: criticalCount > 0 ? '#c55b55' : '#000000', lineHeight: 1 }}>
+              {criticalCount}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Grid — 3-col on wide, 2-col on medium */}
+      {/* Modern Filter + Search Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2rem', marginBottom: '1rem', borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ display: 'flex', gap: '1.5rem' }}>
+          {REGIONS.map(r => {
+            const isActive = region === r
+            return (
+              <button
+                key={r}
+                onClick={() => setRegion(r)}
+                style={{
+                  padding: '0.75rem 0',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: `2px solid ${isActive ? '#000000' : 'transparent'}`,
+                  fontSize: '0.875rem',
+                  fontWeight: isActive ? 600 : 500,
+                  color: isActive ? '#000000' : 'var(--ink-4)',
+                  cursor: 'pointer',
+                  transition: 'all 200ms ease',
+                  marginBottom: '-1px',
+                }}
+              >
+                {r}
+              </button>
+            )
+          })}
+        </div>
+
+        <div style={{ position: 'relative', flex: 1, maxWidth: '280px', marginBottom: '0.75rem' }}>
+          <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-4)' }} />
+          <input
+            className="input"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Filter vendors..."
+            style={{ 
+              width: '100%', paddingLeft: '2.25rem', borderRadius: '0.5rem', 
+              fontSize: '0.8125rem', height: '36px', border: '1px solid var(--border)',
+              background: '#fff', outline: 'none'
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Grid — 3 cards per row */}
       {isLoading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} />)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem' }}>
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} />)}
         </div>
       ) : suppliers.length === 0 ? (
         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
           No vendors match your filters.
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem' }}>
           {suppliers.map(s => (
             <CompanyCard key={s.id} supplier={s} risk={riskMap.get(s.id)} />
           ))}
         </div>
       )}
 
-      {/* Tier-2 footnote */}
+      {/* Footnote */}
       <div style={{
-        padding: '0.75rem 1rem', background: 'var(--bg-hover)', border: '1px solid #E2E8F0',
-        borderRadius: '0.625rem', fontSize: '0.75rem', color: 'var(--ink-4)',
+        padding: '0.625rem 0.75rem', background: 'var(--bg-hover)', border: '1px solid var(--border)',
+        borderRadius: '0.5rem', fontSize: '0.6875rem', color: 'var(--ink-4)', display: 'flex', alignItems: 'center', gap: '0.5rem'
       }}>
-        💡 10 Tier-2 suppliers (packaging & raw material) and 8 alternate suppliers are tracked in the system — expand any card above to see alternates, or visit <strong style={{ color: '#2563EB' }}>Alt. Suppliers</strong> in the sidebar.
+        <Building2 size={12} />
+        <span>Tracked Tier-1 vendors with real-time risk signal synchronization active. Visit <strong>Alternate Suppliers</strong> for supply chain redundancy options.</span>
       </div>
 
     </div>

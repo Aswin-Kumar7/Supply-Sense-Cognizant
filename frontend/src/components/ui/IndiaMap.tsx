@@ -19,10 +19,10 @@ const INDIA_TOPO_URL =
 
 /* ── Risk colour map ────────────────────────────────────────────────── */
 const RISK_COLOR: Record<string, string> = {
-  critical: '#DC2626',
-  high:     '#D97706',
-  medium:   '#2563EB',
-  low:      '#059669',
+  critical: '#c55b55',
+  high:     '#D29729',
+  medium:   '#47a3c9',
+  low:      '#4A8B50',
 }
 
 const RISK_ORDER: Record<string, number> = { critical: 3, high: 2, medium: 1, low: 0 }
@@ -84,12 +84,12 @@ function PinTooltip({ pin, onClose }: { pin: CityPin; onClose: () => void }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--bg-card)' }}>{pin.city}</span>
+          <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--bg-card)' }}>{pin.city}</span>
         </div>
         <button onClick={onClose} style={{ color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>×</button>
       </div>
       <div style={{ fontSize: '0.625rem', color: 'rgba(255,255,255,0.35)', marginBottom: '0.625rem' }}>{pin.state}</div>
-      <div style={{ fontSize: '0.75rem', fontWeight: 700, color, marginBottom: '0.5rem' }}>
+      <div style={{ fontSize: '0.75rem', fontWeight: 500, color, marginBottom: '0.5rem' }}>
         {pin.worstRisk.toUpperCase()} · {(pin.worstScore * 100).toFixed(0)}% risk
       </div>
       {pin.suppliers.map(s => (
@@ -107,10 +107,10 @@ type RiskFilter = 'all' | 'critical' | 'high' | 'medium' | 'low'
 
 const FILTER_OPTIONS: { value: RiskFilter; label: string; color: string }[] = [
   { value: 'all',      label: 'All',      color: 'var(--ink-3)' },
-  { value: 'critical', label: 'Critical', color: '#DC2626' },
-  { value: 'high',     label: 'High',     color: '#D97706' },
-  { value: 'medium',   label: 'Medium',   color: '#2563EB' },
-  { value: 'low',      label: 'Low',      color: '#059669' },
+  { value: 'critical', label: 'Critical', color: '#c55b55' },
+  { value: 'high',     label: 'High',     color: '#D29729' },
+  { value: 'medium',   label: 'Medium',   color: '#52bde0' },
+  { value: 'low',      label: 'Low',      color: '#4A8B50' },
 ]
 
 /* ── IndiaMap ───────────────────────────────────────────────────────── */
@@ -168,10 +168,10 @@ export function IndiaMap({ suppliers, risks, onCityClick }: IndiaMapProps) {
                 display: 'flex', alignItems: 'center', gap: '0.3rem',
                 padding: '0.25rem 0.625rem',
                 borderRadius: '999px',
-                fontSize: '0.6875rem', fontWeight: isActive ? 700 : 500,
-                background: isActive ? opt.color : 'var(--border-strong)',
+                fontSize: '0.6875rem', fontWeight: isActive ? 700 : 600,
+                background: isActive ? opt.color : 'transparent',
                 color: isActive ? 'var(--bg-card)' : opt.color,
-                border: `1px solid ${isActive ? opt.color : 'var(--border)'}`,
+                border: `1px solid ${isActive ? opt.color : 'var(--border-strong)'}`,
                 cursor: 'pointer',
                 transition: 'all 120ms',
                 fontFamily: 'inherit',
@@ -183,7 +183,7 @@ export function IndiaMap({ suppliers, risks, onCityClick }: IndiaMapProps) {
                   minWidth: '16px', height: '16px', borderRadius: '50%',
                   background: isActive ? 'rgba(255,255,255,0.3)' : `${opt.color}20`,
                   color: isActive ? '#fff' : opt.color,
-                  fontSize: '0.5625rem', fontWeight: 700,
+                  fontSize: '0.5625rem', fontWeight: 500,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   padding: '0 2px',
                 }}>
@@ -212,7 +212,7 @@ export function IndiaMap({ suppliers, risks, onCityClick }: IndiaMapProps) {
           </button>
           <button
             onClick={() => setZoom(1)}
-            style={{ width: '26px', height: '26px', borderRadius: '0.375rem', background: 'var(--border-strong)', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '0.5625rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', fontWeight: 700, color: 'var(--ink-3)' }}
+            style={{ width: '26px', height: '26px', borderRadius: '0.375rem', background: 'var(--border-strong)', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '0.5625rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', fontWeight: 500, color: 'var(--ink-3)' }}
             title="Reset zoom"
           >
             ⊙
@@ -221,7 +221,12 @@ export function IndiaMap({ suppliers, risks, onCityClick }: IndiaMapProps) {
       </div>
 
       {/* Map */}
-      <div style={{ flex: 1, position: 'relative', borderRadius: '0.625rem', overflow: 'hidden', background: 'var(--bg-app)', border: '1px solid #F1F5F9' }}>
+      <div style={{ 
+        flex: 1, position: 'relative', borderRadius: '1.25rem', overflow: 'hidden', 
+        background: '#fff', 
+        border: '1px solid var(--border)',
+        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 3px rgba(0,0,0,0.05)'
+      }}>
         <ComposableMap
           projection="geoMercator"
           projectionConfig={{
@@ -240,9 +245,9 @@ export function IndiaMap({ suppliers, risks, onCityClick }: IndiaMapProps) {
                     key={geo.rsmKey}
                     geography={geo}
                     style={{
-                      default: { fill: '#EAEAEC', stroke: 'var(--bg-card)', strokeWidth: 0.75, outline: 'none' },
-                      hover:   { fill: '#D1D5DB', stroke: 'var(--bg-card)', strokeWidth: 0.75, outline: 'none' },
-                      pressed: { fill: '#9CA3AF', outline: 'none' },
+                      default: { fill: '#f8fafc', stroke: '#94a3b8', strokeWidth: 0.6, outline: 'none' },
+                      hover:   { fill: '#f1f5f9', stroke: '#64748b', strokeWidth: 0.8, outline: 'none', transition: 'all 250ms' },
+                      pressed: { fill: '#e2e8f0', outline: 'none' },
                     }}
                   />
                 ))
@@ -273,25 +278,32 @@ export function IndiaMap({ suppliers, risks, onCityClick }: IndiaMapProps) {
                     />
                   )}
                   {/* Shadow */}
-                  <circle r={r + 2} fill={color} opacity="0.15" />
-                  {/* Main dot */}
+                  <circle r={r + 3} fill={color} opacity="0.12" />
+                  {/* Main dot with ring */}
                   <circle
-                    r={isActive ? r + 2 : r}
+                    r={isActive ? r + 1.5 : r}
                     fill={color}
-                    stroke="var(--bg-card)"
+                    stroke="#fff"
                     strokeWidth="2"
                     style={{
                       cursor: 'pointer',
-                      filter: isActive ? `drop-shadow(0 0 6px ${color})` : 'none',
-                      transition: 'r 150ms',
+                      filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))',
+                      transition: 'all 200ms cubic-bezier(0.16,1,0.3,1)',
                     }}
+                  />
+                  {/* Inner highlight */}
+                  <circle
+                    r={isActive ? (r + 1.5) / 2.5 : r / 2.5}
+                    fill="#fff"
+                    opacity="0.4"
+                    pointerEvents="none"
                   />
                   {/* Count badge */}
                   {pin.suppliers.length > 1 && (
                     <text
                       y={2}
                       textAnchor="middle"
-                      style={{ fill: '#fff', fontSize: '7px', fontWeight: 700, pointerEvents: 'none' }}
+                      style={{ fill: '#fff', fontSize: '7px', fontWeight: 500, pointerEvents: 'none' }}
                     >
                       {pin.suppliers.length}
                     </text>

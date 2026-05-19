@@ -35,7 +35,7 @@ if _env_path.exists():
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://supplysense:supplysense_dev_2024@localhost:5432/supplysense",
+    "postgresql+asyncpg://USER:PASSWORD@localhost:5432/supplysense",
 )
 
 # ── Deterministic random so every re-seed produces identical data ────────

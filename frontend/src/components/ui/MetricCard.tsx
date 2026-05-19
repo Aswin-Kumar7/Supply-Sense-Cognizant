@@ -12,15 +12,15 @@ interface MetricCardProps {
 
 const accentMap = {
   blue:   { border: '#003087', bg: '#EEF2FF', icon: '#003087', iconBg: '#E8EFFE', value: '#003087' },
-  green:  { border: '#047857', bg: '#F0FDF4', icon: '#047857', iconBg: '#ECFDF5', value: '#047857' },
-  red:    { border: '#B91C1C', bg: '#FFF5F5', icon: '#B91C1C', iconBg: '#FEF2F2', value: '#B91C1C' },
-  amber:  { border: '#B45309', bg: '#FFFDF0', icon: '#B45309', iconBg: '#FFFBEB', value: '#92400E' },
+  green:  { border: '#4A8B50', bg: '#F0FDF4', icon: '#4A8B50', iconBg: '#ECFDF5', value: '#4A8B50' },
+  red:    { border: '#c55b55', bg: '#e06252', icon: '#c55b55', iconBg: '#FEF2F2', value: '#c55b55' },
+  amber:  { border: '#B45309', bg: '#FFFDF0', icon: '#B45309', iconBg: '#FFFBEB', value: '#D29729' },
   purple: { border: '#6D28D9', bg: '#F5F3FF', icon: '#6D28D9', iconBg: '#EDE9FE', value: '#5B21B6' },
 }
 
 const trendConfig = {
-  up:      { color: '#047857', arrow: '↑' },
-  down:    { color: '#B91C1C', arrow: '↓' },
+  up:      { color: '#4A8B50', arrow: '↑' },
+  down:    { color: '#c55b55', arrow: '↓' },
   neutral: { color: '#8896A7', arrow: '→' },
 }
 
@@ -34,7 +34,6 @@ export function MetricCard({ title, value, subtitle, trend = 'neutral', icon, ac
       style={{
         background: 'var(--bg-card)',
         border: '1px solid #DDE3ED',
-        borderLeft: `4px solid ${ac.border}`,
         borderRadius: '0.875rem',
         padding: '1.125rem 1.125rem 1.125rem 1.25rem',
         boxShadow: '0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04)',
@@ -64,7 +63,7 @@ export function MetricCard({ title, value, subtitle, trend = 'neutral', icon, ac
           </div>
           {subtitle && (
             <p className="metric-sub flex items-center gap-1 mt-1">
-              <span style={{ color: tr.color, fontSize: '0.7rem', fontWeight: 600 }}>{tr.arrow}</span>
+              <span style={{ color: tr.color, fontSize: '0.7rem', fontWeight: 500 }}>{tr.arrow}</span>
               <span style={{ color: 'var(--ink-3)' }}>{subtitle}</span>
             </p>
           )}

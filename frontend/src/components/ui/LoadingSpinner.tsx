@@ -19,7 +19,7 @@ export function LoadingSpinner({ size = 'md', label }: LoadingSpinnerProps) {
         <circle cx="12" cy="12" r="10" stroke="#1f2d45" strokeWidth="2.5" />
         <path
           d="M12 2a10 10 0 0 1 10 10"
-          stroke="#2563eb"
+          stroke="#52bde0"
           strokeWidth="2.5"
           strokeLinecap="round"
         />

@@ -11,8 +11,8 @@ interface ChartWrapperProps {
 
 const accentColors = {
   blue:  { top: '#003087', dot: '#003087' },
-  green: { top: '#047857', dot: '#047857' },
-  red:   { top: '#B91C1C', dot: '#B91C1C' },
+  green: { top: '#4A8B50', dot: '#4A8B50' },
+  red:   { top: '#c55b55', dot: '#c55b55' },
   amber: { top: '#B45309', dot: '#B45309' },
   none:  { top: '#DDE3ED', dot: 'var(--ink-4)' },
 }

@@ -7,7 +7,8 @@ interface BadgeProps {
 }
 
 export function Badge({ level, label, className = '' }: BadgeProps) {
-  const cls = `badge-${level} ${className}`
+  const normalizedLevel = (typeof level === 'string' ? level.toLowerCase() : level) || 'neutral'
+  const cls = `badge badge-${normalizedLevel} ${className}`
   return (
     <span className={cls}>
       {label ?? level}
@@ -17,9 +18,9 @@ export function Badge({ level, label, className = '' }: BadgeProps) {
 
 export function RiskDot({ level }: { level: RiskLevel | string }) {
   const colors: Record<string, string> = {
-    critical: '#ef4444',
+    critical: '#c55b55',
     high:     '#f59e0b',
-    medium:   '#3b82f6',
+    medium:   '#52bde0',
     low:      '#10b981',
   }
   const color = colors[level] ?? '#475569'
@@ -31,7 +32,6 @@ export function RiskDot({ level }: { level: RiskLevel | string }) {
         height: '6px',
         borderRadius: '50%',
         background: color,
-        boxShadow: `0 0 5px ${color}80`,
         flexShrink: 0,
       }}
     />

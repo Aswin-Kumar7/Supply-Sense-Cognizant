@@ -14,6 +14,7 @@ import { IndiaMap } from '../components/ui/IndiaMap'
 import { Badge } from '../components/ui/Badge'
 import { api } from '../services/api'
 import type { SupplierRiskAnalysis, Disruption, ActionCard, IntelligentActionCard, ExecutiveBrief } from '../types'
+import { AlertTriangle, AlertCircle, DollarSign, Package, Users, Activity, Wind, Truck, Search, ClipboardList, Link as LinkIcon, Calendar, ChevronRight } from 'lucide-react'
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 function formatINR(n: number) {
@@ -38,10 +39,10 @@ function CriticalAlertBanner({ count, topRisk, onView }: {
 
   return (
     <div style={{
-      background: '#FEF2F2',
-      border: '1px solid #FCA5A5',
-      borderRadius: '0.75rem',
-      padding: '0.875rem 1.25rem',
+      background: '#FFFFFF',
+      border: '1px solid var(--border)',
+      borderRadius: '1rem',
+      padding: '1rem 1.5rem',
       display: 'flex',
       alignItems: 'center',
       gap: '1rem',
@@ -50,22 +51,23 @@ function CriticalAlertBanner({ count, topRisk, onView }: {
     }}>
       {/* Pulse dot */}
       <div style={{ position: 'relative', flexShrink: 0 }}>
-        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#EF4444' }} />
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#c55b55' }} />
         <div style={{
           position: 'absolute', inset: '-4px',
-          borderRadius: '50%', border: '2px solid #EF4444',
+          borderRadius: '50%', border: '2px solid #c55b55',
           animation: 'pulse 1.5s ease-in-out infinite',
           opacity: 0.4,
         }} />
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#991B1B' }}>
-          🚨 {count} Critical Supply Chain Issue{count !== 1 ? 's' : ''} Require Immediate Attention
+        <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#c55b55', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+          <AlertTriangle size={16} />
+          {count} Critical Supply Chain Issue{count !== 1 ? 's' : ''} Require Immediate Attention
         </div>
         {topRisk && (
-          <div style={{ fontSize: '0.75rem', color: '#B91C1C', marginTop: '2px' }}>
-            Highest risk: <strong style={{ color: '#DC2626' }}>{topRisk.supplier_name}</strong> —{' '}
+          <div style={{ fontSize: '0.75rem', color: '#c55b55', marginTop: '2px' }}>
+            Highest risk: <strong style={{ color: '#c55b55' }}>{topRisk.supplier_name}</strong> —{' '}
             {(topRisk.overall_score * 100).toFixed(0)}% risk score
           </div>
         )}
@@ -77,16 +79,16 @@ function CriticalAlertBanner({ count, topRisk, onView }: {
           style={{
             padding: '0.5rem 1rem',
             background: '#FFFFFF',
-            color: '#DC2626',
+            color: '#c55b55',
             borderRadius: '0.5rem',
-            border: '1px solid #FCA5A5',
+            border: '1px solid #c55b55',
             cursor: 'pointer',
             fontSize: '0.8125rem',
-            fontWeight: 700,
+            fontWeight: 500,
             fontFamily: 'inherit',
             transition: 'background 150ms',
           }}
-          onMouseEnter={e => e.currentTarget.style.background = '#FEF2F2'}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card)'}
           onMouseLeave={e => e.currentTarget.style.background = '#FFFFFF'}
         >
           View Critical Issues
@@ -96,17 +98,17 @@ function CriticalAlertBanner({ count, topRisk, onView }: {
           style={{
             padding: '0.5rem',
             background: 'transparent',
-            color: '#F87171',
+            color: '#c55b55',
             borderRadius: '0.5rem',
-            border: 'none',
+            border: '1px solid var(--border)',
             cursor: 'pointer',
             fontSize: '1rem',
             fontFamily: 'inherit',
             lineHeight: 1,
             transition: 'color 150ms',
           }}
-          onMouseEnter={e => e.currentTarget.style.color = '#DC2626'}
-          onMouseLeave={e => e.currentTarget.style.color = '#F87171'}
+          onMouseEnter={e => e.currentTarget.style.color = '#c55b55'}
+          onMouseLeave={e => e.currentTarget.style.color = '#c55b55'}
           title="Dismiss"
         >
           ×
@@ -148,144 +150,159 @@ function BoardBriefModal({ onClose }: { onClose: () => void }) {
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{
         background: 'var(--bg-card)',
-        borderRadius: '1rem',
+        borderRadius: '1.5rem',
         width: '100%',
-        maxWidth: '640px',
-        maxHeight: '80vh',
-        overflow: 'auto',
-        boxShadow: '0 25px 60px rgba(0,0,0,0.25)',
+        maxWidth: '680px',
+        maxHeight: '85vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: 'var(--shadow-modal)',
+        border: '1px solid var(--border)',
       }}>
-        {/* Header */}
+        {/* Header - Fixed */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '1.25rem 1.5rem',
-          borderBottom: '1px solid #E2E8F0',
-          position: 'sticky', top: 0, background: '#fff', zIndex: 1,
+          padding: '1rem 1.5rem',
+          borderBottom: '1px solid var(--border)',
+          background: '#fff',
+          zIndex: 10,
+          flexShrink: 0,
         }}>
           <div>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: 800, color: 'var(--ink-1)' }}>Board Brief</h2>
-            <p style={{ fontSize: '0.75rem', color: 'var(--ink-3)', marginTop: '2px' }}>
-              AI-generated executive summary · AWS Strands Agents
+            <h2 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#000000', letterSpacing: '-0.02em' }}>Board Brief</h2>
+            <p style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '2px' }}>
+              Strategic Analysis · <span style={{ color: '#000', fontWeight: 600 }}>Supply Engine v2.4</span>
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <button
               onClick={() => window.print()}
               style={{
-                padding: '0.5rem 0.875rem',
-                background: 'var(--border-strong)', color: 'var(--ink-2)',
-                borderRadius: '0.5rem', border: 'none', cursor: 'pointer',
-                fontSize: '0.75rem', fontWeight: 600, fontFamily: 'inherit',
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                padding: '0.4rem 0.875rem', background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                borderRadius: '0.5rem', color: 'var(--ink-2)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
               }}
             >
-              🖨️ Print
+              <ClipboardList size={14} /> Print
             </button>
             <button
               onClick={onClose}
               style={{
-                padding: '0.5rem 0.75rem',
-                background: 'var(--border-strong)', color: 'var(--ink-3)',
-                borderRadius: '0.5rem', border: 'none', cursor: 'pointer',
-                fontSize: '0.875rem', fontFamily: 'inherit',
+                width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'none', border: 'none', borderRadius: '50%', color: 'var(--ink-4)',
+                cursor: 'pointer',
               }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
             >
-              ×
+              <Activity size={18} />
             </button>
           </div>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Body - Scrollable */}
+        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', overflowY: 'auto' }}>
           {loading && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <Skeleton h={20} w="70%" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <Skeleton h={80} />
-              <Skeleton h={20} w="60%" />
-              <Skeleton h={60} />
-              <Skeleton h={20} w="65%" />
+              <Skeleton h={100} />
               <Skeleton h={60} />
             </div>
           )}
           {error && (
             <div style={{
-              padding: '1rem', background: '#FEF2F2', border: '1px solid #FECACA',
-              borderRadius: '0.625rem', fontSize: '0.875rem', color: '#DC2626',
+              padding: '1.25rem', background: '#fef2f2', border: '1px solid #fecaca',
+              borderRadius: '0.75rem', fontSize: '0.875rem', color: '#c55b55',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
             }}>
-              {error}
-              <button onClick={fetchBrief} style={{ marginLeft: '0.75rem', fontSize: '0.8125rem', color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-                Retry →
+              <span>{error}</span>
+              <button onClick={fetchBrief} style={{ fontSize: '0.75rem', color: '#c55b55', fontWeight: 600, background: '#fff', border: '1px solid #fecaca', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer' }}>
+                Retry
               </button>
             </div>
           )}
           {brief && (
             <>
               {/* KPI overview */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-                {[
-                  { label: 'Suppliers at Risk', value: String(brief.at_risk_suppliers), color: '#DC2626' },
-                  { label: 'Total Exposure', value: formatINR(brief.total_exposure_inr), color: '#D97706' },
-                  { label: 'Critical Stockouts', value: String(brief.critical_stockouts), color: '#7C3AED' },
-                ].map(kpi => (
-                  <div key={kpi.label} style={{
-                    padding: '0.875rem',
-                    background: 'var(--bg-hover)', border: '1px solid #E2E8F0',
-                    borderRadius: '0.625rem', textAlign: 'center',
-                  }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: kpi.color }}>{kpi.value}</div>
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', marginTop: '2px' }}>{kpi.label}</div>
-                  </div>
-                ))}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                <KPICard 
+                  label="Risks" 
+                  value={brief.at_risk_suppliers} 
+                  accent="#c55b55" 
+                  icon={<Users size={18} />} 
+                />
+                <KPICard 
+                  label="Exposure" 
+                  value={formatINR(brief.total_exposure_inr)} 
+                  accent="#D29729" 
+                  icon={<DollarSign size={18} />} 
+                />
+                <KPICard 
+                  label="Stockouts" 
+                  value={brief.critical_stockouts} 
+                  accent="#000" 
+                  icon={<Package size={18} />} 
+                />
               </div>
 
               {/* Summary */}
               <div>
-                <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-                  Executive Summary
-                </div>
-                <p style={{ fontSize: '0.875rem', color: 'var(--ink-2)', lineHeight: 1.7, background: 'var(--bg-hover)', padding: '0.875rem', borderRadius: '0.625rem', border: '1px solid #E2E8F0' }}>
+                <SectionHeader title="Strategic Overview" />
+                <div style={{ 
+                  fontSize: '0.9375rem', color: 'var(--ink-2)', lineHeight: 1.6, 
+                  background: 'var(--bg-hover)', padding: '1.25rem', 
+                  borderRadius: '1rem', border: '1px solid var(--border)' 
+                }}>
                   {brief.summary}
-                </p>
+                </div>
               </div>
 
-              {/* Top risks */}
+              {/* Risk factors */}
               {brief.top_risks.length > 0 && (
                 <div>
-                  <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-                    Key Risk Areas
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                  <SectionHeader title="Key Risk Factors" />
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
                     {brief.top_risks.map((r, i) => (
-                      <li key={i} style={{ fontSize: '0.8125rem', color: 'var(--ink-2)', lineHeight: 1.5 }}>{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Immediate actions */}
-              {brief.immediate_actions.length > 0 && (
-                <div>
-                  <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-                    Immediate Actions Required
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                    {brief.immediate_actions.map((action, i) => (
-                      <div key={i} style={{
-                        display: 'flex', gap: '0.625rem', alignItems: 'flex-start',
-                        padding: '0.5rem 0.75rem',
-                        background: '#FFF7ED', border: '1px solid #FED7AA',
-                        borderRadius: '0.5rem',
+                      <div key={i} style={{ 
+                        fontSize: '0.8125rem', color: 'var(--ink-2)', padding: '0.75rem 1rem', 
+                        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '0.75rem',
+                        display: 'flex', alignItems: 'center', gap: '0.625rem', boxShadow: 'var(--shadow-card)'
                       }}>
-                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#EA580C', flexShrink: 0, paddingTop: '2px' }}>
-                          {String(i + 1).padStart(2, '0')}
-                        </span>
-                        <span style={{ fontSize: '0.8125rem', color: '#7C2D12', lineHeight: 1.5 }}>{action}</span>
+                        <AlertCircle size={14} style={{ color: '#c55b55' }} />
+                        {r}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', textAlign: 'right' }}>
+              {/* Action items */}
+              {brief.immediate_actions.length > 0 && (
+                <div>
+                  <SectionHeader title="Critical Action Protocol" />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                    {brief.immediate_actions.map((action, i) => (
+                      <div key={i} style={{
+                        display: 'flex', gap: '1rem', alignItems: 'center',
+                        padding: '1rem 1.25rem',
+                        background: 'var(--bg-card)', border: '1px solid var(--border)',
+                        borderRadius: '1rem', boxShadow: 'var(--shadow-card)'
+                      }}>
+                        <span style={{ 
+                          width: '24px', height: '24px', borderRadius: '0.5rem', background: 'var(--bg-hover)', color: 'var(--ink-1)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, flexShrink: 0 
+                        }}>
+                          {i + 1}
+                        </span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#000000', lineHeight: 1.4 }}>{action}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', textAlign: 'right', marginTop: '0.5rem' }}>
                 Generated: {new Date(brief.generated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
               </div>
             </>
@@ -303,74 +320,108 @@ function TopRiskSpotlight({ risk, card }: {
 }) {
   const navigate = useNavigate()
 
-  const COLOR: Record<string, string> = { critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669' }
-  const accent = COLOR[risk.risk_level] ?? '#2563EB'
+
 
   return (
     <div
       onClick={() => navigate(`/risks/${risk.supplier_id}`)}
       style={{
-        background: `linear-gradient(135deg, var(--ink-1) 0%, #1E3A5F 100%)`,
-        borderRadius: '0.875rem',
-        padding: '1.25rem 1.5rem',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+        borderRadius: '1rem',
+        padding: '1.5rem 1.75rem',
         cursor: 'pointer',
-        boxShadow: '0 4px 16px rgba(15,23,42,0.25)',
-        transition: 'box-shadow 150ms',
-        position: 'relative',
-        overflow: 'hidden',
+        boxShadow: 'var(--shadow-card)',
+        transition: 'all 200ms ease',
       }}
-      onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 6px 24px rgba(15,23,42,0.35)')}
-      onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(15,23,42,0.25)')}
+      onMouseEnter={e => {
+        e.currentTarget.style.boxShadow = 'var(--shadow-hover)'
+        e.currentTarget.style.borderColor = 'var(--brand-200)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.boxShadow = 'var(--shadow-card)'
+        e.currentTarget.style.borderColor = 'var(--border)'
+      }}
     >
-      {/* Background accent */}
-      <div style={{
-        position: 'absolute', top: '-20px', right: '-20px',
-        width: '120px', height: '120px',
-        borderRadius: '50%',
-        background: `${accent}20`,
-        border: `2px solid ${accent}30`,
-      }} />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', position: 'relative' }}>
-        <div>
-          <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
-            🔥 Top Risk — Immediate Action
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1.5rem' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '0.5rem', background: 'var(--bg-hover)', color: 'var(--ink-3)' }}>
+              <AlertCircle size={18} />
+            </div>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--ink-1)' }}>
+              Top Risk Spotlight
+            </span>
           </div>
-          <div style={{ fontSize: '1.125rem', fontWeight: 800, color: 'var(--bg-card)', letterSpacing: '-0.01em' }}>
+
+          {/* Body */}
+          <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--ink-1)', letterSpacing: '-0.02em', marginBottom: '0.375rem' }}>
             {risk.supplier_name}
           </div>
+          
           {card && (
-            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.55)', marginTop: '0.375rem', lineHeight: 1.5, maxWidth: '380px' }}>
+            <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)', lineHeight: 1.5, marginBottom: '1.25rem', maxWidth: '600px' }}>
               {card.recommended_action}
-            </div>
+            </p>
           )}
-          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+
+          {/* Footer Metadata */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
             <Badge level={risk.risk_level} />
+            
             {card && (
-              <>
-                <span style={{ fontSize: '0.6875rem', color: '#FCA5A5', fontWeight: 600 }}>
-                  {formatINR(card.financial_exposure_inr)} exposure
-                </span>
-                <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)' }}>·</span>
-                <span style={{ fontSize: '0.6875rem', color: card.days_to_stockout <= 7 ? '#FCA5A5' : 'rgba(255,255,255,0.55)' }}>
-                  {card.days_to_stockout}d to stockout
-                </span>
-              </>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '2px' }}>Exposure</span>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--ink-1)' }}>{formatINR(card.financial_exposure_inr)}</span>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '2px' }}>Stockout</span>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: card.days_to_stockout <= 7 ? '#c55b55' : 'var(--ink-1)' }}>{card.days_to_stockout} days</span>
+                </div>
+              </div>
             )}
           </div>
         </div>
 
-        <div style={{ textAlign: 'center', flexShrink: 0, position: 'relative' }}>
-          <div style={{
-            fontSize: '2.5rem', fontWeight: 900,
-            color: accent, letterSpacing: '-0.04em', lineHeight: 1,
-            textShadow: `0 0 20px ${accent}60`,
+        {/* Score Ring / Pill */}
+        <div style={{ textAlign: 'center', flexShrink: 0, padding: '0.5rem' }}>
+          <div style={{ 
+            width: '92px', height: '92px', borderRadius: '50%', 
+            background: 'var(--bg-hover)', border: '1px solid var(--border)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            position: 'relative',
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
           }}>
-            {(risk.overall_score * 100).toFixed(0)}<span style={{ fontSize: '1rem', color: 'rgba(255,255,255,0.4)' }}>%</span>
+            <div style={{ 
+              fontSize: '1.75rem', fontWeight: 600, color: '#000', lineHeight: 1, 
+              fontFamily: 'JetBrains Mono, monospace', letterSpacing: '-0.05em' 
+            }}>
+              {(risk.overall_score * 100).toFixed(0)}<span style={{ fontSize: '0.875rem', fontWeight: 500, marginLeft: '1px' }}>%</span>
+            </div>
+            <div style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '4px' }}>Risk Index</div>
+            
+            {/* Subtle progress track */}
+            <svg style={{ position: 'absolute', inset: -1, width: '94px', height: '94px', transform: 'rotate(-90deg)', pointerEvents: 'none' }}>
+              <circle 
+                cx="47" cy="47" r="46" 
+                fill="none" stroke="#000" strokeWidth="2" 
+                strokeDasharray={`${risk.overall_score * 289} 289`}
+                strokeLinecap="round"
+                style={{ opacity: 0.15 }}
+              />
+            </svg>
           </div>
-          <div style={{ fontSize: '0.625rem', color: 'rgba(255,255,255,0.35)', marginTop: '0.25rem' }}>risk score</div>
-          <div style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.5rem', fontWeight: 600 }}>
-            View Details →
+          <div 
+            style={{ 
+              marginTop: '1.25rem', fontSize: '0.8125rem', fontWeight: 600, color: '#000', 
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+              opacity: 0.8
+            }}
+          >
+            View Analysis <ChevronRight size={14} />
           </div>
         </div>
       </div>
@@ -380,21 +431,36 @@ function TopRiskSpotlight({ risk, card }: {
 
 /* ── Trend arrow ─────────────────────────────────────────────────────── */
 function TrendPill({ delta, invertColor = false }: { delta: number; invertColor?: boolean }) {
-  // invertColor=true: increase is bad (risk, exposure)
-  const isUp = delta >= 0
+  const isUp = delta > 0
+  const isZero = delta === 0
   const isGood = invertColor ? !isUp : isUp
-  const color = delta === 0 ? 'var(--ink-4)' : isGood ? '#059669' : '#DC2626'
-  const bg = delta === 0 ? 'var(--border-strong)' : isGood ? '#F0FDF4' : '#FEF2F2'
+
+  let bg = '#fae1a6'
+  let color = '#7A4D0A'
+
+  if (isZero) {
+    bg = '#F1F5F9'
+    color = '#475569'
+  } else if (isGood) {
+    bg = '#dbeeda'
+    color = '#1A6641'
+  } else {
+    bg = '#fed2c0'
+    color = '#c55b55'
+  }
+
+  const sign = isZero ? '' : isUp ? '+' : '-'
 
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '2px',
-      padding: '2px 6px',
-      background: bg, borderRadius: '999px',
-      fontSize: '0.625rem', fontWeight: 700,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      padding: '4px 8px',
+      background: bg, borderRadius: '6px',
+      fontSize: '0.75rem', fontWeight: 600,
       color,
+      lineHeight: 1,
     }}>
-      {delta === 0 ? '→' : isUp ? '↑' : '↓'} {Math.abs(delta)}%
+      {sign}{Math.abs(delta)}%
     </span>
   )
 }
@@ -411,32 +477,43 @@ interface KPIProps {
   trend?: number
   invertTrend?: boolean
 }
-function KPICard({ label, value, sub, accent = '#2563EB', icon, loading, onClick, trend, invertTrend }: KPIProps) {
+function KPICard({ label, value, sub, accent = '#52bde0', icon, loading, onClick, trend, invertTrend }: KPIProps) {
   return (
     <div
       onClick={onClick}
       style={{
         background: 'var(--bg-card)',
         border: '1px solid var(--border)',
-        borderRadius: '0.875rem',
-        padding: '1.25rem 1.375rem',
+        borderRadius: '1rem',
+        padding: '1.5rem',
         display: 'flex',
         flexDirection: 'column',
         gap: '0.75rem',
-        boxShadow: 'var(--shadow-xs)',
+        boxShadow: 'var(--shadow-card)',
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'box-shadow 150ms, border-color 150ms',
+        transition: 'all 300ms cubic-bezier(0.16,1,0.3,1)',
         position: 'relative',
         overflow: 'hidden',
+        transform: 'translateY(0)',
       }}
-      onMouseEnter={e => { if (onClick) { (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-md)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)' } }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-xs)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
+      onMouseEnter={e => { 
+        if (onClick) { 
+          (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-hover)'; 
+          (e.currentTarget as HTMLElement).style.borderColor = 'var(--brand-200)';
+          (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)';
+        } 
+      }}
+      onMouseLeave={e => { 
+        (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-card)'; 
+        (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
+        (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
+      }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '0.375rem', background: `${accent}15`, flexShrink: 0 }}>
-          <span style={{ color: accent }}>{icon}</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '0.375rem', background: 'var(--bg-hover)', flexShrink: 0 }}>
+          <span style={{ color: 'var(--ink-3)' }}>{icon}</span>
         </div>
-        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-1)' }}>{label}</div>
+        <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--ink-1)' }}>{label}</div>
       </div>
 
       <div>
@@ -445,7 +522,7 @@ function KPICard({ label, value, sub, accent = '#2563EB', icon, loading, onClick
         ) : (
           <>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
-              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.03em', lineHeight: 1 }}>
+              <div style={{ fontSize: '1.75rem', fontWeight: 500, color: 'var(--ink-1)', letterSpacing: '-0.03em', lineHeight: 1 }}>
                 {value}
               </div>
               {trend !== undefined && (
@@ -466,9 +543,9 @@ function KPICard({ label, value, sub, accent = '#2563EB', icon, loading, onClick
 function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
-      <h2 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)' }}>{title}</h2>
+      <h2 style={{ fontSize: '0.9375rem', fontWeight: 500, color: 'var(--ink-1)' }}>{title}</h2>
       {action && (
-        <button onClick={onAction} style={{ fontSize: '0.75rem', color: '#2563EB', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+        <button onClick={onAction} style={{ fontSize: '0.75rem', color: '#000', fontWeight: 600, background: 'none', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}>
           {action} →
         </button>
       )}
@@ -476,20 +553,20 @@ function SectionHeader({ title, action, onAction }: { title: string; action?: st
   )
 }
 
-const FACTOR_ICON: Record<string, string> = {
-  disruption_severity: '🌀',
-  inventory_pressure: '📦',
-  delivery_reliability: '🚚',
-  logistics_vulnerability: '🛣️',
-  dependency_exposure: '🔗',
-  festival_proximity: '🎆',
+const FACTOR_ICON: Record<string, React.ReactNode> = {
+  disruption_severity: <Wind size={16} />,
+  inventory_pressure: <Package size={16} />,
+  delivery_reliability: <Truck size={16} />,
+  logistics_vulnerability: <Activity size={16} />,
+  dependency_exposure: <LinkIcon size={16} />,
+  festival_proximity: <Calendar size={16} />,
 }
 
-function primarySignal(factors: SupplierRiskAnalysis['factors']): { name: string; icon: string; explanation: string } {
+function primarySignal(factors: SupplierRiskAnalysis['factors']): { name: string; icon: React.ReactNode; explanation: string } {
   const entries = Object.entries(factors ?? {}).sort(([, a], [, b]) => b.weighted - a.weighted)
-  if (!entries.length) return { name: '', icon: '⚠️', explanation: 'Risk score elevated' }
+  if (!entries.length) return { name: '', icon: <AlertTriangle size={16} />, explanation: 'Risk score elevated' }
   const [name, f] = entries[0]
-  return { name, icon: FACTOR_ICON[name] ?? '⚠️', explanation: f.explanation }
+  return { name, icon: FACTOR_ICON[name] ?? <AlertTriangle size={16} />, explanation: f.explanation }
 }
 
 /* ── Critical Issues table ───────────────────────────────────────────── */
@@ -527,10 +604,10 @@ function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]
           return (
             <tr key={r.supplier_id} onClick={() => navigate(`/risks/${r.supplier_id}`)}>
               <td style={{ maxWidth: '280px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1.4 }}>{signal.icon}</span>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.625rem' }}>
+                  <span style={{ flexShrink: 0, marginTop: '2px', color: 'var(--ink-3)' }}>{signal.icon}</span>
                   <div>
-                    <div style={{ fontWeight: 600, color: 'var(--ink-1)', fontSize: '0.8125rem', lineHeight: 1.4 }}>
+                    <div style={{ fontWeight: 500, color: 'var(--ink-1)', fontSize: '0.8125rem', lineHeight: 1.4 }}>
                       {card?.title ?? signal.explanation}
                     </div>
                     <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '2px' }}>
@@ -540,7 +617,7 @@ function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]
                 </div>
               </td>
               <td>
-                <div style={{ fontWeight: 600, color: 'var(--ink-1)', fontSize: '0.8125rem' }}>{r.supplier_name}</div>
+                <div style={{ fontWeight: 500, color: 'var(--ink-1)', fontSize: '0.8125rem' }}>{r.supplier_name}</div>
                 {card && (
                   <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', marginTop: '2px' }}>
                     {card.city} · {card.region}
@@ -553,7 +630,7 @@ function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]
                     <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--ink-2)' }}>
                       {card.affected_skus} SKU{card.affected_skus !== 1 ? 's' : ''}
                     </div>
-                    <div style={{ fontSize: '0.6875rem', color: card.days_to_stockout <= 7 ? '#DC2626' : 'var(--ink-4)', marginTop: '2px' }}>
+                    <div style={{ fontSize: '0.6875rem', color: card.days_to_stockout <= 7 ? '#c55b55' : 'var(--ink-4)', marginTop: '2px' }}>
                       {card.days_to_stockout}d to stockout
                     </div>
                   </div>
@@ -561,7 +638,7 @@ function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]
               </td>
               <td>
                 {card ? (
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#DC2626', fontFamily: 'JetBrains Mono, monospace' }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: '#c55b55', fontFamily: 'JetBrains Mono, monospace' }}>
                     {formatINR(card.financial_exposure_inr)}
                   </div>
                 ) : <span style={{ color: 'var(--ink-5)', fontSize: '0.75rem' }}>—</span>}
@@ -572,7 +649,7 @@ function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]
                     <div style={{
                       width: `${(r.overall_score * 100).toFixed(0)}%`,
                       height: '100%',
-                      background: r.risk_level === 'critical' ? '#DC2626' : r.risk_level === 'high' ? '#D97706' : '#2563EB',
+                      background: r.risk_level === 'critical' ? '#c55b55' : r.risk_level === 'high' ? '#D29729' : '#52bde0',
                       borderRadius: '999px',
                       transition: 'width 0.6s cubic-bezier(0.34,1.56,0.64,1)',
                     }} />
@@ -594,42 +671,53 @@ function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]
 /* ── Recent disruptions feed ─────────────────────────────────────────── */
 function DisruptionFeed({ disruptions }: { disruptions: Disruption[] }) {
   const navigate = useNavigate()
-  const TYPE_ICON: Record<string, string> = { cyclone: '🌀', strike: '🚛', logistics: '📦', inventory: '🏭', quality: '🔍', regulatory: '📋' }
+  const TYPE_ICON: Record<string, React.ReactNode> = { cyclone: <Wind size={18} />, strike: <Truck size={18} />, logistics: <Package size={18} />, inventory: <Activity size={18} />, quality: <Search size={18} />, regulatory: <ClipboardList size={18} /> }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {disruptions.slice(0, 5).map(d => (
-        <div
-          key={d.id}
-          onClick={() => navigate(`/risks/${d.supplier_id}`)}
-          style={{
-            display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
-            padding: '0.75rem',
-            background: d.is_active ? 'rgba(220,38,38,0.03)' : 'var(--bg-app)',
-            border: `1px solid ${d.is_active ? 'rgba(220,38,38,0.12)' : 'var(--border)'}`,
-            borderRadius: '0.625rem',
-            cursor: 'pointer',
-            transition: 'background 150ms',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = d.is_active ? 'rgba(220,38,38,0.06)' : '#F0F4F8')}
-          onMouseLeave={e => (e.currentTarget.style.background = d.is_active ? 'rgba(220,38,38,0.03)' : 'var(--bg-app)')}
-        >
-          <span style={{ fontSize: '1.125rem', flexShrink: 0, marginTop: '1px' }}>{TYPE_ICON[d.disruption_type] || '⚠️'}</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {d.title}
+    <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '1rem', overflow: 'hidden' }}>
+      {disruptions.slice(0, 5).map((d, i, arr) => (
+        <div key={d.id}>
+          <div
+            onClick={() => navigate(`/risks/${d.supplier_id}`)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '1rem',
+              padding: '1rem 1.25rem',
+              background: 'transparent',
+              cursor: 'pointer',
+              transition: 'background 200ms ease',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--bg-hover)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '0.5rem', background: d.is_active ? '#fed2c040' : 'var(--bg-hover)', color: d.is_active ? '#c55b55' : '#000', flexShrink: 0 }}>
+              {TYPE_ICON[d.disruption_type] || <AlertTriangle size={18} />}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-              <Badge level={d.severity} />
-              {d.region && <span style={{ fontSize: '0.6875rem', color: 'var(--ink-3)' }}>{d.region}</span>}
-              {d.is_active && (
-                <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ACTIVE</span>
-              )}
+            
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--ink-1)', lineHeight: 1.4, marginBottom: '0.25rem' }}>
+                {d.title}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                <Badge level={d.severity} />
+                {d.region && <span style={{ fontSize: '0.6875rem', color: 'var(--ink-2)', fontWeight: 500 }}>{d.region}</span>}
+                {d.is_active && (
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#c55b55', letterSpacing: '0.01em' }}>ACTIVE</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--ink-1)' }}>{d.affected_skus_count}</div>
+              <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', marginTop: '1px', fontWeight: 500 }}>SKUs</div>
             </div>
           </div>
-          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', flexShrink: 0, textAlign: 'right' }}>
-            {d.affected_skus_count} SKUs
-          </div>
+          {i < arr.length - 1 && (
+            <div style={{ height: '1px', background: 'var(--border)', margin: '0 1.25rem' }} />
+          )}
         </div>
       ))}
     </div>
@@ -642,34 +730,49 @@ function TopExposures({ financial }: { financial: any }) {
   const top = financial?.top_exposures?.slice(0, 5) ?? []
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {top.map((e: any) => (
-        <div
-          key={e.supplier_id}
-          onClick={() => navigate(`/companies/${e.supplier_id}`)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '0.75rem',
-            padding: '0.625rem 0.75rem',
-            background: 'var(--bg-app)',
-            border: '1px solid #E2E8F0',
-            borderRadius: '0.625rem',
-            cursor: 'pointer',
-            transition: 'background 150ms',
-          }}
-          onMouseEnter={e2 => (e2.currentTarget.style.background = '#F0F4F8')}
-          onMouseLeave={e2 => (e2.currentTarget.style.background = 'var(--bg-app)')}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {e.supplier_name}
+    <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '1rem', overflow: 'hidden' }}>
+      {top.map((e: any, i: number, arr: any[]) => (
+        <div key={e.supplier_id}>
+          <div
+            onClick={() => navigate(`/companies/${e.supplier_id}`)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '1rem',
+              padding: '1rem 1.25rem',
+              background: 'transparent',
+              cursor: 'pointer',
+              transition: 'background 200ms ease',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--bg-hover)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '0.5rem', background: 'var(--bg-hover)', color: '#000', flexShrink: 0 }}>
+              <Users size={18} />
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--ink-1)', marginBottom: '0.25rem' }}>
+                {e.supplier_name}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <Badge level={e.exposure_level} />
+                <span style={{ fontSize: '0.6875rem', color: 'var(--ink-2)', fontWeight: 500 }}>Active Supplier</span>
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: e.exposure_level === 'critical' ? '#c55b55' : '#000', fontFamily: 'Outfit, sans-serif' }}>
+                {formatINR(e.total_exposure_inr)}
+              </div>
+              <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', marginTop: '1px', fontWeight: 500 }}>Exposure</div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            <Badge level={e.exposure_level} />
-            <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#DC2626', fontFamily: 'JetBrains Mono, monospace' }}>
-              {formatINR(e.total_exposure_inr)}
-            </span>
-          </div>
+          {i < arr.length - 1 && (
+            <div style={{ height: '1px', background: 'var(--border)', margin: '0 1.25rem' }} />
+          )}
         </div>
       ))}
     </div>
@@ -682,35 +785,49 @@ function PendingActions({ cards }: { cards: ActionCard[] }) {
   const top = cards.filter(c => !c.is_resolved).slice(0, 5)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {top.map(card => (
-        <div
-          key={card.id}
-          onClick={() => navigate('/risks')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '0.625rem',
-            padding: '0.625rem 0.75rem',
-            background: card.priority === 'critical' ? 'rgba(220,38,38,0.03)' : 'var(--bg-app)',
-            border: `1px solid ${card.priority === 'critical' ? 'rgba(220,38,38,0.12)' : 'var(--border)'}`,
-            borderLeft: `3px solid ${card.priority === 'critical' ? '#DC2626' : card.priority === 'high' ? '#D97706' : card.priority === 'medium' ? '#2563EB' : '#059669'}`,
-            borderRadius: '0.625rem',
-            cursor: 'pointer',
-            transition: 'background 150ms',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = '#F0F4F8')}
-          onMouseLeave={e => (e.currentTarget.style.background = card.priority === 'critical' ? 'rgba(220,38,38,0.03)' : 'var(--bg-app)')}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {card.title}
+    <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '1rem', overflow: 'hidden' }}>
+      {top.map((card, i, arr) => (
+        <div key={card.id}>
+          <div
+            onClick={() => navigate('/risks')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '1rem',
+              padding: '1rem 1.25rem',
+              background: 'transparent',
+              cursor: 'pointer',
+              transition: 'background 200ms ease',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--bg-hover)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '0.5rem', background: 'var(--bg-hover)', color: '#000', flexShrink: 0 }}>
+              <ClipboardList size={18} />
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--ink-1)', marginBottom: '0.25rem', lineHeight: 1.4 }}>
+                {card.title}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <Badge level={card.priority} />
+                <span style={{ fontSize: '0.6875rem', color: 'var(--ink-2)', fontWeight: 500 }}>Requires Action</span>
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: card.priority === 'critical' ? '#c55b55' : '#000' }}>
+                {formatINR(card.estimated_impact_inr)}
+              </div>
+              <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', marginTop: '1px', fontWeight: 500 }}>Impact</div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            <Badge level={card.priority} />
-            <span style={{ fontSize: '0.75rem', fontFamily: 'JetBrains Mono, monospace', color: 'var(--ink-3)' }}>
-              {formatINR(card.estimated_impact_inr)}
-            </span>
-          </div>
+          {i < arr.length - 1 && (
+            <div style={{ height: '1px', background: 'var(--border)', margin: '0 1.25rem' }} />
+          )}
         </div>
       ))}
     </div>
@@ -748,33 +865,10 @@ export function Dashboard() {
   const topRiskCard = topRisk ? cardMap.get(topRisk.supplier_id) : undefined
 
   const KPI_ICONS = {
-    critical: (
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <path d="M10 2L17.5 15.5H2.5L10 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-        <path d="M10 8v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <circle cx="10" cy="13.5" r="0.75" fill="currentColor" />
-      </svg>
-    ),
-    financial: (
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M10 6v8M7.5 8.5C7.5 7.4 8.6 7 10 7s2.5.6 2.5 1.5c0 2-5 2-5 4 0 1.1 1.1 1.5 2.5 1.5s2.5-.4 2.5-1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    ),
-    suppliers: (
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <circle cx="8" cy="7" r="3" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M2 17c0-3.3 2.7-6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M14 11l2 2 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-    stockout: (
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <rect x="2" y="5" width="16" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M6 5V4a2 2 0 0 1 4 0v1M10 5V4a2 2 0 0 1 4 0v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M7 11h6M7 14h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    ),
+    critical: <AlertTriangle size={20} />,
+    financial: <DollarSign size={20} />,
+    suppliers: <Users size={20} />,
+    stockout: <Package size={20} />,
   }
 
   return (
@@ -790,18 +884,13 @@ export function Dashboard() {
       )}
 
       {/* ── Page header ─────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.375rem' }}>
-            <span style={{ fontSize: '0.6875rem', fontWeight: 700, padding: '2px 8px', borderRadius: '999px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Indian FMCG · Procurement Manager View
-            </span>
-          </div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>
-            FMCG Supply Chain Command Centre
+          <h1 style={{ fontSize: '1.625rem', fontWeight: 600, color: 'var(--ink-1)', letterSpacing: '-0.025em', marginBottom: '0.25rem' }}>
+            Supply Dashboard
           </h1>
-          <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)' }}>
-            5 Tier-1 vendors · 10 Tier-2 suppliers · 18 critical SKUs · 3 disruption-prone regions
+          <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)', fontWeight: 400 }}>
+            Welcome back, Cipher!
           </p>
         </div>
 
@@ -809,26 +898,28 @@ export function Dashboard() {
         <button
           onClick={() => setShowBoardBrief(true)}
           style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.625rem 1.125rem',
-            background: 'var(--ink-1)',
-            color: 'var(--bg-card)',
-            borderRadius: '0.625rem',
+            display: 'flex', alignItems: 'center', gap: '0.625rem',
+            padding: '0.625rem 1.25rem',
+            background: '#1e293b',
+            color: '#fff',
+            borderRadius: '2rem',
             border: 'none',
             cursor: 'pointer',
             fontSize: '0.8125rem',
-            fontWeight: 700,
+            fontWeight: 600,
             fontFamily: 'inherit',
-            boxShadow: '0 2px 8px rgba(15,23,42,0.2)',
-            transition: 'transform 100ms, box-shadow 100ms',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            transition: 'all 200ms ease',
           }}
           onMouseEnter={e => {
+            e.currentTarget.style.background = '#0f172a'
             e.currentTarget.style.transform = 'translateY(-1px)'
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(15,23,42,0.3)'
+            e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.15)'
           }}
           onMouseLeave={e => {
+            e.currentTarget.style.background = '#1e293b'
             e.currentTarget.style.transform = 'translateY(0)'
-            e.currentTarget.style.boxShadow = '0 2px 8px rgba(15,23,42,0.2)'
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
           }}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -839,37 +930,16 @@ export function Dashboard() {
         </button>
       </div>
 
-      {/* ── AI Pipeline Status ───────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.625rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '0.625rem', fontSize: '0.75rem' }}>
-        <span style={{ fontWeight: 700, color: 'var(--ink-2)' }}>AI Pipeline:</span>
-        {[
-          { label: 'Signal Intelligence', icon: '📡', done: !loadingRisks },
-          { label: 'Risk Assessment',     icon: '⚖️', done: !loadingRisks && riskList.length > 0 },
-          { label: 'Prescriptive Action', icon: '💡', done: !!procCards },
-          { label: 'Conversational Advisor', icon: '🤖', done: !!procCards },
-        ].map((agent, i) => (
-          <div key={agent.label} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-            {i > 0 && <span style={{ color: 'var(--ink-5)' }}>→</span>}
-            <span style={{ fontSize: '0.875rem' }}>{agent.icon}</span>
-            <span style={{ color: agent.done ? 'var(--ink-2)' : 'var(--ink-4)', fontWeight: agent.done ? 600 : 400 }}>{agent.label}</span>
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%', display: 'inline-block',
-              background: agent.done ? '#059669' : '#D97706',
-              boxShadow: agent.done ? 'none' : '0 0 0 2px #FDE68A',
-            }} />
-          </div>
-        ))}
-        <span style={{ marginLeft: 'auto', color: 'var(--ink-4)', fontSize: '0.6875rem' }}>Orchestrated by AWS Strands Supervisor Agent</span>
-      </div>
+
 
       {/* ── Custom weights notice ───────────────────────────────────── */}
       {customWeightsActive && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: '0.625rem',
           padding: '0.5rem 0.875rem',
-          background: '#EFF6FF', border: '1px solid #BFDBFE',
+          background: '#a8def0', border: '1px solid #a8def0',
           borderRadius: '0.625rem',
-          fontSize: '0.75rem', color: '#1D4ED8',
+          fontSize: '0.75rem', color: '#52bde0',
         }}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
@@ -878,7 +948,7 @@ export function Dashboard() {
           <span><strong>Custom risk weights active</strong> — scores are recomputed using your Settings configuration.</span>
           <button
             onClick={() => navigate('/settings')}
-            style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#2563EB', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#52bde0', fontWeight: 500, background: 'none', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'inherit' }}
           >
             Edit weights →
           </button>
@@ -895,38 +965,46 @@ export function Dashboard() {
         <KPICard
           label="Critical Issues"
           value={loadingRisks ? '—' : criticalCount}
-          sub={`${highRiskCount} total high/critical of ${riskList.length} suppliers`}
-          accent="#DC2626"
+          sub={`${highRiskCount} total high/critical`}
+          accent="#c55b55"
           icon={KPI_ICONS.critical}
           loading={loadingRisks}
           onClick={() => navigate('/risks?filter=critical')}
+          trend={criticalCount > 0 ? 12 : 0}
+          invertTrend
         />
         <KPICard
           label="Financial Exposure"
           value={loadingSummary ? '—' : formatINR(financial?.total_financial_exposure_inr ?? 0)}
           sub={`Revenue at risk: ${formatINR(financial?.total_revenue_at_risk_inr ?? 0)}`}
-          accent="#D97706"
+          accent="#D29729"
           icon={KPI_ICONS.financial}
           loading={loadingSummary}
           onClick={() => navigate('/risks')}
+          trend={8}
+          invertTrend
         />
         <KPICard
           label="Suppliers at Risk"
           value={loadingSummary ? '—' : `${summary?.supplier_health?.high_risk_count ?? 0}`}
           sub={`of ${summary?.supplier_health?.total_suppliers ?? 0} total · ${((summary?.supplier_health?.avg_reliability ?? 0) * 100).toFixed(0)}% avg reliability`}
-          accent="#7C3AED"
+          accent="#6D28D9"
           icon={KPI_ICONS.suppliers}
           loading={loadingSummary}
           onClick={() => navigate('/companies')}
+          trend={-3}
+          invertTrend
         />
         <KPICard
           label="Stockout Alerts"
           value={loadingSummary ? '—' : (stockout?.critical_count ?? 0)}
           sub={`${formatINR(stockout?.total_revenue_at_risk_inr ?? 0)} revenue at risk`}
-          accent="#2563EB"
+          accent="#52bde0"
           icon={KPI_ICONS.stockout}
           loading={loadingSummary}
           onClick={() => navigate('/risks')}
+          trend={5}
+          invertTrend
         />
       </div>
 
@@ -953,10 +1031,10 @@ export function Dashboard() {
           <SectionHeader title="Supplier Geography" />
           <div style={{
             background: 'var(--bg-card)',
-            border: '1px solid #E2E8F0',
-            borderRadius: '0.875rem',
-            padding: '1rem',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            border: '1px solid var(--border)',
+            borderRadius: '1rem',
+            padding: '1.25rem',
+            boxShadow: 'var(--shadow-card)',
             height: '420px',
           }}>
             {(loadingSuppliers || loadingRisks)
@@ -983,15 +1061,10 @@ export function Dashboard() {
             action="View all"
             onAction={() => navigate('/risks')}
           />
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem',
-            padding: '1rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          }}>
             {loadingDisruptions
               ? <><Skeleton h={64} /><Skeleton h={64} /><Skeleton h={64} /></>
               : <DisruptionFeed disruptions={disruptions?.disruptions ?? []} />
             }
-          </div>
         </div>
 
         {/* Financial Exposure */}
@@ -1001,15 +1074,10 @@ export function Dashboard() {
             action="View all"
             onAction={() => navigate('/risks')}
           />
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem',
-            padding: '1rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          }}>
             {!financial
               ? <><Skeleton h={52} /><Skeleton h={52} /><Skeleton h={52} /></>
               : <TopExposures financial={financial} />
             }
-          </div>
         </div>
 
         {/* Pending Actions */}
@@ -1019,15 +1087,10 @@ export function Dashboard() {
             action="View all"
             onAction={() => navigate('/risks')}
           />
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem',
-            padding: '1rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          }}>
             {!actionData
               ? <><Skeleton h={52} /><Skeleton h={52} /><Skeleton h={52} /></>
               : <PendingActions cards={actionData.action_cards} />
             }
-          </div>
         </div>
 
       </div>
