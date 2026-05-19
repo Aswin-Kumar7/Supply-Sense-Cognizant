@@ -25,8 +25,11 @@ async def lifespan(app: FastAPI):
     """Application lifecycle: startup and shutdown."""
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
-    await init_db()
-    logger.info("Database tables initialized")
+    try:
+        await init_db()
+        logger.info("Database tables initialized")
+    except Exception as exc:
+        logger.warning(f"Database init failed (will retry on first request): {exc}")
 
     # Start synthetic event engine
     await synthetic_engine.start()

@@ -10,7 +10,7 @@ This service is the single source of truth for dashboard KPIs.
 Future modules will add AI-computed predictions here.
 """
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.supplier import Supplier
@@ -46,23 +46,35 @@ class DashboardService:
         )
 
     async def _compute_supplier_health(self) -> SupplierHealthSummary:
-        """Aggregate supplier risk levels from risk snapshots."""
+        """Aggregate supplier risk levels from the LATEST snapshot per supplier only."""
         total_q = await self.db.execute(select(func.count(Supplier.id)))
         total = total_q.scalar() or 0
 
         avg_rel_q = await self.db.execute(select(func.avg(Supplier.reliability_score)))
         avg_reliability = round(avg_rel_q.scalar() or 0.0, 3)
 
-        # Count by risk level from snapshots
-        high_q = await self.db.execute(
-            select(func.count(RiskSnapshot.id)).where(RiskSnapshot.risk_level == "critical")
+        # Latest snapshot date per supplier (avoids counting 31 days × 5 suppliers = 155 rows)
+        latest_subq = (
+            select(
+                RiskSnapshot.supplier_id,
+                func.max(RiskSnapshot.snapshot_at).label("max_date"),
+            )
+            .group_by(RiskSnapshot.supplier_id)
+            .subquery()
         )
-        high_risk = high_q.scalar() or 0
+        latest_levels_q = await self.db.execute(
+            select(RiskSnapshot.risk_level).join(
+                latest_subq,
+                and_(
+                    RiskSnapshot.supplier_id == latest_subq.c.supplier_id,
+                    RiskSnapshot.snapshot_at == latest_subq.c.max_date,
+                ),
+            )
+        )
+        levels = latest_levels_q.scalars().all()
 
-        med_q = await self.db.execute(
-            select(func.count(RiskSnapshot.id)).where(RiskSnapshot.risk_level.in_(["high", "medium"]))
-        )
-        medium_risk = med_q.scalar() or 0
+        high_risk = sum(1 for r in levels if r == "critical")
+        medium_risk = sum(1 for r in levels if r in ("high", "medium"))
 
         return SupplierHealthSummary(
             total_suppliers=total,

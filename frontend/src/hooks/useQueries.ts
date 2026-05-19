@@ -7,7 +7,8 @@ import { DEFAULT_BUFFER_MS } from './useGlobalSync'
 const STORAGE_KEY_BUFFER = 'ss_cache_buffer_ms'
 function getBufferMs() {
   const raw = localStorage.getItem(STORAGE_KEY_BUFFER)
-  return raw ? parseInt(raw, 10) : DEFAULT_BUFFER_MS
+  const parsed = raw ? parseInt(raw, 10) : NaN
+  return Number.isFinite(parsed) ? parsed : DEFAULT_BUFFER_MS
 }
 
 export function useDashboardSummary() {
@@ -63,10 +64,9 @@ export function useStockoutForecast() {
 
 export function useProcurementCards() {
   const bufferMs = getBufferMs()
-  const ttlSeconds = Math.round(bufferMs / 1000)
   return useQuery({
     queryKey: queryKeys.procurement,
-    queryFn: () => concurrencyLimitedFetch(() => api.getIntelligentActionCards(ttlSeconds)),
+    queryFn: () => concurrencyLimitedFetch(() => api.getIntelligentActionCards()),
     staleTime: bufferMs,
   })
 }
@@ -81,10 +81,9 @@ export function useSKUs() {
 
 export function useExecutiveBrief() {
   const bufferMs = getBufferMs()
-  const ttlSeconds = Math.round(bufferMs / 1000)
   return useQuery({
     queryKey: queryKeys.executiveBrief,
-    queryFn: () => concurrencyLimitedFetch(() => api.getExecutiveBrief(ttlSeconds)),
+    queryFn: () => concurrencyLimitedFetch(() => api.getExecutiveBrief()),
     staleTime: bufferMs,
     refetchInterval: bufferMs,
   })
@@ -101,9 +100,11 @@ export function useActionCards() {
 
 export function useHealth() {
   return useQuery({
-    queryKey: queryKeys.health,
-    queryFn: () => concurrencyLimitedFetch(() => api.getHealth()),
-    staleTime: 20_000,
+    queryKey: ['health'],
+    queryFn: () => api.getHealth(),
+    staleTime: 15_000,
     refetchInterval: 30_000,
+    retry: false,
   })
 }
+

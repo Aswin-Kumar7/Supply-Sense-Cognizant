@@ -90,30 +90,39 @@ class FinancialExposureEngine:
         active_disruptions: list[dict],
         delivery_stats: dict,
         cascade_impact: float = 0.0,
+        festival_demand_multiplier: float = 1.0,
+        supplier_lead_time_days: int = 7,
     ) -> SupplierExposure:
         """
         Compute total financial exposure for a supplier.
-        
+
         Components:
-        1. Revenue at risk: SKU value × stockout probability
-        2. SLA penalties: historical + projected
+        1. Revenue at risk: SKU value × stockout probability (festival-adjusted demand)
+        2. SLA penalties: historical + projected over lead-time window
         3. Stockout cost: lost sales + brand damage
         4. Mitigation cost: what it would cost to fix
         """
-        # Revenue at risk: sum of (stock_value × risk_factor)
+        # Revenue at risk: effective demand accounts for festival surge
         revenue_at_risk = 0.0
         for sku in skus:
-            days_of_stock = sku["current_stock"] / max(1, sku["daily_demand_avg"])
-            risk_factor = max(0, 1.0 - (days_of_stock / 14))  # Higher risk if < 14 days
-            sku_value = sku["current_stock"] * sku["unit_cost_inr"]
+            stock = float(sku.get("current_stock") or 0)
+            base_demand = float(sku.get("daily_demand_avg") or 1) or 1
+            effective_demand = base_demand * festival_demand_multiplier
+            cost = float(sku.get("unit_cost_inr") or 0)
+            days_of_stock = stock / max(effective_demand, 1)
+            risk_factor = max(0.0, 1.0 - (days_of_stock / 14))
+            sku_value = stock * cost
             revenue_at_risk += sku_value * risk_factor
 
-        # SLA penalties: based on delivery history
-        historical_penalties = delivery_stats.get("total_penalties_inr", 0)
+        # SLA penalties: units in transit during disruption = daily_demand × lead_time window
+        historical_penalties = float(delivery_stats.get("total_penalties_inr") or 0)
         projected_penalties = 0.0
         if active_disruptions:
-            avg_delay = delivery_stats.get("avg_delay_days", 2)
-            total_units = sum(s["daily_demand_avg"] * 7 for s in skus)  # 7-day projection
+            avg_delay = float(delivery_stats.get("avg_delay_days") or 2) or 2
+            # Units at risk = one lead-time worth of orders per SKU
+            total_units = sum(
+                float(s.get("daily_demand_avg") or 0) * supplier_lead_time_days for s in skus
+            )
             projected_penalties = total_units * avg_delay * self.SLA_PENALTY_RATE
 
         sla_penalties = historical_penalties + projected_penalties
@@ -121,20 +130,25 @@ class FinancialExposureEngine:
         # Stockout cost: units at risk × cost × multiplier
         stockout_cost = 0.0
         for sku in skus:
-            days_of_stock = sku["current_stock"] / max(1, sku["daily_demand_avg"])
+            stock = float(sku.get("current_stock") or 0)
+            demand = float(sku.get("daily_demand_avg") or 1) or 1
+            cost = float(sku.get("unit_cost_inr") or 0)
+            days_of_stock = stock / demand
             if days_of_stock < 7:
-                days_without = max(0, 7 - days_of_stock)
-                units_lost = days_without * sku["daily_demand_avg"]
-                stockout_cost += units_lost * sku["unit_cost_inr"] * self.STOCKOUT_MULTIPLIER
+                days_without = max(0.0, 7 - days_of_stock)
+                units_lost = days_without * demand
+                stockout_cost += units_lost * cost * self.STOCKOUT_MULTIPLIER
 
         # Mitigation cost: expedite premium on affected SKUs
         mitigation_cost = sum(
-            s["daily_demand_avg"] * 7 * s["unit_cost_inr"] * self.EXPEDITE_PREMIUM
+            float(s.get("daily_demand_avg") or 0) * 7
+            * float(s.get("unit_cost_inr") or 0) * self.EXPEDITE_PREMIUM
             for s in skus
         ) if active_disruptions else 0.0
 
-        # Add cascade amplification
-        cascade_amplifier = 1.0 + (cascade_impact * 0.5)
+        # Add cascade amplification (Tier-2 disruptions propagate to Tier-1)
+        cascade_impact_safe = float(cascade_impact or 0)
+        cascade_amplifier = 1.0 + (cascade_impact_safe * 0.5)
         total_exposure = (revenue_at_risk + sla_penalties + stockout_cost) * cascade_amplifier
 
         # Determine exposure level
@@ -153,7 +167,14 @@ class FinancialExposureEngine:
                 "revenue_at_risk": round(revenue_at_risk, 2),
                 "sla_penalties": round(sla_penalties, 2),
                 "stockout_cost": round(stockout_cost, 2),
+                "mitigation_cost": round(mitigation_cost, 2),
                 "cascade_amplifier": round(cascade_amplifier, 3),
+                "cascade_impact": round(cascade_impact_safe, 4),
+                "subtotal_before_cascade": round(revenue_at_risk + sla_penalties + stockout_cost, 2),
+                "total_exposure": round(total_exposure, 2),
+                # Multiplier explanation for UI display
+                "stockout_multiplier": self.STOCKOUT_MULTIPLIER,
+                "sla_penalty_rate_per_unit_day": self.SLA_PENALTY_RATE,
             },
         )
 
@@ -223,8 +244,8 @@ class FinancialExposureEngine:
             current_exposure_inr=current_exposure,
             mitigated_exposure_inr=round(max(0, mitigated_exposure), 2),
             savings_inr=round(best.exposure_reduction_inr - best.cost_inr, 2),
-            risk_before=min(1.0, current_exposure / 500000),  # Normalize to 0-1
-            risk_after=min(1.0, max(0, mitigated_exposure) / 500000),
+            risk_before=1.0,  # current exposure is the 100% baseline
+            risk_after=round(max(0.0, mitigated_exposure) / max(current_exposure, 1), 3),
             options=options,
         )
 

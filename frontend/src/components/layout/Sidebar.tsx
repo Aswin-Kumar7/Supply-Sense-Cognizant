@@ -176,23 +176,33 @@ export function Sidebar() {
         <span style={{ fontSize: '1.125rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em' }}>SupplySense</span>
       </div>
 
-      <SidebarSection label="Dashboard" />
-      <SidebarLink to="/" icon={Icons.dashboard} label="Overview" end />
+      {/* ── Procurement Manager ── */}
+      <SidebarSection label="Procurement Manager" />
+      <SidebarLink to="/" icon={Icons.dashboard} label="Command Centre" end />
+      <SidebarLink to="/risks" icon={Icons.risk} label="Risk Intelligence" badge={riskBadge} />
 
-      <SidebarSection label="General" />
-      <SidebarLink to="/risks" icon={Icons.risk} label="Analytics" badge={riskBadge} />
-      <SidebarLink to="/companies" icon={Icons.companies} label="Suppliers" />
-      <SidebarLink to="/alternate-suppliers" icon={Icons.alternates} label="Sales Report" />
-
+      {/* ── Supply Chain Analyst ── */}
+      <SidebarSection label="Supply Chain Analyst" />
+      <SidebarLink to="/companies" icon={Icons.companies} label="Supplier Network" />
+      <SidebarLink to="/alternate-suppliers" icon={Icons.alternates} label="Alternate Suppliers" />
+      <SidebarLink to="/data-integration" icon={
+        <svg width={16} height={16} viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0 }}>
+          <rect x="2" y="3" width="6" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+          <rect x="12" y="3" width="6" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+          <rect x="7" y="12" width="6" height="5" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+          <path d="M5 8v2h10V8M10 10v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      } label="Data Integration" />
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
       <div style={{ height: '1px', background: 'var(--border)', margin: '1rem 0' }} />
-      
-      <SidebarSection label="Support" />
-      <SidebarLink to="/settings" icon={Icons.settings} label="Settings" />
-      <SidebarLink to="/help" icon={<svg width={16} height={16} viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 14.5v.5M10 7c0-1.5 2-1.5 2 0 0 1.5-2 1.5-2 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>} label="Help Center" />
+
+      {/* ── Category Manager / Config ── */}
+      <SidebarSection label="Configuration" />
+      <SidebarLink to="/settings" icon={Icons.settings} label="Risk Weights" />
+      <SidebarLink to="/help" icon={<svg width={16} height={16} viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 14.5v.5M10 7c0-1.5 2-1.5 2 0 0 1.5-2 1.5-2 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>} label="Help" />
     </aside>
   )
 }

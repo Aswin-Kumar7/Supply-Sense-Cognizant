@@ -10,7 +10,7 @@ Provides:
 """
 
 from uuid import UUID
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -94,20 +94,53 @@ async def simulate_mitigation(supplier_id: UUID, db: AsyncSession = Depends(get_
     return await service.simulate_mitigation(supplier_id)
 
 
+@router.get("/financial/{supplier_id}/breakdown")
+async def get_financial_breakdown(supplier_id: UUID, db: AsyncSession = Depends(get_db)):
+    """
+    Return per-component TFE breakdown for a supplier.
+
+    Shows the exact arithmetic behind every number:
+    - Revenue at Risk = stock_value × stockout_probability
+    - SLA Penalties = historical + projected (₹50/unit/day)
+    - Stockout Cost = units_lost × cost × 2.5× multiplier
+    - Cascade Amplifier = 1.0 + (tier2_impact × 0.5)
+    - Total = (sum of components) × cascade_amplifier
+    """
+    service = RiskIntelligenceService(db)
+    return await service.get_financial_breakdown(supplier_id)
+
+
+@router.get("/trust/{supplier_id}")
+async def get_trust_score(supplier_id: UUID, db: AsyncSession = Depends(get_db)):
+    """
+    Return composite Trust Score (0–100) for a supplier.
+
+    Components:
+      Delivery Reliability (40%) — on-time rate from 30-day delivery history
+      AI Confidence        (30%) — signal agreement score from risk engine
+      Data Freshness       (20%) — volume of delivery records available
+      Guardrail Pass Rate  (10%) — AI outputs validated by Bedrock Guardrails
+
+    Levels: Verified ≥90 · Reliable ≥70 · Moderate ≥50 · Unverified <50
+    """
+    service = RiskIntelligenceService(db)
+    return await service.compute_trust_score(supplier_id)
+
+
 @router.get("/suppliers/{supplier_id}/history")
 async def get_supplier_risk_history(
     supplier_id: UUID,
-    days: int = 30,
+    days: int = Query(default=30, ge=1, le=90),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get risk score history for a supplier over the last N days.
+    Get risk score history for a supplier over the last N days (1–90).
     Returns a list of {date, risk_score, risk_level} entries suitable
     for sparkline / trend charts in the frontend.
     """
     from app.repositories.supplier_repo import SupplierRepository
     repo = SupplierRepository(db)
-    history = await repo.get_risk_history(supplier_id, days=min(days, 90))
+    history = await repo.get_risk_history(supplier_id, days=days)
     return {
         "supplier_id": str(supplier_id),
         "days": days,

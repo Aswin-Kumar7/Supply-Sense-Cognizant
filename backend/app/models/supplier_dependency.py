@@ -16,6 +16,11 @@ class SupplierDependency(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # supplier_id = Tier-1 vendor (the buyer — e.g. Bharat FMCG Industries)
+    # depends_on_id = Tier-2 upstream supplier (e.g. PackRight Solutions)
+    # Meaning: Tier-1 depends on Tier-2 for packaging / raw material.
+    # Cascade direction: if Tier-2 (depends_on_id) is disrupted,
+    #   the cascade engine finds Tier-1 (supplier_id) as the affected party.
     supplier_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=False
     )
@@ -24,5 +29,5 @@ class SupplierDependency(Base):
     )
     dependency_type: Mapped[str] = mapped_column(
         String(50), nullable=False
-    )  # raw_material, logistics, packaging
+    )  # raw_material, packaging, logistics
     criticality: Mapped[float] = mapped_column(Float, default=0.5)

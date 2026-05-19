@@ -90,7 +90,7 @@ export default function CompanyDetailPage() {
 
   const supplier: Supplier | undefined = supplierData?.suppliers.find(s => s.id === id)
   const risk: SupplierRiskAnalysis | undefined = ((risks as SupplierRiskAnalysis[] | undefined) ?? []).find(r => r.supplier_id === id)
-  const supplierSKUs: SKURisk[] = (skuData?.skus ?? []).filter(s => s.supplier_name === supplier?.name)
+  const supplierSKUs: SKURisk[] = (skuData?.skus ?? []).filter(s => s.supplier_id === id)
   const supplierDisruptions: Disruption[] = (disruptions?.disruptions ?? []).filter(d => d.supplier_id === id)
 
   if (!id) return null

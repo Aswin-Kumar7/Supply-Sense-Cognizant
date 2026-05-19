@@ -219,9 +219,11 @@ function MitigationSteps({ sim, accent }: { sim: MitigationSimulation; accent: s
 
 /* ── Before/After TFE Bar ────────────────────────────────────────────── */
 function TFEComparisonBar({ sim }: { sim: MitigationSimulation }) {
-  const pct = sim.current_exposure_inr > 0
-    ? (sim.mitigated_exposure_inr / sim.current_exposure_inr) * 100
+  // reductionPct = how much of the exposure is eliminated (green bar fills left to right showing reduction)
+  const reductionPct = sim.current_exposure_inr > 0
+    ? ((sim.current_exposure_inr - sim.mitigated_exposure_inr) / sim.current_exposure_inr) * 100
     : 50
+  const pct = reductionPct
 
   return (
     <div style={{
@@ -238,11 +240,16 @@ function TFEComparisonBar({ sim }: { sim: MitigationSimulation }) {
         </div>
         <div style={{ textAlign: 'center', padding: '0.875rem', background: 'rgba(5,150,105,0.04)', border: '1px solid rgba(5,150,105,0.15)', borderRadius: '0.625rem' }}>
           <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#059669', letterSpacing: '-0.02em' }}>{formatINR(sim.mitigated_exposure_inr)}</div>
-          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>After Mitigation</div>
+          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Residual Exposure</div>
         </div>
         <div style={{ textAlign: 'center', padding: '0.875rem', background: 'rgba(37,99,235,0.04)', border: '1px solid rgba(37,99,235,0.15)', borderRadius: '0.625rem' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#2563EB', letterSpacing: '-0.02em' }}>{formatINR(sim.savings_inr)}</div>
-          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Potential Saving</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#2563EB', letterSpacing: '-0.02em' }}>
+            {formatINR(sim.current_exposure_inr - sim.mitigated_exposure_inr)}
+          </div>
+          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Exposure Reduced</div>
+          <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', marginTop: '2px' }}>
+            Net after mitigation cost: {formatINR(sim.savings_inr)}
+          </div>
         </div>
       </div>
 
@@ -260,14 +267,16 @@ function TFEComparisonBar({ sim }: { sim: MitigationSimulation }) {
           transition: 'width 1s cubic-bezier(0.34,1.56,0.64,1)',
         }}>
           <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--bg-card)', whiteSpace: 'nowrap' }}>
-            After: {formatINR(sim.mitigated_exposure_inr)} ({pct.toFixed(0)}%)
+            Reduced by {pct.toFixed(0)}% — saves {formatINR(sim.current_exposure_inr - sim.mitigated_exposure_inr)}
           </span>
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
-        <span style={{ fontSize: '0.6875rem', color: '#059669', fontWeight: 600 }}>₹0</span>
+        <span style={{ fontSize: '0.6875rem', color: '#059669', fontWeight: 600 }}>
+          Eliminated: {formatINR(sim.current_exposure_inr - sim.mitigated_exposure_inr)}
+        </span>
         <span style={{ fontSize: '0.6875rem', color: '#DC2626', fontWeight: 600 }}>
-          Current: {formatINR(sim.current_exposure_inr)}
+          Residual risk: {formatINR(sim.mitigated_exposure_inr)}
         </span>
       </div>
     </div>
@@ -397,10 +406,20 @@ export default function RiskMitigationPlan() {
 
       {/* Impact KPI row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.875rem' }}>
-        <KPITile label="Total Financial Exposure" value={card ? formatINR(card.financial_exposure_inr) : '—'} sub="from financial engine" color="#DC2626" />
-        <KPITile label="Cascade Affected" value={cascade ? `${cascade.total_affected} suppliers` : '—'} sub={cascade ? `max depth ${cascade.max_depth}` : undefined} color="#D97706" />
-        <KPITile label="Revenue at Risk" value={card ? formatINR(card.financial_exposure_inr * 0.6) : '—'} sub="stockout engine estimate" color="#7C3AED" />
-        <KPITile label="Signal Confidence" value={risk ? `${(risk.confidence * 100).toFixed(0)}%` : '—'} sub={risk?.human_review_required ? '⚠ Human review flagged' : 'auto-eligible'} color={risk?.confidence && risk.confidence >= 0.8 ? '#059669' : '#D97706'} />
+        <KPITile label="Total Financial Exposure" value={card ? formatINR(card.financial_exposure_inr) : '—'} sub="Revenue + SLA penalties + stockout × cascade" color="#DC2626" />
+        <KPITile
+          label="Tier-2 Cascade"
+          value={cascade && cascade.total_affected > 0 ? `${cascade.total_affected} suppliers` : 'None'}
+          sub={cascade && cascade.total_affected > 0 ? `Amplifier: ${(1 + cascade.total_propagated_impact * 0.5).toFixed(3)}×` : 'No upstream cascade'}
+          color={cascade && cascade.total_affected > 0 ? '#D97706' : '#059669'}
+        />
+        <KPITile
+          label="Cascade Amplifier"
+          value={cascade && cascade.total_affected > 0 ? `${(1 + cascade.total_propagated_impact * 0.5).toFixed(3)}×` : '1.000×'}
+          sub={cascade && cascade.total_affected > 0 ? 'TFE is amplified by Tier-2 impact' : 'No amplification — Tier-2 stable'}
+          color={cascade && cascade.total_affected > 0 ? '#C2410C' : '#059669'}
+        />
+        <KPITile label="Signal Confidence" value={risk ? `${(risk.confidence * 100).toFixed(0)}%` : '—'} sub={risk?.human_review_required ? '⚠ Human review flagged' : 'Bedrock Guardrails: Passed'} color={risk?.confidence && risk.confidence >= 0.8 ? '#059669' : '#D97706'} />
       </div>
 
       {/* Signal confidence grid */}

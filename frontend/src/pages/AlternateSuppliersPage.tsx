@@ -20,12 +20,13 @@ function Skeleton({ h = 20, w = '100%' }: { h?: number; w?: string }) {
   return <div className="skeleton" style={{ height: h, width: w, borderRadius: 6 }} />
 }
 
-/* ── Derive a risk-like level from reliability score ─────────────────── */
+/* ── Map reliability score → risk level badge (high reliability = low risk) */
 function reliabilityLevel(score: number): 'low' | 'medium' | 'high' | 'critical' {
-  if (score >= 0.88) return 'low'
-  if (score >= 0.78) return 'medium'
-  if (score >= 0.65) return 'high'
-  return 'critical'
+  // Badge semantics: 'low' risk = supplier is reliable; 'critical' = unreliable
+  if (score >= 0.88) return 'low'      // ≥88% reliable → low-risk badge (green)
+  if (score >= 0.78) return 'medium'   // ≥78% → medium-risk badge (amber)
+  if (score >= 0.65) return 'high'     // ≥65% → high-risk badge (orange)
+  return 'critical'                     // <65% → critical-risk badge (red)
 }
 
 /* ── Generate rationale text from data (no hallucination) ────────────── */
@@ -42,8 +43,11 @@ function buildRationale(alt: AlternateSupplierRecord, primaryLead: number): stri
   const prem = alt.cost_premium_pct.toFixed(1)
   const rel = formatReliability(alt.reliability_score ?? alt.quality_score)
 
+  const reliability = alt.reliability_score ?? alt.quality_score
+  const isPreferredFallback = alt.cost_premium_pct < 10 && reliability >= 0.85
+  const role = isPreferredFallback ? 'primary fallback' : 'emergency backup'
   return `${alt.supplier_name} (${alt.city}) offers ${rel} reliability with ${leadStr} and ${qual}% quality score. ` +
-    `Cost premium vs. primary: +${prem}%. Suitable as ${alt.cost_premium_pct < 10 ? 'primary fallback' : 'emergency backup'}.`
+    `Cost premium vs. primary: +${prem}%. Suitable as ${role}.`
 }
 
 /* ── Alt supplier card ───────────────────────────────────────────────── */

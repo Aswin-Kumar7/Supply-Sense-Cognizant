@@ -48,6 +48,19 @@ S_GREENLEAF= SUPPLIER_IDS[2]
 S_PUREFARM = SUPPLIER_IDS[3]
 S_NORTHSTAR= SUPPLIER_IDS[4]
 
+# ── Tier-2 supplier IDs shorthand ───────────────────────────────────────
+# Each Tier-1 has two Tier-2 deps: packaging + raw_material
+T2_PACKRIGHT      = SUPPLIER_IDS[5]   # Bharat FMCG — packaging
+T2_GUJARAT_OLEO   = SUPPLIER_IDS[6]   # Bharat FMCG — raw material
+T2_TN_PACKAGING   = SUPPLIER_IDS[7]   # Sunrise — packaging
+T2_SPICE_VALLEY   = SUPPLIER_IDS[8]   # Sunrise — raw material
+T2_EASTBENGAL_PKG = SUPPLIER_IDS[9]   # GreenLeaf — packaging
+T2_PUNJAB_GRAIN   = SUPPLIER_IDS[10]  # GreenLeaf — raw material
+T2_GUJARAT_CONT   = SUPPLIER_IDS[11]  # PureFarm — packaging
+T2_KERALA_COCONUT = SUPPLIER_IDS[12]  # PureFarm — raw material
+T2_RAJASTHAN_PRINT= SUPPLIER_IDS[13]  # NorthStar — packaging
+T2_ASSAM_TEA      = SUPPLIER_IDS[14]  # NorthStar — raw material
+
 # ── FMCG SKU templates — 3-5 products per Tier-1 vendor ─────────────────
 # Each entry carries the Tier-1 supplier index so assignment is explicit.
 SKU_TEMPLATES = [
@@ -179,6 +192,61 @@ FIXED_DISRUPTIONS = [
         "region": "All India",
         "is_active": True,
     },
+    # ── TIER-2 DISRUPTIONS (active) — these cascade UP to Tier-1 suppliers ──
+    # Cascade engine: WHERE depends_on_id = Tier-2 → finds Tier-1 as affected
+    {
+        "supplier_id": T2_KERALA_COCONUT,
+        "disruption_type": "raw_material",
+        "severity": "critical",
+        "title": "Kerala Coconut Estates — drought harvest failure (Tier-2)",
+        "description": "Unprecedented drought across Kerala has caused a 60% drop in coconut yield. Kerala Coconut Estates has declared force majeure on all Q4 commitments. This directly impacts PureFarm Naturals' Coconut Oil 500ml and Herbal Shampoo production lines. Alternative sourcing from Sri Lanka adds 15-day lead time.",
+        "start_date": today - timedelta(days=2),
+        "end_date": None,
+        "impact_score": 0.88,
+        "affected_skus_count": 4,
+        "region": "South",
+        "is_active": True,
+    },
+    {
+        "supplier_id": T2_EASTBENGAL_PKG,
+        "disruption_type": "flood",
+        "severity": "high",
+        "title": "East Bengal Packaging — flood disrupts packaging supply (Tier-2)",
+        "description": "Severe monsoon flooding in West Bengal has impacted East Bengal Packaging's Kolkata facility. Primary packaging materials for GreenLeaf Agro Processing's Basmati Rice 5kg and Mustard Oil 1L lines are affected. 6-day packaging supply gap expected; GreenLeaf forced to halt bottling operations.",
+        "start_date": today - timedelta(days=1),
+        "end_date": None,
+        "impact_score": 0.74,
+        "affected_skus_count": 3,
+        "region": "East",
+        "is_active": True,
+    },
+    {
+        "supplier_id": T2_GUJARAT_OLEO,
+        "disruption_type": "logistics",
+        "severity": "high",
+        "title": "Gujarat Oleochemicals — JNPT port backlog delays raw material (Tier-2)",
+        "description": "Gujarat Oleochemicals' inbound oleochemical shipments are stuck at JNPT due to a 4-day port congestion backlog. This delays Bharat FMCG Industries' detergent and dishwash raw material replenishment. Estimated 5-day production impact on BFI-001 and BFI-002 SKU lines.",
+        "start_date": today - timedelta(days=3),
+        "end_date": None,
+        "impact_score": 0.68,
+        "affected_skus_count": 2,
+        "region": "West",
+        "is_active": True,
+    },
+    {
+        "supplier_id": T2_PUNJAB_GRAIN,
+        "disruption_type": "strike",
+        "severity": "medium",
+        "title": "Punjab Grain Traders — NH-44 strike blocks grain dispatch (Tier-2)",
+        "description": "The NH-44 transport worker strike has blocked Punjab Grain Traders' grain dispatch routes to GreenLeaf Agro Processing. Wheat Atta 10kg and Basmati Rice supply will be impacted. Punjab Grain is evaluating rail freight as an alternate but adds 3 days to lead time.",
+        "start_date": today - timedelta(days=2),
+        "end_date": None,
+        "impact_score": 0.58,
+        "affected_skus_count": 2,
+        "region": "North",
+        "is_active": True,
+    },
+
     # 3 LOW (resolved)
     {
         "supplier_id": S_PUREFARM,

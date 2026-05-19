@@ -29,7 +29,7 @@ dist/
 .env.local
 .env.*.local
 *.env
-
+CLAUDE.md
 # ── AWS credentials (never commit) ────────────────────────────────────────
 .aws/
 credentials

@@ -792,11 +792,16 @@ export function Dashboard() {
       {/* ── Page header ─────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '1rem' }}>
         <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.375rem' }}>
+            <span style={{ fontSize: '0.6875rem', fontWeight: 700, padding: '2px 8px', borderRadius: '999px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Indian FMCG · Procurement Manager View
+            </span>
+          </div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>
-            Sales Dashboard
+            FMCG Supply Chain Command Centre
           </h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)' }}>
-            Welcome back, Cipher!
+            5 Tier-1 vendors · 10 Tier-2 suppliers · 18 critical SKUs · 3 disruption-prone regions
           </p>
         </div>
 
@@ -834,17 +839,27 @@ export function Dashboard() {
         </button>
       </div>
 
-      {/* ── View selector ────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-1)' }}>
-          Select Views &rsaquo;
-        </div>
-        <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.8125rem', fontWeight: 500 }}>
-          <span style={{ color: 'var(--ink-4)', cursor: 'pointer' }}>Last 24 Hours</span>
-          <span style={{ color: 'var(--primary)', cursor: 'pointer', borderBottom: '2px solid var(--primary)', paddingBottom: '0.5rem', marginBottom: '-0.5rem' }}>Weekly View</span>
-          <span style={{ color: 'var(--ink-4)', cursor: 'pointer' }}>Monthly View</span>
-          <span style={{ color: 'var(--ink-4)', cursor: 'pointer' }}>Yearly View</span>
-        </div>
+      {/* ── AI Pipeline Status ───────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.625rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '0.625rem', fontSize: '0.75rem' }}>
+        <span style={{ fontWeight: 700, color: 'var(--ink-2)' }}>AI Pipeline:</span>
+        {[
+          { label: 'Signal Intelligence', icon: '📡', done: !loadingRisks },
+          { label: 'Risk Assessment',     icon: '⚖️', done: !loadingRisks && riskList.length > 0 },
+          { label: 'Prescriptive Action', icon: '💡', done: !!procCards },
+          { label: 'Conversational Advisor', icon: '🤖', done: !!procCards },
+        ].map((agent, i) => (
+          <div key={agent.label} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            {i > 0 && <span style={{ color: 'var(--ink-5)' }}>→</span>}
+            <span style={{ fontSize: '0.875rem' }}>{agent.icon}</span>
+            <span style={{ color: agent.done ? 'var(--ink-2)' : 'var(--ink-4)', fontWeight: agent.done ? 600 : 400 }}>{agent.label}</span>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%', display: 'inline-block',
+              background: agent.done ? '#059669' : '#D97706',
+              boxShadow: agent.done ? 'none' : '0 0 0 2px #FDE68A',
+            }} />
+          </div>
+        ))}
+        <span style={{ marginLeft: 'auto', color: 'var(--ink-4)', fontSize: '0.6875rem' }}>Orchestrated by AWS Strands Supervisor Agent</span>
       </div>
 
       {/* ── Custom weights notice ───────────────────────────────────── */}
@@ -880,13 +895,11 @@ export function Dashboard() {
         <KPICard
           label="Critical Issues"
           value={loadingRisks ? '—' : criticalCount}
-          sub={`${highRiskCount} total high/critical`}
+          sub={`${highRiskCount} total high/critical of ${riskList.length} suppliers`}
           accent="#DC2626"
           icon={KPI_ICONS.critical}
           loading={loadingRisks}
           onClick={() => navigate('/risks?filter=critical')}
-          trend={criticalCount > 0 ? 12 : 0}
-          invertTrend
         />
         <KPICard
           label="Financial Exposure"
@@ -896,8 +909,6 @@ export function Dashboard() {
           icon={KPI_ICONS.financial}
           loading={loadingSummary}
           onClick={() => navigate('/risks')}
-          trend={8}
-          invertTrend
         />
         <KPICard
           label="Suppliers at Risk"
@@ -907,8 +918,6 @@ export function Dashboard() {
           icon={KPI_ICONS.suppliers}
           loading={loadingSummary}
           onClick={() => navigate('/companies')}
-          trend={-3}
-          invertTrend
         />
         <KPICard
           label="Stockout Alerts"
@@ -918,8 +927,6 @@ export function Dashboard() {
           icon={KPI_ICONS.stockout}
           loading={loadingSummary}
           onClick={() => navigate('/risks')}
-          trend={5}
-          invertTrend
         />
       </div>
 
