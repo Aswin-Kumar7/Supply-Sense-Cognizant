@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     app_version: str = "0.5.0"
     environment: str = "development"
 
-    # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@database-1.c25uokww4a3c.us-east-1.rds.amazonaws.com:5432/supplysense"
+    # Database — must be set in .env (no hardcoded default)
+    database_url: str
 
     # AWS Bedrock
     aws_region: str = "us-east-1"

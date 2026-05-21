@@ -290,12 +290,23 @@ FIXED_DISRUPTIONS = [
 ]
 
 FESTIVAL_DATA = [
-    {"name": "Diwali",     "start": "2025-10-20", "end": "2025-10-24", "region": "All India", "multiplier": 2.5, "categories": "FMCG"},
-    {"name": "Navratri",   "start": "2025-09-29", "end": "2025-10-07", "region": "West,North", "multiplier": 1.8, "categories": "FMCG"},
-    {"name": "Pongal",     "start": "2026-01-14", "end": "2026-01-17", "region": "South",     "multiplier": 1.6, "categories": "FMCG"},
-    {"name": "Holi",       "start": "2026-03-02", "end": "2026-03-03", "region": "North,Central","multiplier": 1.7, "categories": "FMCG"},
-    {"name": "Onam",       "start": "2025-09-05", "end": "2025-09-07", "region": "South",     "multiplier": 1.5, "categories": "FMCG"},
-    {"name": "Durga Puja", "start": "2025-10-01", "end": "2025-10-05", "region": "East",      "multiplier": 2.0, "categories": "FMCG"},
+    # ── 2025 ──────────────────────────────────────────────────────────
+    {"name": "Onam",           "start": "2025-09-05", "end": "2025-09-07", "region": "South",        "multiplier": 1.5, "categories": "FMCG"},
+    {"name": "Navratri",       "start": "2025-09-29", "end": "2025-10-07", "region": "West,North",   "multiplier": 1.8, "categories": "FMCG"},
+    {"name": "Durga Puja",     "start": "2025-10-01", "end": "2025-10-05", "region": "East",         "multiplier": 2.0, "categories": "FMCG"},
+    {"name": "Diwali",         "start": "2025-10-20", "end": "2025-10-24", "region": "All India",    "multiplier": 2.5, "categories": "FMCG"},
+    # ── 2026 (early) ──────────────────────────────────────────────────
+    {"name": "Pongal",         "start": "2026-01-14", "end": "2026-01-17", "region": "South",        "multiplier": 1.6, "categories": "FMCG"},
+    {"name": "Holi",           "start": "2026-03-02", "end": "2026-03-03", "region": "North,Central","multiplier": 1.7, "categories": "FMCG"},
+    # ── 2026 (current + upcoming) ─────────────────────────────────────
+    {"name": "Eid ul-Adha",    "start": "2026-06-07", "end": "2026-06-09", "region": "All India",    "multiplier": 1.9, "categories": "FMCG"},
+    {"name": "Rakshabandhan",  "start": "2026-08-22", "end": "2026-08-23", "region": "North,West",   "multiplier": 1.5, "categories": "FMCG"},
+    {"name": "Ganesh Chaturthi","start": "2026-08-26","end": "2026-09-04", "region": "West,South",   "multiplier": 1.8, "categories": "FMCG"},
+    {"name": "Onam 2026",      "start": "2026-08-25", "end": "2026-08-27", "region": "South",        "multiplier": 1.5, "categories": "FMCG"},
+    {"name": "Navratri 2026",  "start": "2026-10-09", "end": "2026-10-17", "region": "West,North",   "multiplier": 1.8, "categories": "FMCG"},
+    {"name": "Dussehra 2026",  "start": "2026-10-17", "end": "2026-10-18", "region": "All India",    "multiplier": 2.0, "categories": "FMCG"},
+    {"name": "Diwali 2026",    "start": "2026-11-08", "end": "2026-11-12", "region": "All India",    "multiplier": 2.5, "categories": "FMCG"},
+    {"name": "Christmas 2026", "start": "2026-12-24", "end": "2026-12-26", "region": "All India",    "multiplier": 1.4, "categories": "FMCG"},
 ]
 
 # Fixed action cards for FMCG context
@@ -607,7 +618,7 @@ async def seed_database():
     print(f"  - ~360 delivery records   (90-day deterministic history)")
     print(f"  - 155 risk snapshots      (31 days × 5 vendors)")
     print(f"  - 12 action cards         (8 pending · 4 resolved)")
-    print(f"  - 6 festival calendar entries")
+    print(f"  - {len(FESTIVAL_DATA)} festival calendar entries ({len([f for f in FESTIVAL_DATA if f['start'] >= '2026-05'])} upcoming)")
 
 
 if __name__ == "__main__":

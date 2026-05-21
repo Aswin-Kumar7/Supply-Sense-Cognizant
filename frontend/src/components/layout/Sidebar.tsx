@@ -147,19 +147,20 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: collapsed ? '1.25rem' : '0.125rem' }}>
-        <SidebarSection label="Dashboard" collapsed={collapsed} />
-        <SidebarLink to="/" icon={LayoutDashboard} label="Overview" end collapsed={collapsed} />
+        <SidebarSection label="Home" collapsed={collapsed} />
+        <SidebarLink to="/" icon={LayoutDashboard} label="Dashboard" end collapsed={collapsed} />
 
-        <SidebarSection label="Intelligence" collapsed={collapsed} />
-        <SidebarLink to="/risks" icon={ShieldAlert} label="Risk Analysis" badge={riskBadge} collapsed={collapsed} />
-        <SidebarLink to="/companies" icon={Building2} label="Supplier Directory" collapsed={collapsed} />
-        <SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Alternate Sourcing" collapsed={collapsed} />
+        <SidebarSection label="Supply Chain" collapsed={collapsed} />
+        <SidebarLink to="/risks" icon={ShieldAlert} label="Risks" badge={riskBadge} collapsed={collapsed} />
+        <SidebarLink to="/companies" icon={Building2} label="Suppliers" collapsed={collapsed} />
+        <SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Backup Suppliers" collapsed={collapsed} />
+        <SidebarLink to="/disruptions" icon={Activity} label="Active Disruptions" badge={activeDisruptions} collapsed={collapsed} />
 
         {!collapsed && <div style={{ margin: '1.5rem 0.5rem 0', height: '1px', background: 'var(--border)' }} />}
 
-        <SidebarSection label="System" collapsed={collapsed} />
-        <SidebarLink to="/settings" icon={Settings} label="Engine Config" collapsed={collapsed} />
-        <SidebarLink to="/help" icon={HelpCircle} label="Documentation" collapsed={collapsed} />
+        <SidebarSection label="App" collapsed={collapsed} />
+        <SidebarLink to="/settings" icon={Settings} label="Settings" collapsed={collapsed} />
+        <SidebarLink to="/help" icon={HelpCircle} label="Help" collapsed={collapsed} />
       </div>
 
       {/* Footer Status */}

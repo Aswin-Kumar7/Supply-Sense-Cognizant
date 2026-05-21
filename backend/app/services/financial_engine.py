@@ -58,12 +58,19 @@ class MitigationOption:
 
 @dataclass
 class MitigationSimulation:
-    """Result of simulating a mitigation strategy."""
+    """Result of simulating a mitigation strategy.
+
+    Accounting identity (always holds):
+        current_exposure_inr = mitigated_exposure_inr + savings_inr + mitigation_cost_inr
+    i.e. the original exposure splits into: residual risk + net saving + cost of action.
+    """
     supplier_id: str
     supplier_name: str
     current_exposure_inr: float
-    mitigated_exposure_inr: float
-    savings_inr: float
+    mitigated_exposure_inr: float   # exposure remaining after best action
+    savings_inr: float              # gross exposure reduction (current - mitigated)
+    mitigation_cost_inr: float      # cost to execute the best action
+    net_saving_inr: float           # savings_inr - mitigation_cost_inr (true financial gain)
     risk_before: float
     risk_after: float
     options: list[MitigationOption] = field(default_factory=list)
@@ -234,18 +241,23 @@ class FinancialExposureEngine:
             confidence=0.65,
         ))
 
-        # Best option
+        # Best option = highest net saving (exposure reduced minus cost to act)
         best = max(options, key=lambda o: o.exposure_reduction_inr - o.cost_inr)
-        mitigated_exposure = current_exposure - best.exposure_reduction_inr
+        mitigated_exposure = round(max(0.0, current_exposure - best.exposure_reduction_inr), 2)
+        # gross exposure reduction — identity: current = mitigated + savings + cost
+        savings = round(current_exposure - mitigated_exposure, 2)
+        net_saving = round(savings - best.cost_inr, 2)
 
         return MitigationSimulation(
             supplier_id=supplier_exposure.supplier_id,
             supplier_name=supplier_exposure.supplier_name,
             current_exposure_inr=current_exposure,
-            mitigated_exposure_inr=round(max(0, mitigated_exposure), 2),
-            savings_inr=round(best.exposure_reduction_inr - best.cost_inr, 2),
-            risk_before=1.0,  # current exposure is the 100% baseline
-            risk_after=round(max(0.0, mitigated_exposure) / max(current_exposure, 1), 3),
+            mitigated_exposure_inr=mitigated_exposure,
+            savings_inr=savings,
+            mitigation_cost_inr=round(best.cost_inr, 2),
+            net_saving_inr=net_saving,
+            risk_before=1.0,
+            risk_after=round(mitigated_exposure / max(current_exposure, 1), 3),
             options=options,
         )
 

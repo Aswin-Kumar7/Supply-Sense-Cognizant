@@ -14,7 +14,7 @@ It does NOT contain business logic itself - that lives in the engines.
 """
 
 from uuid import UUID
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from sqlalchemy import text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,7 @@ class RiskIntelligenceService:
 
         for supplier in suppliers:
             breakdown = await self._compute_single_supplier_risk(supplier)
+            risk_trend = await self._compute_risk_trend(supplier.id)
             # Low-confidence single-signal alerts route to human review
             human_review = breakdown.confidence < 0.50
             results.append({
@@ -57,6 +58,7 @@ class RiskIntelligenceService:
                 "supplier_name": breakdown.supplier_name,
                 "overall_score": breakdown.overall_score,
                 "risk_level": breakdown.risk_level,
+                "risk_trend": risk_trend,
                 "confidence": breakdown.confidence,
                 "human_review_required": human_review,
                 "factors": breakdown.factor_dict,
@@ -77,11 +79,13 @@ class RiskIntelligenceService:
             return {"error": "Supplier not found"}
 
         breakdown = await self._compute_single_supplier_risk(supplier)
+        risk_trend = await self._compute_risk_trend(supplier_id)
         return {
             "supplier_id": str(breakdown.supplier_id),
             "supplier_name": breakdown.supplier_name,
             "overall_score": breakdown.overall_score,
             "risk_level": breakdown.risk_level,
+            "risk_trend": risk_trend,
             "confidence": breakdown.confidence,
             "human_review_required": breakdown.confidence < 0.50,
             "factors": breakdown.factor_dict,
@@ -125,6 +129,28 @@ class RiskIntelligenceService:
             dependency_exposure=dependency_exposure,
             festival_proximity=festival_proximity,
         )
+
+    async def _compute_risk_trend(self, supplier_id: UUID) -> str:
+        """
+        Compute risk trend for a supplier based on recent disruption activity.
+        - 2+ active disruptions in last 14 days → 'deteriorating'
+        - 1 active disruption in last 14 days   → 'at_risk'
+        - Otherwise                             → 'stable'
+        """
+        cutoff = datetime.utcnow() - timedelta(days=14)
+        result = await self.db.execute(
+            select(func.count()).where(
+                Disruption.supplier_id == supplier_id,
+                Disruption.is_active == True,
+                Disruption.created_at >= cutoff,
+            )
+        )
+        count = result.scalar() or 0
+        if count >= 2:
+            return "deteriorating"
+        if count == 1:
+            return "at_risk"
+        return "stable"
 
     async def _get_delivery_stats(self, supplier_id: UUID) -> dict:
         """Get delivery performance stats for a supplier (last 30 days)."""
@@ -174,7 +200,7 @@ class RiskIntelligenceService:
         return float(result.scalar() or 0.0)
 
     async def _compute_festival_proximity(self, category: str) -> float:
-        """Return 0–1 proximity score. Calls _get_festival_multiplier and normalizes."""
+        """Return 0–1 proximity score. Calls _get_festival_multiplier (30-day window) and normalizes."""
         multiplier = await self._get_festival_multiplier(category)
         # Normalize: multiplier of 1.0 → 0.0, multiplier of 3.5 → 1.0
         return min(1.0, max(0.0, (multiplier - 1.0) / 2.5))
@@ -373,9 +399,9 @@ class RiskIntelligenceService:
         )
 
     async def _get_festival_multiplier(self, category: str) -> float:
-        """Return the highest active festival demand multiplier for a category (next 14 days)."""
+        """Return the highest active festival demand multiplier for a category (next 30 days)."""
         today = date.today()
-        window = today + timedelta(days=14)
+        window = today + timedelta(days=30)
         result = await self.db.execute(text("""
             SELECT COALESCE(MAX(demand_multiplier), 1.0)
             FROM festival_calendar
@@ -547,6 +573,8 @@ class RiskIntelligenceService:
             "current_exposure_inr": simulation.current_exposure_inr,
             "mitigated_exposure_inr": simulation.mitigated_exposure_inr,
             "savings_inr": simulation.savings_inr,
+            "mitigation_cost_inr": simulation.mitigation_cost_inr,
+            "net_saving_inr": simulation.net_saving_inr,
             "risk_before": simulation.risk_before,
             "risk_after": simulation.risk_after,
             "options": [

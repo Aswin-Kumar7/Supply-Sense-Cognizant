@@ -2,6 +2,7 @@
 Action card API endpoints.
 """
 
+from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -75,6 +76,27 @@ async def simulate_mitigation(
         "savings_inr": result["savings_inr"],
         "actions_taken": result["options"],
     }
+
+
+class ResolveActionRequest(BaseModel):
+    resolution_note: str = ""
+
+
+@router.patch("/{action_card_id}/resolve")
+async def resolve_action_card(
+    action_card_id: UUID,
+    body: ResolveActionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark an action card as resolved."""
+    result = await db.execute(select(ActionCard).where(ActionCard.id == action_card_id))
+    card = result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Action card not found")
+    card.is_resolved = True
+    card.resolved_at = datetime.utcnow()  # TIMESTAMP WITHOUT TIME ZONE — do not use timezone-aware
+    await db.commit()
+    return {"status": "resolved", "action_card_id": str(action_card_id)}
 
 
 @router.get("/{action_card_id}/cost-of-delay")

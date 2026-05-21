@@ -49,6 +49,8 @@ export const api = {
     request<SupplierListResponse>(`/suppliers?limit=${limit}&offset=${offset}`),
   getAlternateSuppliersDirect: (supplierId: string) =>
     request<AlternateSuppliersResponse>(`/suppliers/${supplierId}/alternate-suppliers`),
+  getAlternateSupplierDetail: (altSupplierId: string, primarySupplierId: string) =>
+    request<any>(`/suppliers/alternate-detail/${altSupplierId}?primary_supplier_id=${primarySupplierId}`),
 
   // SKUs
   getSKUs: (limit = 100, offset = 0) =>
@@ -89,6 +91,13 @@ export const api = {
     request<ChatResponse>('/chat', {
       method: 'POST',
       body: JSON.stringify({ message, session_id: sessionId ?? null }),
+    }),
+
+  // Action card resolution
+  resolveActionCard: (actionCardId: string, resolutionNote?: string) =>
+    request<{ status: string; action_card_id: string }>(`/actions/${actionCardId}/resolve`, {
+      method: 'PATCH',
+      body: JSON.stringify({ resolution_note: resolutionNote ?? '' }),
     }),
 
   // Health

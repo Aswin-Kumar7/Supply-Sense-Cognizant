@@ -12,6 +12,7 @@ import {
 } from '../hooks/useQueries'
 import { IndiaMap } from '../components/ui/IndiaMap'
 import { Badge } from '../components/ui/Badge'
+import { ProvenanceTag } from '../components/ui/ProvenanceTag'
 import { api } from '../services/api'
 import type { SupplierRiskAnalysis, Disruption, ActionCard, IntelligentActionCard, ExecutiveBrief } from '../types'
 import { AlertTriangle, AlertCircle, DollarSign, Package, Users, Activity, Wind, Truck, Search, ClipboardList, Link as LinkIcon, Calendar, ChevronRight } from 'lucide-react'
@@ -476,8 +477,9 @@ interface KPIProps {
   onClick?: () => void
   trend?: number
   invertTrend?: boolean
+  provenance?: 'rule' | 'ai'
 }
-function KPICard({ label, value, sub, accent = '#52bde0', icon, loading, onClick, trend, invertTrend }: KPIProps) {
+function KPICard({ label, value, sub, accent = '#52bde0', icon, loading, onClick, trend, invertTrend, provenance }: KPIProps) {
   return (
     <div
       onClick={onClick}
@@ -531,7 +533,12 @@ function KPICard({ label, value, sub, accent = '#52bde0', icon, loading, onClick
                 </div>
               )}
             </div>
-            {sub && <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '0.5rem' }}>{sub}</div>}
+            {provenance && (
+              <div style={{ marginTop: '0.375rem' }}>
+                <ProvenanceTag type={provenance} size="xs" />
+              </div>
+            )}
+            {sub && <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '0.375rem' }}>{sub}</div>}
           </>
         )}
       </div>
@@ -574,7 +581,11 @@ function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]
   const navigate = useNavigate()
   const topIssues = risks
     .filter(r => r.risk_level === 'critical' || r.risk_level === 'high')
-    .sort((a, b) => b.overall_score - a.overall_score)
+    .sort((a, b) => {
+      const expA = cardMap.get(a.supplier_id)?.financial_exposure_inr ?? 0
+      const expB = cardMap.get(b.supplier_id)?.financial_exposure_inr ?? 0
+      return expB - expA
+    })
     .slice(0, 8)
 
   if (topIssues.length === 0) {
@@ -610,8 +621,11 @@ function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]
                     <div style={{ fontWeight: 500, color: 'var(--ink-1)', fontSize: '0.8125rem', lineHeight: 1.4 }}>
                       {card?.title ?? signal.explanation}
                     </div>
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '2px' }}>
-                      {card ? signal.explanation : signal.name.replace(/_/g, ' ')}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginTop: '2px' }}>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--ink-4)' }}>
+                        {card ? signal.explanation : signal.name.replace(/_/g, ' ')}
+                      </span>
+                      <ProvenanceTag type={card ? 'ai' : 'rule'} size="xs" />
                     </div>
                   </div>
                 </div>
@@ -789,7 +803,7 @@ function PendingActions({ cards }: { cards: ActionCard[] }) {
       {top.map((card, i, arr) => (
         <div key={card.id}>
           <div
-            onClick={() => navigate('/risks')}
+            onClick={() => navigate(`/risks/${card.supplier_id}/mitigation`)}
             style={{
               display: 'flex', alignItems: 'center', gap: '1rem',
               padding: '1rem 1.25rem',
@@ -972,6 +986,7 @@ export function Dashboard() {
           onClick={() => navigate('/risks?filter=critical')}
           trend={criticalCount > 0 ? 12 : 0}
           invertTrend
+          provenance="rule"
         />
         <KPICard
           label="Financial Exposure"
@@ -983,6 +998,7 @@ export function Dashboard() {
           onClick={() => navigate('/risks')}
           trend={8}
           invertTrend
+          provenance="rule"
         />
         <KPICard
           label="Suppliers at Risk"
@@ -994,6 +1010,7 @@ export function Dashboard() {
           onClick={() => navigate('/companies')}
           trend={-3}
           invertTrend
+          provenance="rule"
         />
         <KPICard
           label="Stockout Alerts"
@@ -1005,6 +1022,7 @@ export function Dashboard() {
           onClick={() => navigate('/risks')}
           trend={5}
           invertTrend
+          provenance="rule"
         />
       </div>
 

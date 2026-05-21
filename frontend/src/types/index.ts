@@ -262,8 +262,10 @@ export interface MitigationSimulation {
   supplier_id: string
   supplier_name: string
   current_exposure_inr: number
-  mitigated_exposure_inr: number
-  savings_inr: number
+  mitigated_exposure_inr: number  // exposure remaining after best action
+  savings_inr: number             // gross reduction = current - mitigated
+  mitigation_cost_inr: number     // cost to execute best action
+  net_saving_inr: number          // savings - cost (true financial gain)
   risk_before: number
   risk_after: number
   options: MitigationOption[]

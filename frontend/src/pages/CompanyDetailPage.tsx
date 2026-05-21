@@ -1,43 +1,61 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
-import { useSuppliers, useRiskAnalysis, useSKUs, useDisruptions } from '../hooks/useQueries'
+import { useSuppliers, useSKUs, useDisruptions } from '../hooks/useQueries'
 import { Badge } from '../components/ui/Badge'
-import { Building2, MapPin, Activity, ChevronLeft, Package, AlertTriangle, Share2, Globe, ShieldCheck } from 'lucide-react'
-import type { Supplier, SupplierRiskAnalysis, SKURisk, Disruption } from '../types'
+import { ChevronLeft, Package, AlertTriangle, Globe, ChevronRight } from 'lucide-react'
+import type { Supplier, SKURisk, Disruption } from '../types'
 
 function Skeleton({ h = 20, w = '100%' }: { h?: number; w?: string | number }) {
   return <div className="skeleton" style={{ height: h, width: w, borderRadius: 6 }} />
 }
 
-function StatBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <div style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '0.75rem' }}>
-      <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.25rem', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: '1.25rem', fontWeight: 700, color: color ?? '#000', lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.625rem', color: 'var(--ink-3)', marginTop: '0.375rem', fontWeight: 500 }}>{sub}</div>}
-    </div>
-  )
+
+const STOCK_COLORS: Record<string, string> = { critical: '#DC2626', high: '#D29729', medium: '#2563EB', low: '#059669' }
+const STOCK_STATUS: Record<string, string> = {
+  critical: 'Critical — stock out imminent',
+  high: 'Low — reorder urgently',
+  medium: 'Moderate — monitor closely',
+  low: 'Healthy',
 }
 
-/* ── Runway bar ─────────────────────────────────────────────────────── */
-function RunwayBar({ days, risk }: { days: number; risk: string }) {
-  const pct = Math.min(100, (days / 30) * 100)
-  const color: Record<string, string> = { critical: '#c55b55', high: '#D29729', medium: '#52bde0', low: '#4A8B50' }
+/* ── SKU Stock Card ──────────────────────────────────────────────────── */
+function SKUStockCard({ sku }: { sku: SKURisk }) {
+  const color = STOCK_COLORS[sku.stockout_risk] ?? '#059669'
+  const status = STOCK_STATUS[sku.stockout_risk] ?? 'Healthy'
+  const pct = Math.min(100, Math.max(4, (sku.days_of_stock / 30) * 100))
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-      <div style={{ flex: 1, height: '5px', background: 'var(--border)', borderRadius: '999px', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color[risk] ?? '#4A8B50', borderRadius: '999px', transition: 'width 0.6s ease' }} />
+    <div style={{
+      background: '#fff', border: `1px solid var(--border)`,
+      borderLeft: `3px solid ${color}`,
+      borderRadius: '0.5rem', padding: '0.75rem 1rem',
+      boxShadow: 'var(--shadow-sm)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+        <div>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#000', lineHeight: 1.2 }}>{sku.name}</div>
+          <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', marginTop: '2px', fontFamily: 'monospace' }}>{sku.sku_code}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color, lineHeight: 1, fontFamily: 'monospace' }}>{sku.days_of_stock}</div>
+          <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase' }}>days left</div>
+        </div>
       </div>
-      <span style={{ fontSize: '0.75rem', fontVariantNumeric: 'tabular-nums', color: 'var(--ink-3)', minWidth: '28px', textAlign: 'right' }}>
-        {days}d
-      </span>
+      <div style={{ height: '4px', background: 'var(--bg-hover)', borderRadius: '2px', overflow: 'hidden', marginBottom: '0.375rem' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: '2px', transition: 'width 0.6s ease' }} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: '0.5625rem', color, fontWeight: 700 }}>{status}</span>
+        <span style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', fontFamily: 'monospace' }}>{sku.current_stock.toLocaleString()} units</span>
+      </div>
     </div>
   )
 }
 
 /* ── Alternate suppliers section ─────────────────────────────────────── */
 function AlternatesSection({ supplierId }: { supplierId: string }) {
+  const navigate = useNavigate()
   const { data, isLoading } = useQuery({
     queryKey: ['alternates', supplierId],
     queryFn: () => api.getAlternateSuppliersDirect(supplierId),
@@ -47,23 +65,41 @@ function AlternatesSection({ supplierId }: { supplierId: string }) {
   if (isLoading) return <Skeleton h={80} />
   if (!data || data.count === 0) return <p style={{ fontSize: '0.75rem', color: 'var(--ink-4)' }}>No alternates on record.</p>
 
+  // Deduplicate by alternate_id
+  const seen = new Set<string>()
+  const unique = data.alternates.filter(alt => {
+    if (seen.has(alt.alternate_id)) return false
+    seen.add(alt.alternate_id)
+    return true
+  }).slice(0, 4)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {data.alternates.slice(0, 4).map((alt, i) => (
-        <div key={alt.alternate_id} style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0.625rem 0',
-          borderBottom: i === data.alternates.slice(0, 4).length - 1 ? 'none' : '1px solid var(--border)',
-        }}>
+      {unique.map((alt, i) => (
+        <button
+          key={alt.alternate_id}
+          onClick={() => navigate(`/alternate-suppliers/${alt.supplier_id}`, { state: { primarySupplierId: supplierId } })}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0.625rem 0',
+            borderBottom: i === unique.length - 1 ? 'none' : '1px solid var(--border)',
+            background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left',
+            borderBottomColor: i === unique.length - 1 ? 'transparent' : 'var(--border)',
+            borderBottomStyle: 'solid', borderBottomWidth: i === unique.length - 1 ? '0' : '1px',
+          }}
+        >
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#000' }}>{alt.supplier_name}</div>
-            <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)' }}>{alt.city} · +{alt.cost_premium_pct}% COST</div>
+            <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)' }}>{alt.city} · +{alt.cost_premium_pct.toFixed(0)}% extra cost</div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#000' }}>{(alt.reliability_score * 100).toFixed(0)}%</div>
-            <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', fontWeight: 700 }}>RELIABILITY</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#000' }}>{(alt.reliability_score * 100).toFixed(0)}%</div>
+              <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', fontWeight: 700 }}>RELIABILITY</div>
+            </div>
+            <ChevronRight size={14} color="var(--ink-4)" />
           </div>
-        </div>
+        </button>
       ))}
     </div>
   )
@@ -75,20 +111,14 @@ export default function CompanyDetailPage() {
   const navigate = useNavigate()
 
   const { data: supplierData } = useSuppliers()
-  const { data: risks } = useRiskAnalysis()
   const { data: skuData } = useSKUs()
   const { data: disruptions } = useDisruptions()
 
   const supplier: Supplier | undefined = supplierData?.suppliers.find(s => s.id === id)
-  const risk: SupplierRiskAnalysis | undefined = ((risks as SupplierRiskAnalysis[] | undefined) ?? []).find(r => r.supplier_id === id)
   const supplierSKUs: SKURisk[] = (skuData?.skus ?? []).filter(s => s.supplier_name === supplier?.name)
   const supplierDisruptions: Disruption[] = (disruptions?.disruptions ?? []).filter(d => d.supplier_id === id)
 
   if (!id) return null
-
-  const RISK_BORDER: Record<string, string> = { critical: '#c55b55', high: '#D29729', medium: '#52bde0', low: '#4A8B50' }
-  const accent = RISK_BORDER[risk?.risk_level ?? 'low'] ?? '#4A8B50'
-  const initials = supplier?.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? '??'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -115,46 +145,23 @@ export default function CompanyDetailPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.25rem' }}>
 
-        {/* SKU table */}
+        {/* SKU cards */}
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
           <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Package size={16} color="#000" />
             <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Provisioned Products</h3>
+            <span style={{ marginLeft: 'auto', fontSize: '0.625rem', color: 'var(--ink-4)', fontWeight: 600 }}>{supplierSKUs.length} SKUs</span>
           </div>
           {supplierSKUs.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.75rem' }}>
               No SKUs configured for this vendor.
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-hover)', borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Product Identifier</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Inventory</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Coverage</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Risk Signal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {supplierSKUs.map((sku, idx) => (
-                  <tr key={sku.id} style={{ borderBottom: idx === supplierSKUs.length - 1 ? 'none' : '1px solid #f8f8f8' }}>
-                    <td style={{ padding: '0.875rem 1rem' }}>
-                      <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#000' }}>{sku.name}</div>
-                      <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', marginTop: '2px' }}>{sku.sku_code}</div>
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: '#000', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {sku.current_stock.toLocaleString()}
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', width: '120px' }}>
-                      <RunwayBar days={sku.days_of_stock} risk={sku.stockout_risk} />
-                    </td>
-                    <td style={{ padding: '0.875rem 1rem', textAlign: 'center' }}>
-                      <Badge level={sku.stockout_risk} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.625rem' }}>
+              {supplierSKUs.map(sku => (
+                <SKUStockCard key={sku.id} sku={sku} />
+              ))}
+            </div>
           )}
         </div>
 
@@ -189,7 +196,7 @@ export default function CompanyDetailPage() {
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '1.25rem', boxShadow: 'var(--shadow-sm)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
               <Globe size={16} color="#000" />
-              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Supply Redundancy</h3>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Alternate Suppliers</h3>
             </div>
             {id && <AlternatesSection supplierId={id} />}
           </div>

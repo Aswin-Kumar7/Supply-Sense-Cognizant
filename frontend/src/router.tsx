@@ -11,7 +11,9 @@ const RiskDetailPage         = React.lazy(() => import('./pages/RiskDetailPage')
 const RiskMitigationPlan     = React.lazy(() => import('./pages/RiskMitigationPlan'))
 const CompaniesPage          = React.lazy(() => import('./pages/CompaniesPage'))
 const CompanyDetailPage      = React.lazy(() => import('./pages/CompanyDetailPage'))
-const AlternateSuppliersPage = React.lazy(() => import('./pages/AlternateSuppliersPage'))
+const AlternateSuppliersPage       = React.lazy(() => import('./pages/AlternateSuppliersPage'))
+const AlternateSupplierDetailPage  = React.lazy(() => import('./pages/AlternateSupplierDetailPage'))
+const DisruptionsPage        = React.lazy(() => import('./pages/DisruptionsPage'))
 const SettingsPage           = React.lazy(() => import('./pages/SettingsPage'))
 const HelpPage               = React.lazy(() => import('./pages/HelpPage'))
 
@@ -57,6 +59,14 @@ export const router = createBrowserRouter([
       {
         path: 'alternate-suppliers',
         element: <LazyRoute><AlternateSuppliersPage /></LazyRoute>,
+      },
+      {
+        path: 'alternate-suppliers/:altId',
+        element: <LazyRoute><AlternateSupplierDetailPage /></LazyRoute>,
+      },
+      {
+        path: 'disruptions',
+        element: <LazyRoute><DisruptionsPage /></LazyRoute>,
       },
       {
         path: 'settings',
