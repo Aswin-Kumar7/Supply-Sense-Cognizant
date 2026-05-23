@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Truck,
@@ -10,13 +10,14 @@ import {
   Zap,
   Printer,
   ChevronLeft,
-  ChevronRight,
   Activity,
   ShieldCheck,
   TrendingDown,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
+  MessageSquare,
 } from 'lucide-react'
 import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
@@ -129,106 +130,265 @@ function MitigationOptions({
   alternates,
   supplierId,
   navigate,
+  actionCard,
+  onResolved,
 }: {
   sim: MitigationSimulation
   alternates: AlternateSupplierRecord[]
   supplierId: string
   navigate: (path: string, opts?: any) => void
+  actionCard: { id: string } | undefined
+  onResolved: () => void
 }) {
+  const queryClient = useQueryClient()
+  const [selected, setSelected] = useState<number | null>(null)
+  const [actionTaken, setActionTaken] = useState(false)
+  const [showExternal, setShowExternal] = useState(false)
+  const [externalNote, setExternalNote] = useState('')
+  const [resolving, setResolving] = useState(false)
+  const [resolved, setResolved] = useState(false)
+  // Fix 5/7: guard state updates after unmount
+  const isMounted = useRef(true)
+  useEffect(() => { return () => { isMounted.current = false } }, [])
+
   const bestIdx = sim.options.reduce(
-    (best, opt, i) => opt.exposure_reduction_inr > sim.options[best].exposure_reduction_inr ? i : best,
-    0
+    (best, opt, i) => opt.exposure_reduction_inr > sim.options[best].exposure_reduction_inr ? i : best, 0
   )
+
+  // Fix 4: build a structured audit note combining chosen action + optional free-text
+  const handleMarkDone = useCallback(async () => {
+    if (!actionCard) { setResolved(true); onResolved(); return }
+    setResolving(true)
+    try {
+      const selectedOpt = selected !== null ? sim.options[selected] : null
+      const actionLabel = selectedOpt
+        ? (ACTION_LABELS[selectedOpt.action_type] ?? selectedOpt.action_type)
+        : null
+      const noteParts = [
+        actionLabel ? `Action taken: ${actionLabel}` : null,
+        showExternal ? 'Handled externally' : null,
+        externalNote.trim() || null,
+      ].filter(Boolean)
+      const auditNote = noteParts.length > 0 ? noteParts.join(' — ') : undefined
+      await api.resolveActionCard(actionCard.id, auditNote)
+      if (!isMounted.current) return
+      setResolved(true)
+      queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+      queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
+      onResolved()
+    } finally {
+      if (isMounted.current) setResolving(false)
+    }
+  }, [actionCard, selected, sim.options, showExternal, externalNote, queryClient, onResolved])
+
+  if (resolved) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2.5rem 1rem', textAlign: 'center', gap: '0.75rem' }}>
+        <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <CheckCircle2 size={26} color="#16a34a" />
+        </div>
+        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000' }}>Action marked as done</div>
+        <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)' }}>This has been resolved and will no longer appear in pending actions.</div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.25rem' }}>
-        <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose one action</span>
+        <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Select one action to take</span>
         <ProvenanceTag type="rule" size="xs" />
       </div>
 
       {sim.options.map((opt, i) => {
         const isBest = i === bestIdx
+        const isSelected = selected === i
         const isSwitch = opt.action_type === 'switch_supplier'
         const label = ACTION_LABELS[opt.action_type] ?? opt.description
 
         return (
           <div key={i} style={{
-            background: isBest ? '#000' : '#fff',
-            border: `1px solid ${isBest ? '#000' : 'var(--border)'}`,
-            borderRadius: '0.5rem',
-            overflow: 'hidden',
-            boxShadow: isBest ? '0 4px 12px rgba(0,0,0,0.15)' : 'var(--shadow-sm)',
-            position: 'relative',
+            background: isSelected ? '#000' : isBest && selected === null ? '#000' : '#fff',
+            border: `1px solid ${isSelected ? '#000' : isBest && selected === null ? '#000' : 'var(--border)'}`,
+            borderRadius: '0.5rem', overflow: 'hidden',
+            boxShadow: isSelected || (isBest && selected === null) ? '0 4px 12px rgba(0,0,0,0.15)' : 'var(--shadow-sm)',
+            position: 'relative', transition: 'all 150ms ease',
+            opacity: selected !== null && !isSelected ? 0.45 : 1,
           }}>
-            {isBest && (
-              <span style={{
-                position: 'absolute', top: '0.625rem', right: '0.75rem',
-                fontSize: '0.45rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px',
-                background: '#059669', color: '#fff', letterSpacing: '0.05em',
-              }}>RECOMMENDED</span>
-            )}
-
-            {/* Option header */}
-            <div style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+            {/* Option header — clickable to select */}
+            <div
+              onClick={() => { setSelected(i); setShowExternal(false); setActionTaken(false) }}
+              style={{ padding: '0.75rem 1rem', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}
+            >
+              {(isBest && selected === null) && (
+                <span style={{
+                  position: 'absolute', top: '0.625rem', right: '0.75rem',
+                  fontSize: '0.45rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px',
+                  background: '#059669', color: '#fff', letterSpacing: '0.05em',
+                }}>RECOMMENDED</span>
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <h4 style={{ fontSize: '0.8125rem', fontWeight: 600, color: isBest ? '#fff' : '#000', marginBottom: '0.25rem', lineHeight: 1.4, paddingRight: isBest ? '5rem' : 0 }}>
-                  {label}
-                </h4>
-                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.5625rem', color: isBest ? 'rgba(255,255,255,0.5)' : 'var(--ink-4)', flexWrap: 'wrap' }}>
-                  <span>Reduces exposure by <strong style={{ color: isBest ? '#86efac' : '#059669' }}>−{formatINR(opt.exposure_reduction_inr)}</strong></span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <div style={{
+                    width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+                    border: `2px solid ${isSelected ? '#fff' : 'var(--border)'}`,
+                    background: isSelected ? '#fff' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {isSelected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#000' }} />}
+                  </div>
+                  <h4 style={{ fontSize: '0.8125rem', fontWeight: 600, color: isSelected || (isBest && selected === null) ? '#fff' : '#000', lineHeight: 1.4, paddingRight: isBest && selected === null ? '5rem' : 0 }}>
+                    {label}
+                  </h4>
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.5625rem', color: isSelected || (isBest && selected === null) ? 'rgba(255,255,255,0.5)' : 'var(--ink-4)', flexWrap: 'wrap', paddingLeft: '1.5rem' }}>
+                  <span>Reduces exposure by <strong style={{ color: isSelected || (isBest && selected === null) ? '#86efac' : '#059669' }}>−{formatINR(opt.exposure_reduction_inr)}</strong></span>
                   <span>·</span>
-                  <span>Cost: <strong style={{ color: isBest ? '#FCA5A5' : '#000' }}>{formatINR(opt.cost_inr)}</strong></span>
+                  <span>Cost: <strong style={{ color: isSelected || (isBest && selected === null) ? '#FCA5A5' : '#000' }}>{formatINR(opt.cost_inr)}</strong></span>
                   <span>·</span>
                   <span>{opt.time_to_effect_days}d · {(opt.confidence * 100).toFixed(0)}% conf</span>
                 </div>
               </div>
             </div>
 
-            {/* Inline alternate suppliers for switch_supplier */}
-            {isSwitch && alternates.length > 0 && (
-              <div style={{
-                borderTop: isBest ? '1px solid rgba(255,255,255,0.12)' : '1px solid var(--border)',
-                background: isBest ? 'rgba(255,255,255,0.05)' : '#FAFAFA',
-                padding: '0.5rem 0.75rem',
-              }}>
-                <div style={{ fontSize: '0.5rem', fontWeight: 700, color: isBest ? 'rgba(255,255,255,0.4)' : 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
-                  Available suppliers to switch to
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                  {alternates.map(alt => (
+            {/* Expanded action area — only for selected option */}
+            {isSelected && (
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem' }}>
+
+                {/* Fix 3: no alternates fallback */}
+                {isSwitch && alternates.length === 0 && !actionTaken && !showExternal && (
+                  <div style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.55)', padding: '0.25rem 0 0.625rem' }}>
+                    No alternate suppliers on record for this category. Use "handled externally" below to log what you did.
+                  </div>
+                )}
+
+                {/* switch_supplier: show alternates */}
+                {isSwitch && alternates.length > 0 && !actionTaken && !showExternal && (
+                  <>
+                    <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
+                      Choose a supplier to switch to
+                    </div>
+                    {/* Fix 5: removed the "I've placed the order" shortcut — it bypassed the full
+                        order pipeline (no PO, no PDF, no audit trail). Users must go through the
+                        supplier detail page → order modal → order summary → return & mark as done.
+                        The "handled externally" path below covers out-of-system orders. */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.625rem' }}>
+                      {alternates.map(alt => (
+                        <button
+                          key={alt.alternate_id}
+                          onClick={() => navigate(`/alternate-suppliers/${alt.supplier_id}`, { state: { primarySupplierId: supplierId, actionCardId: actionCard?.id } })}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '0.5rem 0.625rem', background: 'rgba(255,255,255,0.08)',
+                            border: '1px solid rgba(255,255,255,0.15)', borderRadius: '0.375rem',
+                            cursor: 'pointer', textAlign: 'left', width: '100%',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                        >
+                          <div>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#fff' }}>{alt.supplier_name}</span>
+                            <span style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.45)', marginLeft: '0.375rem' }}>
+                              {alt.city} · {(alt.quality_score * 100).toFixed(0)}% quality
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexShrink: 0 }}>
+                            <span style={{ fontSize: '0.5rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}>
+                              +{alt.cost_premium_pct.toFixed(0)}% cost
+                            </span>
+                            <ExternalLink size={11} color="rgba(255,255,255,0.4)" />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
+                      Select a supplier above to review details and place an order → you'll be able to mark as done after the order is confirmed.
+                    </div>
+                  </>
+                )}
+
+                {/* Non-switch options: confirm button */}
+                {!isSwitch && !actionTaken && !showExternal && (
+                  <button
+                    onClick={() => setActionTaken(true)}
+                    style={{
+                      padding: '0.5rem 1rem', background: '#fff', color: '#000', border: 'none',
+                      borderRadius: '6px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >
+                    Confirm — I'm taking this action
+                  </button>
+                )}
+
+                {/* After in-system action taken */}
+                {actionTaken && !showExternal && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#86efac', fontWeight: 600 }}>✓ Action confirmed</div>
                     <button
-                      key={alt.alternate_id}
-                      onClick={() => navigate(`/alternate-suppliers/${alt.supplier_id}`, { state: { primarySupplierId: supplierId } })}
+                      onClick={handleMarkDone}
+                      disabled={resolving}
                       style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '0.5rem 0.625rem',
-                        background: isBest ? 'rgba(255,255,255,0.08)' : '#fff',
-                        border: `1px solid ${isBest ? 'rgba(255,255,255,0.15)' : 'var(--border)'}`,
-                        borderRadius: '0.375rem',
-                        cursor: 'pointer', textAlign: 'left', width: '100%',
-                        transition: 'background 120ms ease',
+                        padding: '0.625rem 1.25rem', background: '#059669', color: '#fff', border: 'none',
+                        borderRadius: '6px', fontWeight: 700, fontSize: '0.8125rem', cursor: resolving ? 'wait' : 'pointer',
+                        fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', width: 'fit-content',
                       }}
-                      onMouseEnter={e => { e.currentTarget.style.background = isBest ? 'rgba(255,255,255,0.15)' : '#F4F4F5' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = isBest ? 'rgba(255,255,255,0.08)' : '#fff' }}
                     >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: isBest ? '#fff' : '#000' }}>{alt.supplier_name}</span>
-                        <span style={{ fontSize: '0.5625rem', color: isBest ? 'rgba(255,255,255,0.45)' : 'var(--ink-4)', marginLeft: '0.375rem' }}>
-                          {alt.city} · {(alt.quality_score * 100).toFixed(0)}% quality
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexShrink: 0 }}>
-                        <span style={{
-                          fontSize: '0.5rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px',
-                          background: isBest ? 'rgba(255,255,255,0.15)' : '#F4F4F5',
-                          color: isBest ? '#fff' : '#000',
-                        }}>+{alt.cost_premium_pct.toFixed(0)}% cost</span>
-                        <ChevronRight size={11} style={{ color: isBest ? 'rgba(255,255,255,0.4)' : 'var(--ink-4)' }} />
-                      </div>
+                      <CheckCircle2 size={14} />
+                      {resolving ? 'Saving…' : 'Mark as Done'}
                     </button>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {/* External handling */}
+                {!actionTaken && !showExternal && (
+                  <button
+                    onClick={() => setShowExternal(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginTop: isSwitch ? '0.375rem' : '0.75rem', fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+                  >
+                    <ExternalLink size={11} /> I handled this outside the system
+                  </button>
+                )}
+
+                {showExternal && !actionTaken && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>
+                      <MessageSquare size={13} /> Add a note (optional)
+                    </div>
+                    <textarea
+                      value={externalNote}
+                      onChange={e => setExternalNote(e.target.value)}
+                      placeholder="e.g. Called supplier directly, confirmed order #PO-2024-891…"
+                      rows={2}
+                      style={{
+                        width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px',
+                        border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)',
+                        color: '#fff', fontSize: '0.75rem', fontFamily: 'inherit', resize: 'none', outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        onClick={handleMarkDone}
+                        disabled={resolving}
+                        style={{
+                          padding: '0.5rem 1rem', background: '#059669', color: '#fff', border: 'none',
+                          borderRadius: '6px', fontWeight: 700, fontSize: '0.75rem', cursor: resolving ? 'wait' : 'pointer',
+                          fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.375rem',
+                        }}
+                      >
+                        <CheckCircle2 size={13} />
+                        {resolving ? 'Saving…' : 'Mark as Done'}
+                      </button>
+                      <button
+                        onClick={() => setShowExternal(false)}
+                        style={{ padding: '0.5rem 0.75rem', background: 'none', border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.6)', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer', fontFamily: 'inherit' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -306,11 +466,16 @@ function TFEComparison({ sim }: { sim: MitigationSimulation }) {
 export default function RiskMitigationPlan() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
+  const returnState = (location.state as any) ?? {}
   const [sim, setSim] = useState<MitigationSimulation | null>(null)
   const [simLoading, setSimLoading] = useState(false)
-  const [resolving, setResolving] = useState(false)
   const [resolved, setResolved] = useState(false)
+  const autoResolved = useRef(false)
+  // Fix 7: track nav timers so we can cancel them on unmount
+  const navTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => { return () => { if (navTimer.current) clearTimeout(navTimer.current) } }, [])
 
   const { data: risks } = useRiskAnalysis()
   const { data: cards } = useProcurementCards()
@@ -337,18 +502,6 @@ export default function RiskMitigationPlan() {
     }
   }, [id])
 
-  const handleResolve = useCallback(async (actionCardId: string) => {
-    setResolving(true)
-    try {
-      await api.resolveActionCard(actionCardId)
-      setResolved(true)
-      queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
-    } finally {
-      setResolving(false)
-    }
-  }, [queryClient])
-
   if (!id) return null
 
   const risk = (risks as SupplierRiskAnalysis[] | undefined ?? []).find(r => r.supplier_id === id)
@@ -363,9 +516,50 @@ export default function RiskMitigationPlan() {
   })()
   const actionCard = (actionData?.action_cards ?? []).find(a => a.supplier_id === id && !a.is_resolved)
 
+  // Fix 2: auto-resolve when returning from order summary — no race condition
+  useEffect(() => {
+    if (!returnState.orderPlaced || autoResolved.current) return
+    // Use only the explicitly passed cardId — never fall back to live query data
+    // (the query may not have loaded yet when this effect fires)
+    const cardId = returnState.actionCardId
+    if (!cardId) return
+    api.resolveActionCard(cardId)
+      .then(() => {
+        autoResolved.current = true   // mark only after success, not before
+        setResolved(true)
+        queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+        queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
+        navTimer.current = setTimeout(() => navigate('/risks'), 2000)
+      })
+      .catch(() => {
+        // leave autoResolved.current = false so it can retry once on remount
+      })
+  }, [returnState.orderPlaced, returnState.actionCardId, queryClient, navigate])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      
+
+      {/* Order placed banner */}
+      {returnState.orderPlaced && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem',
+          padding: '0.75rem 1rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.5rem',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+            <CheckCircle2 size={16} color="#16a34a" />
+            <div>
+              <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#166534' }}>
+                Order placed — {returnState.supplierName}
+              </div>
+              <div style={{ fontSize: '0.6875rem', color: '#16a34a', marginTop: '1px' }}>
+                {returnState.poNumber} · Marking this risk as resolved…
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Precision Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -383,20 +577,6 @@ export default function RiskMitigationPlan() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.375rem' }}>
-          {actionCard && !resolved && (
-            <button
-              onClick={() => handleResolve(actionCard.id)}
-              disabled={resolving}
-              style={{
-                fontSize: '0.6875rem', fontWeight: 700, padding: '0.5rem 0.75rem',
-                background: resolving ? 'var(--bg-hover)' : '#000', color: resolving ? 'var(--ink-3)' : '#fff',
-                border: 'none', borderRadius: '4px', cursor: resolving ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', gap: '0.25rem', transition: 'opacity 150ms',
-              }}
-            >
-              <CheckCircle2 size={12} /> {resolving ? 'SAVING...' : 'MARK AS DONE'}
-            </button>
-          )}
           {resolved && (
             <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
               <CheckCircle2 size={12} /> RESOLVED
@@ -448,7 +628,18 @@ export default function RiskMitigationPlan() {
                 </button>
               </div>
             ) : (
-              <MitigationOptions sim={sim} alternates={alternates} supplierId={id!} navigate={navigate} />
+              <MitigationOptions
+                sim={sim}
+                alternates={alternates}
+                supplierId={id!}
+                navigate={navigate}
+                actionCard={actionCard}
+                onResolved={() => {
+                  setResolved(true)
+                  queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
+                  navTimer.current = setTimeout(() => navigate('/risks'), 2000)
+                }}
+              />
             )}
           </div>
         </div>

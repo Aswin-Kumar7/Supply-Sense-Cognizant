@@ -94,10 +94,16 @@ export const api = {
     }),
 
   // Action card resolution
+  // Fix 3: send null (not empty string) when no note — avoids polluting the DB audit trail
   resolveActionCard: (actionCardId: string, resolutionNote?: string) =>
     request<{ status: string; action_card_id: string }>(`/actions/${actionCardId}/resolve`, {
       method: 'PATCH',
-      body: JSON.stringify({ resolution_note: resolutionNote ?? '' }),
+      body: JSON.stringify({ resolution_note: resolutionNote?.trim() || null }),
+    }),
+
+  unresolveActionCard: (actionCardId: string) =>
+    request<{ status: string; action_card_id: string }>(`/actions/${actionCardId}/unresolve`, {
+      method: 'PATCH',
     }),
 
   // Health

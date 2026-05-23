@@ -14,6 +14,10 @@ const CompanyDetailPage      = React.lazy(() => import('./pages/CompanyDetailPag
 const AlternateSuppliersPage       = React.lazy(() => import('./pages/AlternateSuppliersPage'))
 const AlternateSupplierDetailPage  = React.lazy(() => import('./pages/AlternateSupplierDetailPage'))
 const DisruptionsPage        = React.lazy(() => import('./pages/DisruptionsPage'))
+const PendingActionsPage     = React.lazy(() => import('./pages/PendingActionsPage'))
+const ActivityLogPage             = React.lazy(() => import('./pages/ActivityLogPage'))
+const ResolvedActionDetailPage    = React.lazy(() => import('./pages/ResolvedActionDetailPage'))
+const OrderSummaryPage            = React.lazy(() => import('./pages/OrderSummaryPage'))
 const SettingsPage           = React.lazy(() => import('./pages/SettingsPage'))
 const HelpPage               = React.lazy(() => import('./pages/HelpPage'))
 
@@ -67,6 +71,22 @@ export const router = createBrowserRouter([
       {
         path: 'disruptions',
         element: <LazyRoute><DisruptionsPage /></LazyRoute>,
+      },
+      {
+        path: 'actions',
+        element: <LazyRoute><PendingActionsPage /></LazyRoute>,
+      },
+      {
+        path: 'activity',
+        element: <LazyRoute><ActivityLogPage /></LazyRoute>,
+      },
+      {
+        path: 'activity/:cardId',
+        element: <LazyRoute><ResolvedActionDetailPage /></LazyRoute>,
+      },
+      {
+        path: 'order-summary',
+        element: <LazyRoute><OrderSummaryPage /></LazyRoute>,
       },
       {
         path: 'settings',

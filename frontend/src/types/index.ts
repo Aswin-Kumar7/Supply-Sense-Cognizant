@@ -87,6 +87,7 @@ export interface ActionCard {
   sku_id: string | null
   estimated_impact_inr: number
   is_resolved: boolean
+  resolution_note: string | null
   created_at: string
   resolved_at: string | null
 }

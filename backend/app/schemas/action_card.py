@@ -17,6 +17,7 @@ class ActionCardResponse(BaseModel):
     sku_id: UUID | None = None
     estimated_impact_inr: float
     is_resolved: bool
+    resolution_note: str | None = None
     created_at: datetime
     resolved_at: datetime | None = None
 

@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
-import { useSuppliers, useSKUs, useDisruptions } from '../hooks/useQueries'
+import { useSuppliers, useSKUs, useDisruptions, useActionCards } from '../hooks/useQueries'
 import { Badge } from '../components/ui/Badge'
 import { ChevronLeft, Package, AlertTriangle, Globe, ChevronRight } from 'lucide-react'
 import type { Supplier, SKURisk, Disruption } from '../types'
@@ -54,7 +54,8 @@ function SKUStockCard({ sku }: { sku: SKURisk }) {
 }
 
 /* ── Alternate suppliers section ─────────────────────────────────────── */
-function AlternatesSection({ supplierId }: { supplierId: string }) {
+// Fix 7: accept actionCardId so the full mitigation loop can be closed from this page's flow
+function AlternatesSection({ supplierId, actionCardId }: { supplierId: string; actionCardId: string | undefined }) {
   const navigate = useNavigate()
   const { data, isLoading } = useQuery({
     queryKey: ['alternates', supplierId],
@@ -78,7 +79,10 @@ function AlternatesSection({ supplierId }: { supplierId: string }) {
       {unique.map((alt, i) => (
         <button
           key={alt.alternate_id}
-          onClick={() => navigate(`/alternate-suppliers/${alt.supplier_id}`, { state: { primarySupplierId: supplierId } })}
+          onClick={() => navigate(`/alternate-suppliers/${alt.supplier_id}`, {
+            // Fix 7: pass actionCardId so placing an order from here can auto-resolve the risk
+            state: { primarySupplierId: supplierId, actionCardId },
+          })}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '0.625rem 0',
@@ -113,10 +117,15 @@ export default function CompanyDetailPage() {
   const { data: supplierData } = useSuppliers()
   const { data: skuData } = useSKUs()
   const { data: disruptions } = useDisruptions()
+  // Fix 7: look up the unresolved action card for this supplier so we can thread it
+  // through to the alternate supplier page → order modal → order summary → auto-resolve
+  const { data: actionData } = useActionCards()
 
   const supplier: Supplier | undefined = supplierData?.suppliers.find(s => s.id === id)
   const supplierSKUs: SKURisk[] = (skuData?.skus ?? []).filter(s => s.supplier_name === supplier?.name)
   const supplierDisruptions: Disruption[] = (disruptions?.disruptions ?? []).filter(d => d.supplier_id === id)
+  const supplierActionCardId = (actionData?.action_cards ?? [])
+    .find(c => c.supplier_id === id && !c.is_resolved)?.id
 
   if (!id) return null
 
@@ -198,7 +207,7 @@ export default function CompanyDetailPage() {
               <Globe size={16} color="#000" />
               <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Alternate Suppliers</h3>
             </div>
-            {id && <AlternatesSection supplierId={id} />}
+            {id && <AlternatesSection supplierId={id} actionCardId={supplierActionCardId} />}
           </div>
         </div>
       </div>

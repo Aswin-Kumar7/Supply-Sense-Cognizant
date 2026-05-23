@@ -34,6 +34,7 @@ class ActionCard(Base):
     )
     estimated_impact_inr: Mapped[float] = mapped_column(Float, default=0.0)
     is_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolution_note: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

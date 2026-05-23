@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useWeightedRiskAnalysis, useProcurementCards, useDisruptions, useFinancialSummary } from '../hooks/useQueries'
-import { Search, AlertTriangle, ArrowRight } from 'lucide-react'
+import { useWeightedRiskAnalysis, useProcurementCards, useDisruptions, useFinancialSummary, useActionCards } from '../hooks/useQueries'
+import { Search, AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
 
 function formatINR(n: number) {
@@ -152,6 +152,7 @@ export default function RisksPage() {
   const { data: cards } = useProcurementCards()
   const { data: disruptions } = useDisruptions()
   const { data: financial } = useFinancialSummary()
+  const { data: actionData } = useActionCards()
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
   const cardMap = useMemo(
@@ -159,16 +160,36 @@ export default function RisksPage() {
     [cards]
   )
 
+  // Fix 6: a supplier is only "resolved" when ALL its action cards are resolved
+  const resolvedSupplierIds = useMemo(() => {
+    const cards = actionData?.action_cards ?? []
+    const bySupplier = new Map<string, { resolved: number; total: number }>()
+    for (const c of cards) {
+      if (!c.supplier_id) continue
+      const entry = bySupplier.get(c.supplier_id) ?? { resolved: 0, total: 0 }
+      entry.total++
+      if (c.is_resolved) entry.resolved++
+      bySupplier.set(c.supplier_id, entry)
+    }
+    return new Set(
+      [...bySupplier.entries()]
+        .filter(([, { resolved, total }]) => total > 0 && resolved === total)
+        .map(([id]) => id)
+    )
+  }, [actionData])
+
+  const activeRisks = useMemo(() => riskList.filter(r => !resolvedSupplierIds.has(r.supplier_id)), [riskList, resolvedSupplierIds])
+  const resolvedRisks = useMemo(() => riskList.filter(r => resolvedSupplierIds.has(r.supplier_id)), [riskList, resolvedSupplierIds])
+
   const counts = useMemo(() => ({
-    critical: riskList.filter(r => r.risk_level === 'critical').length,
-    high:     riskList.filter(r => r.risk_level === 'high').length,
-    medium:   riskList.filter(r => r.risk_level === 'medium').length,
-    low:      riskList.filter(r => r.risk_level === 'low').length,
-  }), [riskList])
+    critical: activeRisks.filter(r => r.risk_level === 'critical').length,
+    high:     activeRisks.filter(r => r.risk_level === 'high').length,
+    medium:   activeRisks.filter(r => r.risk_level === 'medium').length,
+    low:      activeRisks.filter(r => r.risk_level === 'low').length,
+  }), [activeRisks])
 
   const filtered = useMemo(() => {
-    // Sort by exposure descending — highest financial impact first
-    let list = [...riskList].sort((a, b) => {
+    let list = [...activeRisks].sort((a, b) => {
       const expA = cardMap.get(a.supplier_id)?.financial_exposure_inr ?? 0
       const expB = cardMap.get(b.supplier_id)?.financial_exposure_inr ?? 0
       return expB - expA
@@ -179,9 +200,9 @@ export default function RisksPage() {
       list = list.filter(r => r.supplier_name.toLowerCase().includes(q))
     }
     return list
-  }, [riskList, cardMap, filter, search])
+  }, [activeRisks, cardMap, filter, search])
 
-  const actionNeeded = riskList.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
+  const actionNeeded = activeRisks.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -253,7 +274,8 @@ export default function RisksPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0' }}>
         <div style={{ display: 'flex', gap: '0' }}>
           {FILTER_LEVELS.map(level => {
-            const count = level === 'all' ? riskList.length : counts[level as keyof typeof counts]
+            // Fix 6: "all" tab should count only active risks — same set the table shows
+            const count = level === 'all' ? activeRisks.length : counts[level as keyof typeof counts]
             const cfg = level !== 'all' ? LEVEL_CONFIG[level] : null
             const isActive = filter === level
             return (
@@ -325,7 +347,9 @@ export default function RisksPage() {
         <Skeleton />
       ) : filtered.length === 0 ? (
         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
-          No suppliers match the current filter.
+          {activeRisks.length === 0 && resolvedRisks.length > 0
+            ? '🎉 All risks have been resolved.'
+            : 'No suppliers match the current filter.'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -335,6 +359,96 @@ export default function RisksPage() {
         </div>
       )}
 
+      {/* Resolved risks section */}
+      {resolvedRisks.length > 0 && <ResolvedSection risks={resolvedRisks} cardMap={cardMap} />}
+
+    </div>
+  )
+}
+
+/* ── Resolved Section ───────────────────────────────────────────────────── */
+function ResolvedSection({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard> }) {
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #BBF7D0', borderRadius: '0.5rem', overflow: 'hidden' }}>
+      {/* Header — always visible */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0.875rem 1rem', background: '#F0FDF4', border: 'none', cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+          <CheckCircle2 size={16} color="#16a34a" />
+          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#166534' }}>
+            Resolved Issues
+          </span>
+          <span style={{
+            fontSize: '0.625rem', fontWeight: 700, background: '#16a34a', color: '#fff',
+            padding: '2px 7px', borderRadius: '99px',
+          }}>{risks.length}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '0.6875rem', color: '#16a34a', fontWeight: 500 }}>
+            {open ? 'Hide' : 'Show all'}
+          </span>
+          {open ? <ChevronUp size={14} color="#16a34a" /> : <ChevronDown size={14} color="#16a34a" />}
+        </div>
+      </button>
+
+      {/* Resolved rows */}
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {risks.map((r, i) => {
+            const card = cardMap.get(r.supplier_id)
+            return (
+              <div
+                key={r.supplier_id}
+                onClick={() => navigate(`/risks/${r.supplier_id}`)}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '4px 1fr 90px 90px 60px',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  padding: '0.75rem 1rem',
+                  borderTop: i > 0 ? '1px solid var(--border)' : undefined,
+                  cursor: 'pointer',
+                  opacity: 0.6,
+                  transition: 'opacity 120ms ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = '#F9FAF9' }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '0.6'; e.currentTarget.style.background = 'transparent' }}
+              >
+                <div style={{ width: '4px', height: '32px', borderRadius: '2px', background: '#16a34a', flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <CheckCircle2 size={12} color="#16a34a" />
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#166534', textDecoration: 'line-through', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.supplier_name}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', marginTop: '2px', marginLeft: '1.25rem' }}>
+                    {r.supplier_name} · Action completed
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '0.75rem', color: '#16a34a', fontWeight: 600, fontFamily: 'monospace' }}>
+                  {card ? formatINR(card.financial_exposure_inr) : '—'}
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--ink-4)' }}>
+                  {(r.overall_score * 100).toFixed(0)}% risk
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '0.6875rem', color: '#16a34a', fontWeight: 600 }}>
+                  Resolved
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

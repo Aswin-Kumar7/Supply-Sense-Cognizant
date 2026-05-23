@@ -1,15 +1,16 @@
 import { NavLink } from 'react-router-dom'
-import { useRiskAnalysis, useDisruptions } from '../../hooks/useQueries'
-import { 
-  LayoutDashboard, 
-  ShieldAlert, 
-  Building2, 
-  ArrowLeftRight, 
-  Settings, 
+import { useRiskAnalysis, useDisruptions, useActionCards } from '../../hooks/useQueries'
+import {
+  LayoutDashboard,
+  ShieldAlert,
+  Building2,
+  ArrowLeftRight,
+  Settings,
   HelpCircle,
   Activity,
   Menu,
-  ChevronLeft
+  ClipboardList,
+  History,
 } from 'lucide-react'
 
 /* ── Badge pill ─────────────────────────────────────────────────────── */
@@ -108,10 +109,12 @@ function SidebarLink({
 export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCollapsed: (c: boolean) => void }) {
   const { data: risks } = useRiskAnalysis()
   const { data: disruptions } = useDisruptions()
+  const { data: actionData } = useActionCards()
 
   const criticalCount = (risks as any[] | undefined)?.filter((r: any) => r.risk_level === 'critical' || r.risk_level === 'high').length ?? 0
   const activeDisruptions = disruptions?.total_active ?? 0
   const riskBadge = Math.max(criticalCount, activeDisruptions)
+  const pendingActions = actionData?.unresolved ?? 0
 
   return (
     <aside style={{
@@ -155,6 +158,8 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
         <SidebarLink to="/companies" icon={Building2} label="Suppliers" collapsed={collapsed} />
         <SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Backup Suppliers" collapsed={collapsed} />
         <SidebarLink to="/disruptions" icon={Activity} label="Active Disruptions" badge={activeDisruptions} collapsed={collapsed} />
+        <SidebarLink to="/actions" icon={ClipboardList} label="Pending Actions" badge={pendingActions} collapsed={collapsed} />
+        <SidebarLink to="/activity" icon={History} label="Activity Log" collapsed={collapsed} />
 
         {!collapsed && <div style={{ margin: '1.5rem 0.5rem 0', height: '1px', background: 'var(--border)' }} />}
 

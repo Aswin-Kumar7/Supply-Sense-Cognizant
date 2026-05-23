@@ -577,10 +577,10 @@ function primarySignal(factors: SupplierRiskAnalysis['factors']): { name: string
 }
 
 /* ── Critical Issues table ───────────────────────────────────────────── */
-function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard> }) {
+function CriticalIssuesTable({ risks, cardMap, resolvedSupplierIds }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard>; resolvedSupplierIds: Set<string> }) {
   const navigate = useNavigate()
   const topIssues = risks
-    .filter(r => r.risk_level === 'critical' || r.risk_level === 'high')
+    .filter(r => (r.risk_level === 'critical' || r.risk_level === 'high') && !resolvedSupplierIds.has(r.supplier_id))
     .sort((a, b) => {
       const expA = cardMap.get(a.supplier_id)?.financial_exposure_inr ?? 0
       const expB = cardMap.get(b.supplier_id)?.financial_exposure_inr ?? 0
@@ -868,13 +868,33 @@ export function Dashboard() {
     [procCards]
   )
 
-  const criticalCount = riskList.filter(r => r.risk_level === 'critical').length
-  const highRiskCount = riskList.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
+  // Fix 6: a supplier is only "resolved" when ALL its action cards are resolved
+  const resolvedSupplierIds = useMemo(() => {
+    const cards = actionData?.action_cards ?? []
+    const bySupplier = new Map<string, { resolved: number; total: number }>()
+    for (const c of cards) {
+      if (!c.supplier_id) continue
+      const entry = bySupplier.get(c.supplier_id) ?? { resolved: 0, total: 0 }
+      entry.total++
+      if (c.is_resolved) entry.resolved++
+      bySupplier.set(c.supplier_id, entry)
+    }
+    return new Set(
+      [...bySupplier.entries()]
+        .filter(([, { resolved, total }]) => total > 0 && resolved === total)
+        .map(([id]) => id)
+    )
+  }, [actionData])
+
+  const activeRiskList = useMemo(() => riskList.filter(r => !resolvedSupplierIds.has(r.supplier_id)), [riskList, resolvedSupplierIds])
+
+  const criticalCount = activeRiskList.filter(r => r.risk_level === 'critical').length
+  const highRiskCount = activeRiskList.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
 
   // Top risk for spotlight
   const topRisk = useMemo(() =>
-    riskList.slice().sort((a, b) => b.overall_score - a.overall_score)[0] ?? null,
-    [riskList]
+    activeRiskList.slice().sort((a, b) => b.overall_score - a.overall_score)[0] ?? null,
+    [activeRiskList]
   )
   const topRiskCard = topRisk ? cardMap.get(topRisk.supplier_id) : undefined
 
@@ -892,7 +912,7 @@ export function Dashboard() {
       {!loadingRisks && (
         <CriticalAlertBanner
           count={criticalCount}
-          topRisk={riskList.filter(r => r.risk_level === 'critical').sort((a, b) => b.overall_score - a.overall_score)[0] ?? null}
+          topRisk={activeRiskList.filter(r => r.risk_level === 'critical').sort((a, b) => b.overall_score - a.overall_score)[0] ?? null}
           onView={() => navigate('/risks?filter=critical')}
         />
       )}
@@ -1039,7 +1059,7 @@ export function Dashboard() {
           <div className="card-flush">
             {loadingRisks
               ? <div style={{ padding: '1rem' }}><Skeleton h={40} /><Skeleton h={40} /><Skeleton h={40} /></div>
-              : <CriticalIssuesTable risks={riskList} cardMap={cardMap} />
+              : <CriticalIssuesTable risks={activeRiskList} cardMap={cardMap} resolvedSupplierIds={resolvedSupplierIds} />
             }
           </div>
         </div>
@@ -1060,7 +1080,7 @@ export function Dashboard() {
               : (
                 <IndiaMap
                   suppliers={supplierData?.suppliers ?? []}
-                  risks={riskList}
+                  risks={activeRiskList}
                   onCityClick={(city) => navigate(`/companies?city=${encodeURIComponent(city)}`)}
                 />
               )
@@ -1077,7 +1097,7 @@ export function Dashboard() {
           <SectionHeader
             title="Active Disruptions"
             action="View all"
-            onAction={() => navigate('/risks')}
+            onAction={() => navigate('/disruptions')}
           />
             {loadingDisruptions
               ? <><Skeleton h={64} /><Skeleton h={64} /><Skeleton h={64} /></>
@@ -1103,7 +1123,7 @@ export function Dashboard() {
           <SectionHeader
             title="Pending Actions"
             action="View all"
-            onAction={() => navigate('/risks')}
+            onAction={() => navigate('/actions')}
           />
             {!actionData
               ? <><Skeleton h={52} /><Skeleton h={52} /><Skeleton h={52} /></>

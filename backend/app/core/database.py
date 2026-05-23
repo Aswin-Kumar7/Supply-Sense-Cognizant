@@ -55,9 +55,25 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """Create all tables. Used for development/demo startup."""
+    """Create all tables and run lightweight column migrations on startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Add resolution_note column if it was added after initial schema creation.
+        # PostgreSQL: ADD COLUMN IF NOT EXISTS is safe to run on every startup.
+        if not _is_sqlite:
+            await conn.execute(
+                __import__("sqlalchemy").text(
+                    "ALTER TABLE action_cards ADD COLUMN IF NOT EXISTS resolution_note TEXT"
+                )
+            )
+        else:
+            # SQLite doesn't support IF NOT EXISTS on ADD COLUMN — check first
+            from sqlalchemy import text, inspect
+            cols = await conn.run_sync(
+                lambda sync_conn: [c["name"] for c in inspect(sync_conn).get_columns("action_cards")]
+            )
+            if "resolution_note" not in cols:
+                await conn.execute(text("ALTER TABLE action_cards ADD COLUMN resolution_note TEXT"))
 
 
 async def close_db():
