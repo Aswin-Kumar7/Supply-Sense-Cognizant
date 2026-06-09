@@ -91,6 +91,11 @@ class ProcurementService:
             exposure = exposure_map.get(supplier_id, {})
             exposure_inr = exposure.get("total_exposure_inr", 0)
 
+            # No financial stake — SKU cost data missing or stock is healthy enough.
+            # Skip so ₹0 rows never appear on the Risks page.
+            if exposure_inr == 0:
+                continue
+
             # Get disruption context
             disruption_ctx = disruption_by_supplier.get(supplier_id, "No active disruption")
 

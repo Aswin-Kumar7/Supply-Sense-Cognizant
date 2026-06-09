@@ -177,7 +177,14 @@ export default function RisksPage() {
     )
   }, [actionData])
 
-  const activeRisks = useMemo(() => riskList.filter(r => !resolvedSupplierIds.has(r.supplier_id) && r.risk_level !== 'low'), [riskList, resolvedSupplierIds])
+  const activeRisks = useMemo(() => riskList.filter(r => {
+    if (resolvedSupplierIds.has(r.supplier_id)) return false
+    if (r.risk_level === 'low') return false
+    // If a procurement card exists for this supplier but shows ₹0, cost data is missing — hide it
+    const card = cardMap.get(r.supplier_id)
+    if (card && card.financial_exposure_inr === 0) return false
+    return true
+  }), [riskList, resolvedSupplierIds, cardMap])
   const resolvedRisks = useMemo(() => riskList.filter(r => resolvedSupplierIds.has(r.supplier_id) && r.risk_level !== 'low'), [riskList, resolvedSupplierIds])
 
   const counts = useMemo(() => ({
