@@ -290,8 +290,16 @@ export default function ResolvedActionDetailPage() {
 
   if (!card) {
     return (
-      <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
-        Action not found. It may have been removed or the link is invalid.
+      <div style={{ padding: '3rem', textAlign: 'center' }}>
+        <div style={{ fontSize: '0.875rem', color: 'var(--ink-4)', marginBottom: '1rem' }}>
+          Action not found. It may have been removed or the link is invalid.
+        </div>
+        <button
+          onClick={() => navigate('/activity')}
+          style={{ padding: '0.5rem 1rem', background: '#000', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.8125rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          Back to Activity Log
+        </button>
       </div>
     )
   }

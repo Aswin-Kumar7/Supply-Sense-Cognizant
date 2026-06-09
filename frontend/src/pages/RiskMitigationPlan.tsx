@@ -185,6 +185,9 @@ function MitigationOptions({
       queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
       queryClient.invalidateQueries({ queryKey: queryKeys.financial })
       queryClient.invalidateQueries({ queryKey: queryKeys.disruptions })
+      queryClient.invalidateQueries({ queryKey: queryKeys.stockout })
+      queryClient.invalidateQueries({ queryKey: queryKeys.procurement })
+      queryClient.invalidateQueries({ queryKey: queryKeys.executiveBrief })
       onResolved()
     } finally {
       if (isMounted.current) setResolving(false)
@@ -485,9 +488,15 @@ export default function RiskMitigationPlan() {
   // Track which option the user has selected so TFEComparison can reflect it
   const [selectedOption, setSelectedOption] = useState<MitigationSimulation['options'][number] | null>(null)
   const autoResolved = useRef(false)
-  // Fix 7: track nav timers so we can cancel them on unmount
+  const isMounted = useRef(true)
   const navTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => { return () => { if (navTimer.current) clearTimeout(navTimer.current) } }, [])
+  useEffect(() => {
+    isMounted.current = true
+    return () => {
+      isMounted.current = false
+      if (navTimer.current) clearTimeout(navTimer.current)
+    }
+  }, [])
 
   const { data: risks } = useRiskAnalysis()
   const { data: cards } = useProcurementCards()
@@ -553,11 +562,18 @@ export default function RiskMitigationPlan() {
     api.resolveAllSupplierCards(id)
       .then(() => {
         autoResolved.current = true   // mark only after success, not before
-        setResolved(true)
         queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
         queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
-        navTimer.current = setTimeout(() => navigate('/risks'), 2000)
+        queryClient.invalidateQueries({ queryKey: queryKeys.financial })
+        queryClient.invalidateQueries({ queryKey: queryKeys.stockout })
+        queryClient.invalidateQueries({ queryKey: queryKeys.procurement })
+        queryClient.invalidateQueries({ queryKey: queryKeys.executiveBrief })
+        if (!isMounted.current) return
+        setResolved(true)
+        navTimer.current = setTimeout(() => {
+          if (isMounted.current) navigate('/risks')
+        }, 2000)
       })
       .catch(() => {
         // leave autoResolved.current = false so it can retry once on remount

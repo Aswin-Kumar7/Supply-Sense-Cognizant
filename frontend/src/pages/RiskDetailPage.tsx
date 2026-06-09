@@ -378,7 +378,7 @@ function CascadeSection({ supplierId }: { supplierId: string }) {
           <strong style={{ color: 'var(--ink-1)' }}>{cascade.total_affected}</strong> downstream suppliers affected · max propagation depth <strong style={{ color: 'var(--ink-1)' }}>{cascade.max_depth}</strong>
         </span>
       </div>
-      {cascade.nodes.slice(0, 6).map(node => (
+      {(cascade.nodes ?? []).slice(0, 6).map(node => (
         <div key={node.supplier_id} style={{
           display: 'flex', alignItems: 'center', gap: '0.875rem',
           padding: '0.875rem 1rem',

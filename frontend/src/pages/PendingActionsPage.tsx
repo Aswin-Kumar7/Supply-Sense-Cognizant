@@ -69,7 +69,7 @@ function buildSupplierEntries(cards: ActionCard[]): SupplierEntry[] {
 /* ── Supplier row ─────────────────────────────────────────────────────── */
 function SupplierRow({ entry, onToggle }: {
   entry: SupplierEntry
-  onToggle: (supplierId: string, currentlyResolved: boolean, representativeCardId: string) => Promise<void>
+  onToggle: (supplierId: string, currentlyResolved: boolean) => Promise<void>
 }) {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
@@ -80,7 +80,7 @@ function SupplierRow({ entry, onToggle }: {
   async function handleToggle(e: React.MouseEvent) {
     e.stopPropagation()
     setBusy(true)
-    await onToggle(supplierId, isResolved, representative.id)
+    await onToggle(supplierId, isResolved)
     setBusy(false)
   }
 
@@ -218,11 +218,10 @@ export default function PendingActionsPage() {
   const handleToggle = useCallback(async (
     supplierId: string,
     currentlyResolved: boolean,
-    representativeCardId: string,
   ) => {
     if (currentlyResolved) {
-      // Unresolve the representative card so the supplier becomes active again
-      await api.unresolveActionCard(representativeCardId)
+      // Unresolve ALL cards for the supplier — not just the representative one
+      await api.unresolveAllSupplierCards(supplierId)
     } else {
       // Resolve ALL cards for this supplier at once
       await api.resolveAllSupplierCards(supplierId)
@@ -232,6 +231,9 @@ export default function PendingActionsPage() {
     queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
     queryClient.invalidateQueries({ queryKey: queryKeys.financial })
     queryClient.invalidateQueries({ queryKey: queryKeys.disruptions })
+    queryClient.invalidateQueries({ queryKey: queryKeys.stockout })
+    queryClient.invalidateQueries({ queryKey: queryKeys.procurement })
+    queryClient.invalidateQueries({ queryKey: queryKeys.executiveBrief })
   }, [queryClient])
 
   return (

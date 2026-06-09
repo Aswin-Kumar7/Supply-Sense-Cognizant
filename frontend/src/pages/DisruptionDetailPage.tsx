@@ -177,7 +177,32 @@ export default function DisruptionDetailPage() {
       {/* CTA — only for disruptions with a linked supplier */}
       {disruption.supplier_id && (() => {
         const supplierCards = (actionData?.action_cards ?? []).filter((c: any) => c.supplier_id === disruption.supplier_id)
-        const isResolved = supplierCards.length > 0 && supplierCards.every((c: any) => c.is_resolved)
+        // If no cards exist for this supplier, we have no action data — show a basic link only
+        if (supplierCards.length === 0) {
+          return (
+            <div style={{
+              background: '#F9FAFB', border: '1px solid var(--border)', borderRadius: '0.75rem', padding: '1.25rem 1.5rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div style={{ fontSize: '0.875rem', color: 'var(--ink-3)' }}>
+                This disruption is linked to a supplier in your network.
+              </div>
+              <button
+                onClick={() => navigate(`/risks/${disruption.supplier_id}`)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.5rem 1rem', background: '#000', color: '#fff',
+                  border: 'none', borderRadius: '8px', fontSize: '0.8125rem',
+                  fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+                }}
+              >
+                View Supplier Risk <ArrowRight size={14} />
+              </button>
+            </div>
+          )
+        }
+
+        const isResolved = supplierCards.every((c: any) => c.is_resolved)
         const resolvedCard = supplierCards
           .filter((c: any) => c.is_resolved)
           .sort((a: any, b: any) => new Date(b.resolved_at ?? b.created_at).getTime() - new Date(a.resolved_at ?? a.created_at).getTime())[0]

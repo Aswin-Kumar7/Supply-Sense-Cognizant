@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { NavLink } from 'react-router-dom'
-import { useRiskAnalysis, useDisruptions, useActionCards } from '../../hooks/useQueries'
+import { useDisruptions, useActionCards } from '../../hooks/useQueries'
 import {
   LayoutDashboard,
   ShieldAlert,
@@ -109,32 +109,22 @@ function SidebarLink({
 
 /* ── Sidebar ────────────────────────────────────────────────────────── */
 export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCollapsed: (c: boolean) => void }) {
-  const { data: risks } = useRiskAnalysis()
   const { data: disruptions } = useDisruptions()
   const { data: actionData } = useActionCards()
 
-  // Resolved = all action cards for that supplier are resolved
-  const resolvedSupplierIds = useMemo(() => {
-    const cards = actionData?.action_cards ?? []
-    const bySupplier = new Map<string, { resolved: number; total: number }>()
-    for (const c of cards) {
-      if (!c.supplier_id) continue
-      const entry = bySupplier.get(c.supplier_id) ?? { resolved: 0, total: 0 }
-      entry.total++
-      if (c.is_resolved) entry.resolved++
-      bySupplier.set(c.supplier_id, entry)
+  // Derive badge purely from actionCards — same source as PendingActionsPage and RisksPage filter.
+  // Count unique supplier_ids that have at least one unresolved card with non-low priority.
+  // This is the single source of truth and avoids any stale-time race with the risk query.
+  const riskBadge = useMemo(() => {
+    const activeSuppliers = new Set<string>()
+    for (const c of actionData?.action_cards ?? []) {
+      if (!c.supplier_id || c.is_resolved) continue
+      if (['critical', 'high', 'medium'].includes(c.priority)) {
+        activeSuppliers.add(c.supplier_id)
+      }
     }
-    return new Set(
-      [...bySupplier.entries()]
-        .filter(([, { resolved, total }]) => total > 0 && resolved === total)
-        .map(([id]) => id)
-    )
+    return activeSuppliers.size
   }, [actionData])
-
-  // Only unresolved, non-low risk suppliers
-  const riskBadge = (risks as any[] | undefined)
-    ?.filter((r: any) => r.risk_level !== 'low' && !resolvedSupplierIds.has(r.supplier_id))
-    .length ?? 0
 
   // Only unread active disruptions count as notifications
   const readIds = useMemo(() => {

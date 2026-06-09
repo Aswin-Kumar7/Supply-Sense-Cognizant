@@ -171,6 +171,36 @@ async def unresolve_action_card(
     return {"status": "unresolved", "action_card_id": str(action_card_id)}
 
 
+@router.patch("/unresolve-supplier/{supplier_id}")
+async def unresolve_all_for_supplier(
+    supplier_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark ALL resolved action cards for a supplier as pending again.
+
+    Called when a user toggles a resolved supplier back to pending from
+    PendingActionsPage — ensures every card for that supplier is reopened,
+    not just the representative one.
+    """
+    result = await db.execute(
+        select(ActionCard).where(
+            ActionCard.supplier_id == supplier_id,
+            ActionCard.is_resolved == True,
+        )
+    )
+    cards = result.scalars().all()
+    if not cards:
+        return {"status": "no_cards", "supplier_id": str(supplier_id), "count": 0}
+
+    for card in cards:
+        card.is_resolved = False
+        card.resolved_at = None
+        card.resolution_note = None
+
+    await db.commit()
+    return {"status": "unresolved", "supplier_id": str(supplier_id), "count": len(cards)}
+
+
 @router.get("/{action_card_id}/cost-of-delay")
 async def cost_of_delay(
     action_card_id: UUID,

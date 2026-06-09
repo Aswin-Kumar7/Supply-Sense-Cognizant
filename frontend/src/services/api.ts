@@ -115,6 +115,13 @@ export const api = {
       method: 'PATCH',
     }),
 
+  // Reopens ALL resolved action cards for a supplier at once.
+  // Use this when toggling a resolved supplier back to pending.
+  unresolveAllSupplierCards: (supplierId: string) =>
+    request<{ status: string; supplier_id: string; count: number }>(`/actions/unresolve-supplier/${supplierId}`, {
+      method: 'PATCH',
+    }),
+
   // Syncs action cards with live risk data — creates cards for any medium/high/critical
   // supplier that doesn't already have an unresolved card. Idempotent.
   syncRisks: () =>
