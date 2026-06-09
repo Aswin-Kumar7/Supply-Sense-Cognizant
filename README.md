@@ -234,7 +234,7 @@ Deterministic FMCG supply chain with:
 
 ```bash
 cd backend
-python -m venv .venv
+python3.11 -m venv .venv
 .venv\Scripts\activate          # Windows
 source .venv/bin/activate        # Mac/Linux
 

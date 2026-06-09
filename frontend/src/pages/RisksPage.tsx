@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useWeightedRiskAnalysis, useProcurementCards, useDisruptions, useFinancialSummary, useActionCards } from '../hooks/useQueries'
+import { useWeightedRiskAnalysis, useProcurementCards, useFinancialSummary, useActionCards } from '../hooks/useQueries'
 import { Search, AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
 
@@ -18,7 +18,7 @@ const LEVEL_CONFIG = {
   low:      { color: '#059669', bg: '#F0FDF4', border: '#BBF7D0', label: 'Low' },
 } as const
 
-const FILTER_LEVELS = ['all', 'critical', 'high', 'medium', 'low'] as const
+const FILTER_LEVELS = ['all', 'critical', 'high', 'medium'] as const
 type FilterLevel = typeof FILTER_LEVELS[number]
 
 function Skeleton() {
@@ -150,7 +150,6 @@ export default function RisksPage() {
 
   const { data: risks, isLoading, isCustom: customWeightsActive } = useWeightedRiskAnalysis()
   const { data: cards } = useProcurementCards()
-  const { data: disruptions } = useDisruptions()
   const { data: financial } = useFinancialSummary()
   const { data: actionData } = useActionCards()
 
@@ -178,14 +177,13 @@ export default function RisksPage() {
     )
   }, [actionData])
 
-  const activeRisks = useMemo(() => riskList.filter(r => !resolvedSupplierIds.has(r.supplier_id)), [riskList, resolvedSupplierIds])
-  const resolvedRisks = useMemo(() => riskList.filter(r => resolvedSupplierIds.has(r.supplier_id)), [riskList, resolvedSupplierIds])
+  const activeRisks = useMemo(() => riskList.filter(r => !resolvedSupplierIds.has(r.supplier_id) && r.risk_level !== 'low'), [riskList, resolvedSupplierIds])
+  const resolvedRisks = useMemo(() => riskList.filter(r => resolvedSupplierIds.has(r.supplier_id) && r.risk_level !== 'low'), [riskList, resolvedSupplierIds])
 
   const counts = useMemo(() => ({
     critical: activeRisks.filter(r => r.risk_level === 'critical').length,
     high:     activeRisks.filter(r => r.risk_level === 'high').length,
     medium:   activeRisks.filter(r => r.risk_level === 'medium').length,
-    low:      activeRisks.filter(r => r.risk_level === 'low').length,
   }), [activeRisks])
 
   const filtered = useMemo(() => {
@@ -230,11 +228,11 @@ export default function RisksPage() {
                 </div>
               </div>
             )}
-            {disruptions && disruptions.total_active > 0 && (
+            {activeRisks.length > 0 && (
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Disruptions</div>
+                <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Suppliers at Risk</div>
                 <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#D97706', fontFamily: 'monospace' }}>
-                  {disruptions.total_active}
+                  {activeRisks.length}
                 </div>
               </div>
             )}
@@ -360,16 +358,22 @@ export default function RisksPage() {
       )}
 
       {/* Resolved risks section */}
-      {resolvedRisks.length > 0 && <ResolvedSection risks={resolvedRisks} cardMap={cardMap} />}
+      {resolvedRisks.length > 0 && <ResolvedSection risks={resolvedRisks} cardMap={cardMap} actionCards={actionData?.action_cards ?? []} />}
 
     </div>
   )
 }
 
 /* ── Resolved Section ───────────────────────────────────────────────────── */
-function ResolvedSection({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard> }) {
+function ResolvedSection({ risks, cardMap, actionCards }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard>; actionCards: any[] }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+
+  function getResolvedCardId(supplierId: string): string | null {
+    return actionCards
+      .filter(c => c.supplier_id === supplierId && c.is_resolved)
+      .sort((a: any, b: any) => new Date(b.resolved_at ?? b.created_at).getTime() - new Date(a.resolved_at ?? a.created_at).getTime())[0]?.id ?? null
+  }
 
   return (
     <div style={{ background: '#fff', border: '1px solid #BBF7D0', borderRadius: '0.5rem', overflow: 'hidden' }}>
@@ -408,7 +412,10 @@ function ResolvedSection({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; ca
             return (
               <div
                 key={r.supplier_id}
-                onClick={() => navigate(`/risks/${r.supplier_id}`)}
+                onClick={() => {
+                  const cardId = getResolvedCardId(r.supplier_id)
+                  navigate(cardId ? `/activity/${cardId}` : `/risks/${r.supplier_id}`)
+                }}
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '4px 1fr 90px 90px 60px',

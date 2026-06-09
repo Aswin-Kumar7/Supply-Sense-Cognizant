@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useRiskAnalysis, useDisruptions, useActionCards } from '../../hooks/useQueries'
 import {
@@ -11,6 +12,7 @@ import {
   Menu,
   ClipboardList,
   History,
+  MessageSquare,
 } from 'lucide-react'
 
 /* ── Badge pill ─────────────────────────────────────────────────────── */
@@ -111,9 +113,38 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
   const { data: disruptions } = useDisruptions()
   const { data: actionData } = useActionCards()
 
-  const criticalCount = (risks as any[] | undefined)?.filter((r: any) => r.risk_level === 'critical' || r.risk_level === 'high').length ?? 0
-  const activeDisruptions = disruptions?.total_active ?? 0
-  const riskBadge = Math.max(criticalCount, activeDisruptions)
+  // Resolved = all action cards for that supplier are resolved
+  const resolvedSupplierIds = useMemo(() => {
+    const cards = actionData?.action_cards ?? []
+    const bySupplier = new Map<string, { resolved: number; total: number }>()
+    for (const c of cards) {
+      if (!c.supplier_id) continue
+      const entry = bySupplier.get(c.supplier_id) ?? { resolved: 0, total: 0 }
+      entry.total++
+      if (c.is_resolved) entry.resolved++
+      bySupplier.set(c.supplier_id, entry)
+    }
+    return new Set(
+      [...bySupplier.entries()]
+        .filter(([, { resolved, total }]) => total > 0 && resolved === total)
+        .map(([id]) => id)
+    )
+  }, [actionData])
+
+  // Only unresolved, non-low risk suppliers
+  const riskBadge = (risks as any[] | undefined)
+    ?.filter((r: any) => r.risk_level !== 'low' && !resolvedSupplierIds.has(r.supplier_id))
+    .length ?? 0
+
+  // Only unread active disruptions count as notifications
+  const readIds = useMemo(() => {
+    try {
+      const s = localStorage.getItem('ss_read_disruptions')
+      return s ? new Set(JSON.parse(s) as string[]) : new Set<string>()
+    } catch { return new Set<string>() }
+  }, [])
+  const activeDisruptions = (disruptions?.disruptions ?? [])
+    .filter((d: any) => d.is_active && d.severity !== 'low' && !readIds.has(d.id)).length
   const pendingActions = actionData?.unresolved ?? 0
 
   return (
@@ -157,9 +188,10 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
         <SidebarLink to="/risks" icon={ShieldAlert} label="Risks" badge={riskBadge} collapsed={collapsed} />
         <SidebarLink to="/companies" icon={Building2} label="Suppliers" collapsed={collapsed} />
         <SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Backup Suppliers" collapsed={collapsed} />
-        <SidebarLink to="/disruptions" icon={Activity} label="Active Disruptions" badge={activeDisruptions} collapsed={collapsed} />
+        <SidebarLink to="/disruptions" icon={Activity} label="Disruptions" badge={activeDisruptions} collapsed={collapsed} />
         <SidebarLink to="/actions" icon={ClipboardList} label="Pending Actions" badge={pendingActions} collapsed={collapsed} />
         <SidebarLink to="/activity" icon={History} label="Activity Log" collapsed={collapsed} />
+        <SidebarLink to="/advisor" icon={MessageSquare} label="AI Advisor" collapsed={collapsed} />
 
         {!collapsed && <div style={{ margin: '1.5rem 0.5rem 0', height: '1px', background: 'var(--border)' }} />}
 

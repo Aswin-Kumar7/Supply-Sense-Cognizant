@@ -12,7 +12,6 @@ import {
   ChevronLeft,
   Activity,
   ShieldCheck,
-  TrendingDown,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -132,6 +131,7 @@ function MitigationOptions({
   navigate,
   actionCard,
   onResolved,
+  onOptionSelect,
 }: {
   sim: MitigationSimulation
   alternates: AlternateSupplierRecord[]
@@ -139,10 +139,10 @@ function MitigationOptions({
   navigate: (path: string, opts?: any) => void
   actionCard: { id: string } | undefined
   onResolved: () => void
+  onOptionSelect: (opt: MitigationSimulation['options'][number] | null) => void
 }) {
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState<number | null>(null)
-  const [actionTaken, setActionTaken] = useState(false)
   const [showExternal, setShowExternal] = useState(false)
   const [externalNote, setExternalNote] = useState('')
   const [resolving, setResolving] = useState(false)
@@ -155,32 +155,41 @@ function MitigationOptions({
     (best, opt, i) => opt.exposure_reduction_inr > sim.options[best].exposure_reduction_inr ? i : best, 0
   )
 
-  // Fix 4: build a structured audit note combining chosen action + optional free-text
+  // Fix 4 + supplier-wide resolution:
+  // When the user marks a risk as done, resolve ALL unresolved action cards for that
+  // supplier at once — not just the currently displayed card. This ensures the supplier
+  // immediately disappears from the dashboard and risks page, because resolvedSupplierIds
+  // requires zero unresolved cards per supplier.
   const handleMarkDone = useCallback(async () => {
     if (!actionCard) { setResolved(true); onResolved(); return }
     setResolving(true)
     try {
-      const selectedOpt = selected !== null ? sim.options[selected] : null
-      const actionLabel = selectedOpt
-        ? (ACTION_LABELS[selectedOpt.action_type] ?? selectedOpt.action_type)
-        : null
+      // Use the explicitly clicked option, or fall back to the best option that was
+      // visually shown as pre-selected (black background) when nothing was clicked.
+      const effectiveIdx = selected !== null ? selected : bestIdx
+      const selectedOpt = sim.options[effectiveIdx]
+      const actionLabel = ACTION_LABELS[selectedOpt.action_type] ?? selectedOpt.action_type
       const noteParts = [
-        actionLabel ? `Action taken: ${actionLabel}` : null,
+        `Action taken: ${actionLabel}`,
         showExternal ? 'Handled externally' : null,
         externalNote.trim() || null,
       ].filter(Boolean)
       const auditNote = noteParts.length > 0 ? noteParts.join(' — ') : undefined
-      await api.resolveActionCard(actionCard.id, auditNote)
+      // Resolve ALL cards for this supplier so the supplier clears from the risk list
+      await api.resolveAllSupplierCards(supplierId, auditNote)
       if (!isMounted.current) return
       setResolved(true)
+      // Invalidate every shared query so ALL pages reflect the change immediately
       queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
       queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
+      queryClient.invalidateQueries({ queryKey: queryKeys.financial })
+      queryClient.invalidateQueries({ queryKey: queryKeys.disruptions })
       onResolved()
     } finally {
       if (isMounted.current) setResolving(false)
     }
-  }, [actionCard, selected, sim.options, showExternal, externalNote, queryClient, onResolved])
+  }, [actionCard, supplierId, selected, sim.options, showExternal, externalNote, queryClient, onResolved])
 
   if (resolved) {
     return (
@@ -216,9 +225,13 @@ function MitigationOptions({
             position: 'relative', transition: 'all 150ms ease',
             opacity: selected !== null && !isSelected ? 0.45 : 1,
           }}>
-            {/* Option header — clickable to select */}
+            {/* Option header — clickable to select. Fires onOptionSelect so TFEComparison updates */}
             <div
-              onClick={() => { setSelected(i); setShowExternal(false); setActionTaken(false) }}
+              onClick={() => {
+                setSelected(i)
+                setShowExternal(false)
+                onOptionSelect(sim.options[i])
+              }}
               style={{ padding: '0.75rem 1rem', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}
             >
               {(isBest && selected === null) && (
@@ -257,14 +270,14 @@ function MitigationOptions({
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem' }}>
 
                 {/* Fix 3: no alternates fallback */}
-                {isSwitch && alternates.length === 0 && !actionTaken && !showExternal && (
+                {isSwitch && alternates.length === 0 && !showExternal && (
                   <div style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.55)', padding: '0.25rem 0 0.625rem' }}>
                     No alternate suppliers on record for this category. Use "handled externally" below to log what you did.
                   </div>
                 )}
 
                 {/* switch_supplier: show alternates */}
-                {isSwitch && alternates.length > 0 && !actionTaken && !showExternal && (
+                {isSwitch && alternates.length > 0 && !showExternal && (
                   <>
                     <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
                       Choose a supplier to switch to
@@ -308,40 +321,24 @@ function MitigationOptions({
                   </>
                 )}
 
-                {/* Non-switch options: confirm button */}
-                {!isSwitch && !actionTaken && !showExternal && (
+                {/* Non-switch options: single-step Mark as Done — no intermediate confirm */}
+                {!isSwitch && !showExternal && (
                   <button
-                    onClick={() => setActionTaken(true)}
+                    onClick={handleMarkDone}
+                    disabled={resolving}
                     style={{
-                      padding: '0.5rem 1rem', background: '#fff', color: '#000', border: 'none',
-                      borderRadius: '6px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', fontFamily: 'inherit',
+                      padding: '0.625rem 1.25rem', background: '#059669', color: '#fff', border: 'none',
+                      borderRadius: '6px', fontWeight: 700, fontSize: '0.8125rem', cursor: resolving ? 'wait' : 'pointer',
+                      fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', width: 'fit-content',
                     }}
                   >
-                    Confirm — I'm taking this action
+                    <CheckCircle2 size={14} />
+                    {resolving ? 'Saving…' : 'Mark as Done'}
                   </button>
                 )}
 
-                {/* After in-system action taken */}
-                {actionTaken && !showExternal && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#86efac', fontWeight: 600 }}>✓ Action confirmed</div>
-                    <button
-                      onClick={handleMarkDone}
-                      disabled={resolving}
-                      style={{
-                        padding: '0.625rem 1.25rem', background: '#059669', color: '#fff', border: 'none',
-                        borderRadius: '6px', fontWeight: 700, fontSize: '0.8125rem', cursor: resolving ? 'wait' : 'pointer',
-                        fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', width: 'fit-content',
-                      }}
-                    >
-                      <CheckCircle2 size={14} />
-                      {resolving ? 'Saving…' : 'Mark as Done'}
-                    </button>
-                  </div>
-                )}
-
                 {/* External handling */}
-                {!actionTaken && !showExternal && (
+                {!showExternal && (
                   <button
                     onClick={() => setShowExternal(true)}
                     style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginTop: isSwitch ? '0.375rem' : '0.75rem', fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
@@ -350,7 +347,7 @@ function MitigationOptions({
                   </button>
                 )}
 
-                {showExternal && !actionTaken && (
+                {showExternal  && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>
                       <MessageSquare size={13} /> Add a note (optional)
@@ -399,57 +396,70 @@ function MitigationOptions({
 }
 
 /* ── TFE Visual Comparison ──────────────────────────────────────────── */
-function TFEComparison({ sim }: { sim: MitigationSimulation }) {
-  // Identity: current = mitigated + savings (gross reduction)
-  // savings = mitigated_cost + net_saving
-  const residualPct  = (sim.mitigated_exposure_inr / sim.current_exposure_inr) * 100
-  const reductionPct = 100 - residualPct
+// selectedOption: the option the user has clicked. null = show best-option baseline.
+function TFEComparison({ sim, selectedOption }: {
+  sim: MitigationSimulation
+  selectedOption: MitigationSimulation['options'][number] | null
+}) {
+  const currentExposure = sim.current_exposure_inr
+
+  // Values update in real time as user selects different options
+  const exposureReduction = selectedOption ? selectedOption.exposure_reduction_inr : sim.savings_inr
+  const actionCost        = selectedOption ? selectedOption.cost_inr              : sim.mitigation_cost_inr
+  const residualExposure  = Math.max(0, currentExposure - exposureReduction)
+  const netGain           = exposureReduction - actionCost
+  const reductionPct      = currentExposure > 0 ? (exposureReduction / currentExposure) * 100 : 0
+  const label             = selectedOption
+    ? (ACTION_LABELS[selectedOption.action_type] ?? selectedOption.action_type)
+    : 'Best option'
 
   return (
     <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '1rem', boxShadow: 'var(--shadow-sm)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
         <h3 style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Impact Simulation</h3>
-        <TrendingDown size={14} style={{ color: '#059669' }} />
+        <span style={{ fontSize: '0.5rem', color: selectedOption ? '#059669' : 'var(--ink-4)', fontWeight: 700, maxWidth: '140px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {label}
+        </span>
       </div>
 
       {/* Row 1: current → residual */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
         <div style={{ padding: '0.625rem 0.75rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '0.375rem' }}>
           <div style={{ fontSize: '0.5rem', color: '#991B1B', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Current TFE</div>
-          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#DC2626', fontFamily: 'monospace' }}>{formatINR(sim.current_exposure_inr)}</div>
+          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#DC2626', fontFamily: 'monospace' }}>{formatINR(currentExposure)}</div>
         </div>
         <div style={{ padding: '0.625rem 0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.375rem' }}>
           <div style={{ fontSize: '0.5rem', color: '#166534', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Residual Exposure</div>
-          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#059669', fontFamily: 'monospace' }}>{formatINR(sim.mitigated_exposure_inr)}</div>
-          <div style={{ fontSize: '0.5rem', color: '#166534', marginTop: '1px' }}>after best action</div>
+          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#059669', fontFamily: 'monospace', transition: 'all 300ms ease' }}>{formatINR(residualExposure)}</div>
+          <div style={{ fontSize: '0.5rem', color: '#166534', marginTop: '1px' }}>after this action</div>
         </div>
       </div>
 
-      {/* Row 2: gross reduction breakdown */}
+      {/* Row 2: breakdown — updates per selected option */}
       <div style={{ padding: '0.625rem 0.75rem', background: '#000', borderRadius: '0.375rem', marginBottom: '0.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Exposure Reduced</div>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'monospace' }}>{formatINR(sim.savings_inr)}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'monospace', transition: 'all 300ms ease' }}>{formatINR(exposureReduction)}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Action Cost</div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#FCA5A5', fontFamily: 'monospace' }}>−{formatINR(sim.mitigation_cost_inr)}</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#FCA5A5', fontFamily: 'monospace', transition: 'all 300ms ease' }}>−{formatINR(actionCost)}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Net Gain</div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#86EFAC', fontFamily: 'monospace' }}>{formatINR(sim.net_saving_inr)}</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: netGain >= 0 ? '#86EFAC' : '#FCA5A5', fontFamily: 'monospace', transition: 'all 300ms ease' }}>{formatINR(Math.abs(netGain))}</div>
           </div>
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar — animates on option change */}
       <div style={{ height: '28px', background: 'var(--bg-hover)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
         <div style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
-          width: `${reductionPct}%`,
+          width: `${Math.min(100, reductionPct)}%`,
           background: 'linear-gradient(90deg, #059669, #34D399)',
-          transition: 'width 1s ease',
+          transition: 'width 400ms ease',
         }} />
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -472,6 +482,8 @@ export default function RiskMitigationPlan() {
   const [sim, setSim] = useState<MitigationSimulation | null>(null)
   const [simLoading, setSimLoading] = useState(false)
   const [resolved, setResolved] = useState(false)
+  // Track which option the user has selected so TFEComparison can reflect it
+  const [selectedOption, setSelectedOption] = useState<MitigationSimulation['options'][number] | null>(null)
   const autoResolved = useRef(false)
   // Fix 7: track nav timers so we can cancel them on unmount
   const navTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -506,6 +518,22 @@ export default function RiskMitigationPlan() {
 
   const risk = (risks as SupplierRiskAnalysis[] | undefined ?? []).find(r => r.supplier_id === id)
   const card = (cards as IntelligentActionCard[] | undefined ?? []).find(c => c.supplier_id === id)
+
+  // If ALL action cards for this supplier are resolved, redirect to resolution summary
+  const supplierActionCards = (actionData?.action_cards ?? []).filter((c: any) => c.supplier_id === id)
+  const isSupplierResolved = !resolved
+    && supplierActionCards.length > 0
+    && supplierActionCards.every((c: any) => c.is_resolved)
+  if (isSupplierResolved) {
+    const resolvedCard = [...supplierActionCards]
+      .filter((c: any) => c.is_resolved)
+      .sort((a: any, b: any) => new Date(b.resolved_at ?? b.created_at).getTime() - new Date(a.resolved_at ?? a.created_at).getTime())[0]
+    if (resolvedCard) {
+      navigate(`/activity/${resolvedCard.id}`, { replace: true })
+      return null
+    }
+  }
+
   const alternates = (() => {
     const seen = new Set<string>()
     return (altsData?.alternates ?? []).filter(a => {
@@ -516,14 +544,13 @@ export default function RiskMitigationPlan() {
   })()
   const actionCard = (actionData?.action_cards ?? []).find(a => a.supplier_id === id && !a.is_resolved)
 
-  // Fix 2: auto-resolve when returning from order summary — no race condition
+  // Fix 2: auto-resolve when returning from order summary — resolve ALL supplier cards
+  // so the supplier clears from dashboard/risks page immediately.
   useEffect(() => {
     if (!returnState.orderPlaced || autoResolved.current) return
-    // Use only the explicitly passed cardId — never fall back to live query data
-    // (the query may not have loaded yet when this effect fires)
-    const cardId = returnState.actionCardId
-    if (!cardId) return
-    api.resolveActionCard(cardId)
+    // id (from useParams) is the supplier ID — resolve every card for this supplier
+    if (!id) return
+    api.resolveAllSupplierCards(id)
       .then(() => {
         autoResolved.current = true   // mark only after success, not before
         setResolved(true)
@@ -535,7 +562,7 @@ export default function RiskMitigationPlan() {
       .catch(() => {
         // leave autoResolved.current = false so it can retry once on remount
       })
-  }, [returnState.orderPlaced, returnState.actionCardId, queryClient, navigate])
+  }, [returnState.orderPlaced, id, queryClient, navigate])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -610,7 +637,7 @@ export default function RiskMitigationPlan() {
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)', flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
               <h3 style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mitigation Sequence</h3>
-              <span style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700 }}>STRANDS v2.4</span>
+              <span style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700 }}>LIVE SIMULATION</span>
             </div>
             
             {!sim ? (
@@ -634,6 +661,7 @@ export default function RiskMitigationPlan() {
                 supplierId={id!}
                 navigate={navigate}
                 actionCard={actionCard}
+                onOptionSelect={setSelectedOption}
                 onResolved={() => {
                   setResolved(true)
                   queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
@@ -645,8 +673,8 @@ export default function RiskMitigationPlan() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {/* Comparison */}
-          {sim && <TFEComparison sim={sim} />}
+          {/* Comparison — updates live as user selects different options */}
+          {sim && <TFEComparison sim={sim} selectedOption={selectedOption} />}
 
           {/* Strategic Narrative */}
           <div style={{ background: '#fff', border: '1px solid #000', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>

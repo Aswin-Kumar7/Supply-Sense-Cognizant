@@ -3,10 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
-import { useWeightedRiskAnalysis, useProcurementCards } from '../hooks/useQueries'
+import { useWeightedRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
 import { Badge } from '../components/ui/Badge'
 import { ProvenanceTag } from '../components/ui/ProvenanceTag'
-import { Activity, Wind, AlertTriangle, Calendar, Package, ShieldAlert } from 'lucide-react'
+import { Activity, Wind, AlertTriangle, Calendar, Package, ShieldAlert, MessageSquare, CheckCircle2 } from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
 
 function formatINR(n: number) {
@@ -299,32 +299,53 @@ function AIRecommendationPanel({ card, supplierId: _supplierId }: { card: Intell
 }
 
 /* ── Mitigation CTA ──────────────────────────────────────────────────── */
-function MitigationSection({ supplierId }: { supplierId: string }) {
+function MitigationSection({ supplierId, supplierName }: { supplierId: string; supplierName?: string }) {
   const navigate = useNavigate()
 
   return (
-    <button
-      onClick={() => navigate(`/risks/${supplierId}/mitigation`)}
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        width: '100%', padding: '1rem 1.25rem',
-        background: '#000', color: '#fff',
-        border: 'none', borderRadius: '0.5rem', cursor: 'pointer',
-        transition: 'opacity 150ms ease',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
-      onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-    >
-      <div style={{ textAlign: 'left' }}>
-        <div style={{ fontSize: '0.8125rem', fontWeight: 700, marginBottom: '0.25rem' }}>
-          Run Mitigation Simulation
+    <div style={{ display: 'flex', gap: '0.5rem' }}>
+      {/* Primary: run mitigation simulation */}
+      <button
+        onClick={() => navigate(`/risks/${supplierId}/mitigation`)}
+        style={{
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '1rem 1.25rem',
+          background: '#000', color: '#fff',
+          border: 'none', borderRadius: '0.5rem', cursor: 'pointer',
+          transition: 'opacity 150ms ease',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
+        onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+      >
+        <div style={{ textAlign: 'left' }}>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+            Run Mitigation Simulation
+          </div>
+          <div style={{ fontSize: '0.625rem', color: 'rgba(255,255,255,0.55)', fontWeight: 500 }}>
+            Compare options · see exposure reduction · get recommended action
+          </div>
         </div>
-        <div style={{ fontSize: '0.625rem', color: 'rgba(255,255,255,0.55)', fontWeight: 500 }}>
-          Compare options · see exposure reduction · get recommended action
-        </div>
-      </div>
-      <span style={{ fontSize: '1.125rem', lineHeight: 1 }}>→</span>
-    </button>
+        <span style={{ fontSize: '1.125rem', lineHeight: 1 }}>→</span>
+      </button>
+
+      {/* Secondary: open AI Advisor pre-loaded with this supplier */}
+      <button
+        onClick={() => navigate(`/advisor?supplier=${encodeURIComponent(supplierId)}&name=${encodeURIComponent(supplierName ?? '')}`)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          padding: '1rem 1.125rem',
+          background: '#fff', color: '#000',
+          border: '1px solid var(--border)', borderRadius: '0.5rem', cursor: 'pointer',
+          fontSize: '0.8125rem', fontWeight: 600, fontFamily: 'inherit',
+          transition: 'all 150ms ease', whiteSpace: 'nowrap',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = '#000'; e.currentTarget.style.background = 'var(--bg-hover)' }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = '#fff' }}
+      >
+        <MessageSquare size={15} />
+        Ask What-If
+      </button>
+    </div>
   )
 }
 
@@ -383,12 +404,59 @@ export default function RiskDetailPage() {
 
   const { data: risks, isCustom: customWeightsActive } = useWeightedRiskAnalysis()
   const { data: cards } = useProcurementCards()
+  const { data: actionData } = useActionCards()
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
   const risk = riskList.find(r => r.supplier_id === id)
   const card = (cards as IntelligentActionCard[] | undefined ?? []).find(c => c.supplier_id === id)
 
+  // Resolved = all action cards for this supplier are resolved
+  const supplierActionCards = (actionData?.action_cards ?? []).filter((c: any) => c.supplier_id === id)
+  const isResolved = supplierActionCards.length > 0 && supplierActionCards.every((c: any) => c.is_resolved)
+  const resolvedCard = supplierActionCards
+    .filter((c: any) => c.is_resolved)
+    .sort((a: any, b: any) => new Date(b.resolved_at ?? b.created_at).getTime() - new Date(a.resolved_at ?? a.created_at).getTime())[0]
+
   if (!id) return null
+
+  // If fully resolved, show a resolved state instead of the mitigation interface
+  if (isResolved && resolvedCard) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: 600 }}>
+        <button
+          onClick={() => navigate('/risks')}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: '0.8125rem', fontFamily: 'inherit', padding: 0, width: 'fit-content' }}
+        >
+          ← Risks
+        </button>
+        <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.75rem', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CheckCircle2 size={26} color="#16a34a" />
+          </div>
+          <div>
+            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#166534', marginBottom: '0.375rem' }}>
+              {risk?.supplier_name ?? 'This supplier'} — Risk Resolved
+            </div>
+            <div style={{ fontSize: '0.8125rem', color: '#16a34a' }}>
+              All action cards have been marked as done. View the full resolution summary below.
+            </div>
+          </div>
+          <button
+            onClick={() => navigate(`/activity/${resolvedCard.id}`)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.625rem 1.25rem',
+              background: '#000', color: '#fff',
+              border: 'none', borderRadius: '8px',
+              fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            View Resolution Summary →
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -532,8 +600,8 @@ export default function RiskDetailPage() {
         <CascadeSection supplierId={id} />
       </div>
 
-      {/* Mitigation CTA */}
-      <MitigationSection supplierId={id} />
+      {/* Mitigation CTA + Ask What-If */}
+      <MitigationSection supplierId={id} supplierName={risk?.supplier_name} />
     </div>
   )
 }

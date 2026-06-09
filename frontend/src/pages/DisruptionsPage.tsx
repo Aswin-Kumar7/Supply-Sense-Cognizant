@@ -1,132 +1,170 @@
-/**
- * DisruptionsPage
- * Shows all supply-chain disruptions sorted by active-first, then severity.
- */
-
-import { useState } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDisruptions } from '../hooks/useQueries'
-import { Badge } from '../components/ui/Badge'
-import { Wind, Package, Truck, Activity, ClipboardList, Search, ChevronRight } from 'lucide-react'
+import {
+  Wind, Package, Truck, Activity, ClipboardList, Search,
+  ChevronDown, ChevronUp, BellOff, CheckCircle2,
+} from 'lucide-react'
 import type { Disruption } from '../types'
 
-/* ── helpers ──────────────────────────────────────────────────────────── */
-const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+/* ── read state ──────────────────────────────────────────────────────────── */
+export const DISRUPTIONS_STORAGE_KEY = 'ss_read_disruptions'
 
-const TYPE_ICON: Record<string, React.ReactNode> = {
-  cyclone:    <Wind size={16} />,
-  strike:     <Truck size={16} />,
-  logistics:  <Package size={16} />,
-  inventory:  <Activity size={16} />,
-  quality:    <Search size={16} />,
-  regulatory: <ClipboardList size={16} />,
+export function getReadIds(): Set<string> {
+  try {
+    const s = localStorage.getItem(DISRUPTIONS_STORAGE_KEY)
+    return s ? new Set(JSON.parse(s)) : new Set()
+  } catch { return new Set() }
 }
 
-function formatDate(iso: string) {
+export function persistReadIds(ids: Set<string>) {
+  localStorage.setItem(DISRUPTIONS_STORAGE_KEY, JSON.stringify([...ids]))
+}
+
+/* ── helpers ─────────────────────────────────────────────────────────────── */
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+
+export const SEVERITY_COLOR: Record<string, string> = {
+  critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669',
+}
+
+export const TYPE_ICON: Record<string, React.ReactNode> = {
+  cyclone:    <Wind size={15} />,
+  strike:     <Truck size={15} />,
+  logistics:  <Package size={15} />,
+  inventory:  <Activity size={15} />,
+  quality:    <Search size={15} />,
+  regulatory: <ClipboardList size={15} />,
+}
+
+export function formatDisruptionDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-function Skeleton({ h = 80 }: { h?: number }) {
-  return <div className="skeleton" style={{ height: h, borderRadius: 8, width: '100%' }} />
-}
-
-/* ── Disruption card ──────────────────────────────────────────────────── */
-function DisruptionCard({ d, onClick }: { d: Disruption; onClick: () => void }) {
-  const icon = TYPE_ICON[d.disruption_type] ?? <Wind size={16} />
+/* ── Inbox row ────────────────────────────────────────────────────────────── */
+function InboxRow({ d, isRead, onClick }: { d: Disruption; isRead: boolean; onClick: () => void }) {
+  const color = SEVERITY_COLOR[d.severity] ?? '#2563EB'
+  const icon = TYPE_ICON[d.disruption_type] ?? <Wind size={15} />
 
   return (
     <div
       onClick={onClick}
       style={{
-        background: '#fff',
-        border: `1px solid ${d.is_active ? '#000' : 'var(--border)'}`,
-        borderLeft: `3px solid ${d.is_active
-          ? (d.severity === 'critical' ? '#DC2626' : d.severity === 'high' ? '#D29729' : '#2563EB')
-          : 'var(--border)'}`,
-        borderRadius: '0.625rem',
-        padding: '1rem 1.25rem',
+        display: 'grid',
+        gridTemplateColumns: '4px 36px 1fr auto',
+        alignItems: 'center',
+        gap: '0.75rem',
+        padding: '0.75rem 1rem 0.75rem 0',
+        borderBottom: '1px solid var(--border)',
         cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '1rem',
-        boxShadow: d.is_active ? 'var(--shadow-sm)' : 'none',
-        opacity: d.is_active ? 1 : 0.65,
-        transition: 'opacity 150ms',
+        background: isRead ? '#fff' : '#FAFAFA',
+        transition: 'background 100ms ease',
       }}
+      onMouseEnter={e => { e.currentTarget.style.background = '#F5F5F5' }}
+      onMouseLeave={e => { e.currentTarget.style.background = isRead ? '#fff' : '#FAFAFA' }}
     >
+      {/* Severity strip */}
+      <div style={{ width: 4, height: 40, borderRadius: 2, background: isRead ? 'var(--border)' : color }} />
+
       {/* Icon */}
       <div style={{
-        width: 36, height: 36, borderRadius: '8px',
-        background: 'var(--bg-hover)', border: '1px solid var(--border)',
+        width: 36, height: 36, borderRadius: 8,
+        background: isRead ? 'var(--bg-hover)' : `${color}15`,
+        border: `1px solid ${isRead ? 'var(--border)' : `${color}40`}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0, color: 'var(--ink-3)',
+        color: isRead ? 'var(--ink-4)' : color,
+        flexShrink: 0,
       }}>
         {icon}
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000' }}>{d.title}</span>
-          {d.is_active && (
-            <span style={{
-              fontSize: '0.5rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px',
-              background: '#DC2626', color: '#fff', letterSpacing: '0.05em',
-            }}>ACTIVE</span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+          {!isRead && d.is_active && (
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
           )}
-          <Badge level={d.severity} />
+          <span style={{
+            fontSize: '0.875rem',
+            fontWeight: isRead ? 400 : 700,
+            color: isRead ? 'var(--ink-2)' : '#000',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {d.title}
+          </span>
+          {!d.is_active && (
+            <span style={{
+              fontSize: '0.45rem', fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+              background: '#F0FDF4', color: '#16a34a', border: '1px solid #BBF7D0',
+              letterSpacing: '0.05em', flexShrink: 0,
+            }}>RESOLVED</span>
+          )}
         </div>
-        {d.description && (
-          <p style={{ fontSize: '0.75rem', color: 'var(--ink-3)', margin: 0, lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '600px' }}>
-            {d.description}
-          </p>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginTop: '0.5rem', fontSize: '0.625rem', color: 'var(--ink-4)', fontWeight: 500 }}>
-          <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>{d.disruption_type}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.6875rem', color: 'var(--ink-4)' }}>
+          <span style={{ textTransform: 'capitalize' }}>{d.disruption_type}</span>
           {d.region && <><span>·</span><span>{d.region}</span></>}
-          {d.affected_skus_count > 0 && <><span>·</span><span>{d.affected_skus_count} SKU{d.affected_skus_count !== 1 ? 's' : ''} affected</span></>}
-          <span>·</span>
-          <span>{formatDate(d.created_at)}</span>
+          {d.description && (
+            <><span>·</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '400px' }}>
+              {d.description}
+            </span></>
+          )}
         </div>
       </div>
 
-      {/* Impact + nav */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Impact</div>
-          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#000', fontFamily: 'monospace' }}>
-            {(d.impact_score * 100).toFixed(0)}%
-          </div>
+      {/* Right: impact + date */}
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ fontSize: '0.8125rem', fontWeight: isRead ? 400 : 700, color: isRead ? 'var(--ink-3)' : color, fontFamily: 'monospace' }}>
+          {(d.impact_score * 100).toFixed(0)}%
         </div>
-        {d.supplier_id && <ChevronRight size={16} color="var(--ink-4)" />}
+        <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', marginTop: '1px' }}>
+          {formatDisruptionDate(d.created_at)}
+        </div>
       </div>
     </div>
   )
 }
 
-/* ── Page ────────────────────────────────────────────────────────────── */
+/* ── Page ────────────────────────────────────────────────────────────────── */
 export default function DisruptionsPage() {
   const navigate = useNavigate()
   const { data, isLoading } = useDisruptions()
-  const [filter, setFilter] = useState<'all' | 'active' | 'resolved'>('all')
+  const [readIds, setReadIds] = useState<Set<string>>(getReadIds)
+  const [showResolved, setShowResolved] = useState(false)
+
+  useEffect(() => { persistReadIds(readIds) }, [readIds])
+
+  const markRead = useCallback((id: string) => {
+    setReadIds(prev => { const next = new Set(prev); next.add(id); return next })
+  }, [])
 
   const allDisruptions = data?.disruptions ?? []
+  const significant = allDisruptions.filter(d => d.severity !== 'low')
 
-  // Sort: active first, then by severity, then by created_at desc
-  const sorted = [...allDisruptions].sort((a, b) => {
-    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
-    const sevDiff = (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9)
-    if (sevDiff !== 0) return sevDiff
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  })
+  const active = useMemo(() => [...significant.filter(d => d.is_active)].sort((a, b) => {
+    const aUnread = readIds.has(a.id) ? 1 : 0
+    const bUnread = readIds.has(b.id) ? 1 : 0
+    if (aUnread !== bUnread) return aUnread - bUnread
+    return (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9)
+  }), [significant, readIds])
 
-  const filtered = sorted.filter(d => {
-    if (filter === 'active') return d.is_active
-    if (filter === 'resolved') return !d.is_active
-    return true
-  })
+  const resolved = useMemo(() => [...significant.filter(d => !d.is_active)].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  ), [significant])
 
-  const activeCount = allDisruptions.filter(d => d.is_active).length
+  const unreadCount = active.filter(d => !readIds.has(d.id)).length
+
+  function markAllRead() {
+    const next = new Set(readIds)
+    active.forEach(d => next.add(d.id))
+    setReadIds(next)
+    persistReadIds(next)
+  }
+
+  function openDisruption(d: Disruption) {
+    markRead(d.id)
+    navigate(`/disruptions/${d.id}`)
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -135,64 +173,92 @@ export default function DisruptionsPage() {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
           <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#000', letterSpacing: '-0.02em', lineHeight: 1 }}>
-            Active Disruptions
+            Disruption Alerts
           </h1>
           <p style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '0.25rem' }}>
-            Live supply-chain events across all suppliers
+            {unreadCount > 0 ? `${unreadCount} unread · click to read` : 'All caught up'}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '1.5rem' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>Active</div>
-            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#DC2626', lineHeight: 1 }}>{activeCount}</div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>Total</div>
-            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#000', lineHeight: 1 }}>{allDisruptions.length}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter tabs */}
-      <div style={{ display: 'flex', gap: '0.375rem' }}>
-        {(['all', 'active', 'resolved'] as const).map(f => (
+        {unreadCount > 0 && (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
+            onClick={markAllRead}
             style={{
-              padding: '0.375rem 0.875rem',
-              background: filter === f ? '#000' : '#fff',
-              color: filter === f ? '#fff' : '#000',
-              border: `1px solid ${filter === f ? '#000' : 'var(--border)'}`,
-              borderRadius: '999px',
-              fontSize: '0.75rem', fontWeight: 600,
-              cursor: 'pointer', textTransform: 'capitalize',
-              transition: 'all 150ms ease',
+              display: 'flex', alignItems: 'center', gap: '0.375rem',
+              padding: '0.4rem 0.875rem', background: '#fff',
+              border: '1px solid var(--border)', borderRadius: 6,
+              fontSize: '0.75rem', fontWeight: 600, color: 'var(--ink-3)',
+              cursor: 'pointer', fontFamily: 'inherit',
             }}
           >
-            {f === 'all' ? `All (${allDisruptions.length})` : f === 'active' ? `Active (${activeCount})` : `Resolved (${allDisruptions.length - activeCount})`}
+            <BellOff size={13} /> Mark all read
           </button>
-        ))}
+        )}
       </div>
 
-      {/* List */}
-      {isLoading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} />)}
+      {/* Active disruptions */}
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.625rem', overflow: 'hidden' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0.625rem 1rem',
+          borderBottom: '2px solid #000',
+        }}>
+          <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Active
+          </span>
+          {unreadCount > 0 && (
+            <span style={{ fontSize: '0.625rem', fontWeight: 700, background: '#DC2626', color: '#fff', padding: '1px 7px', borderRadius: 99 }}>
+              {unreadCount} new
+            </span>
+          )}
         </div>
-      ) : filtered.length === 0 ? (
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem', background: '#fff', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
-          No {filter !== 'all' ? filter : ''} disruptions recorded.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-          {filtered.map(d => (
-            <DisruptionCard
-              key={d.id}
-              d={d}
-              onClick={() => d.supplier_id ? navigate(`/risks/${d.supplier_id}`) : undefined}
-            />
-          ))}
+
+        {isLoading ? (
+          <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 56, borderRadius: 6 }} />)}
+          </div>
+        ) : active.length === 0 ? (
+          <div style={{ padding: '2.5rem', textAlign: 'center' }}>
+            <CheckCircle2 size={24} color="#16a34a" style={{ margin: '0 auto 0.5rem' }} />
+            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#166534' }}>No active disruptions</div>
+          </div>
+        ) : (
+          <div>
+            {active.map(d => (
+              <InboxRow key={d.id} d={d} isRead={readIds.has(d.id)} onClick={() => openDisruption(d)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Resolved section */}
+      {resolved.length > 0 && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.625rem', overflow: 'hidden' }}>
+          <button
+            onClick={() => setShowResolved(o => !o)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0.625rem 1rem', background: 'none', border: 'none',
+              borderBottom: showResolved ? '1px solid var(--border)' : 'none',
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Resolved
+              </span>
+              <span style={{ fontSize: '0.625rem', fontWeight: 700, background: 'var(--bg-hover)', color: 'var(--ink-4)', padding: '1px 6px', borderRadius: 99, border: '1px solid var(--border)' }}>
+                {resolved.length}
+              </span>
+            </div>
+            {showResolved ? <ChevronUp size={14} color="var(--ink-4)" /> : <ChevronDown size={14} color="var(--ink-4)" />}
+          </button>
+          {showResolved && (
+            <div>
+              {resolved.map(d => (
+                <InboxRow key={d.id} d={d} isRead={readIds.has(d.id)} onClick={() => openDisruption(d)} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

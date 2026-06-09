@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   useDashboardSummary,
   useSuppliers,
@@ -14,6 +15,7 @@ import { IndiaMap } from '../components/ui/IndiaMap'
 import { Badge } from '../components/ui/Badge'
 import { ProvenanceTag } from '../components/ui/ProvenanceTag'
 import { api } from '../services/api'
+import { queryKeys } from '../hooks/queryKeys'
 import type { SupplierRiskAnalysis, Disruption, ActionCard, IntelligentActionCard, ExecutiveBrief } from '../types'
 import { AlertTriangle, AlertCircle, DollarSign, Package, Users, Activity, Wind, Truck, Search, ClipboardList, Link as LinkIcon, Calendar, ChevronRight } from 'lucide-react'
 
@@ -173,7 +175,7 @@ function BoardBriefModal({ onClose }: { onClose: () => void }) {
           <div>
             <h2 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#000000', letterSpacing: '-0.02em' }}>Board Brief</h2>
             <p style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '2px' }}>
-              Strategic Analysis · <span style={{ color: '#000', fontWeight: 600 }}>Supply Engine v2.4</span>
+              Strategic Analysis · <span style={{ color: '#000', fontWeight: 600 }}>Live Data</span>
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
@@ -687,9 +689,12 @@ function DisruptionFeed({ disruptions }: { disruptions: Disruption[] }) {
   const navigate = useNavigate()
   const TYPE_ICON: Record<string, React.ReactNode> = { cyclone: <Wind size={18} />, strike: <Truck size={18} />, logistics: <Package size={18} />, inventory: <Activity size={18} />, quality: <Search size={18} />, regulatory: <ClipboardList size={18} /> }
 
+  // Same filter as DisruptionsPage — hide low-severity noise
+  const significant = disruptions.filter(d => d.severity !== 'low')
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '1rem', overflow: 'hidden' }}>
-      {disruptions.slice(0, 5).map((d, i, arr) => (
+      {significant.slice(0, 5).map((d, i, arr) => (
         <div key={d.id}>
           <div
             onClick={() => navigate(`/risks/${d.supplier_id}`)}
@@ -851,6 +856,7 @@ function PendingActions({ cards }: { cards: ActionCard[] }) {
 /* ── Dashboard ───────────────────────────────────────────────────────── */
 export function Dashboard() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [showBoardBrief, setShowBoardBrief] = useState(false)
 
   const { data: summary, isLoading: loadingSummary } = useDashboardSummary()
@@ -888,6 +894,15 @@ export function Dashboard() {
 
   const activeRiskList = useMemo(() => riskList.filter(r => !resolvedSupplierIds.has(r.supplier_id)), [riskList, resolvedSupplierIds])
 
+  // Sync action cards with live risk data on mount — ensures Pending Actions mirrors Risks
+  useEffect(() => {
+    api.syncRisks()
+      .then(({ synced }) => {
+        if (synced > 0) queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
+      })
+      .catch(() => {/* silent — sync failure shouldn't break the dashboard */})
+  }, [queryClient])
+
   const criticalCount = activeRiskList.filter(r => r.risk_level === 'critical').length
   const highRiskCount = activeRiskList.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
 
@@ -924,7 +939,7 @@ export function Dashboard() {
             Supply Dashboard
           </h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)', fontWeight: 400 }}>
-            Welcome back, Cipher!
+            {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         </div>
 
@@ -999,13 +1014,11 @@ export function Dashboard() {
         <KPICard
           label="Critical Issues"
           value={loadingRisks ? '—' : criticalCount}
-          sub={`${highRiskCount} total high/critical`}
+          sub={`${highRiskCount} total high/critical · active right now`}
           accent="#c55b55"
           icon={KPI_ICONS.critical}
           loading={loadingRisks}
           onClick={() => navigate('/risks?filter=critical')}
-          trend={criticalCount > 0 ? 12 : 0}
-          invertTrend
           provenance="rule"
         />
         <KPICard
@@ -1016,20 +1029,16 @@ export function Dashboard() {
           icon={KPI_ICONS.financial}
           loading={loadingSummary}
           onClick={() => navigate('/risks')}
-          trend={8}
-          invertTrend
           provenance="rule"
         />
         <KPICard
           label="Suppliers at Risk"
-          value={loadingSummary ? '—' : `${summary?.supplier_health?.high_risk_count ?? 0}`}
+          value={loadingRisks ? '—' : highRiskCount}
           sub={`of ${summary?.supplier_health?.total_suppliers ?? 0} total · ${((summary?.supplier_health?.avg_reliability ?? 0) * 100).toFixed(0)}% avg reliability`}
           accent="#6D28D9"
           icon={KPI_ICONS.suppliers}
-          loading={loadingSummary}
+          loading={loadingRisks}
           onClick={() => navigate('/companies')}
-          trend={-3}
-          invertTrend
           provenance="rule"
         />
         <KPICard
@@ -1040,8 +1049,6 @@ export function Dashboard() {
           icon={KPI_ICONS.stockout}
           loading={loadingSummary}
           onClick={() => navigate('/risks')}
-          trend={5}
-          invertTrend
           provenance="rule"
         />
       </div>

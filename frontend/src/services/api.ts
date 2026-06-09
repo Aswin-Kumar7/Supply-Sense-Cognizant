@@ -101,10 +101,24 @@ export const api = {
       body: JSON.stringify({ resolution_note: resolutionNote?.trim() || null }),
     }),
 
+  // Resolves ALL unresolved action cards for a supplier at once.
+  // Use this from the mitigation plan page so that taking action on a supplier
+  // immediately clears it from the dashboard and risks page.
+  resolveAllSupplierCards: (supplierId: string, resolutionNote?: string) =>
+    request<{ status: string; supplier_id: string; count: number }>(`/actions/resolve-supplier/${supplierId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ resolution_note: resolutionNote?.trim() || null }),
+    }),
+
   unresolveActionCard: (actionCardId: string) =>
     request<{ status: string; action_card_id: string }>(`/actions/${actionCardId}/unresolve`, {
       method: 'PATCH',
     }),
+
+  // Syncs action cards with live risk data — creates cards for any medium/high/critical
+  // supplier that doesn't already have an unresolved card. Idempotent.
+  syncRisks: () =>
+    request<{ synced: number; already_covered: number }>('/actions/sync-risks', { method: 'POST' }),
 
   // Health
   getHealth: () => request<HealthStatus>('/health'),
