@@ -119,6 +119,7 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
     const activeSuppliers = new Set<string>()
     for (const c of actionData?.action_cards ?? []) {
       if (!c.supplier_id || c.is_resolved) continue
+      if (c.estimated_impact_inr === 0) continue
       if (['critical', 'high', 'medium'].includes(c.priority)) {
         activeSuppliers.add(c.supplier_id)
       }

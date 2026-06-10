@@ -319,16 +319,18 @@ class RiskIntelligenceService:
 
         for supplier in suppliers:
             exposure = await self._compute_supplier_exposure(supplier)
+            # Skip suppliers with no financial stake — cost data missing or stock healthy
+            if exposure.total_exposure_inr == 0:
+                continue
             exposures.append(exposure)
 
-        # Sort by exposure
+        # Sort by exposure descending
         exposures.sort(key=lambda x: x.total_exposure_inr, reverse=True)
 
-        # Aggregate by category and region
+        # Aggregate by category and region (only non-zero exposures)
         by_category: dict = {}
         by_region: dict = {}
         for exp in exposures:
-            # Find supplier category/region
             sup = next((s for s in suppliers if str(s.id) == exp.supplier_id), None)
             if sup:
                 by_category[sup.category] = by_category.get(sup.category, 0) + exp.total_exposure_inr

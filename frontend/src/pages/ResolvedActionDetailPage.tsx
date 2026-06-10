@@ -33,6 +33,33 @@ const ACTION_LABELS: Record<string, string> = {
   substitute_sku:  'Activated substitute SKUs',
   reorder:         'Issued reorder',
 }
+
+// Reverse map: label text → action_type key
+// Covers both the labels stored in resolution_note (from RiskMitigationPlan) and the
+// canonical labels above, so we can identify which option was actually chosen.
+const LABEL_TO_ACTION_TYPE: Record<string, string> = {
+  // Labels from RiskMitigationPlan ACTION_LABELS (what gets written into resolution_note)
+  'switch to an alternate supplier': 'switch_supplier',
+  'pre-order additional safety stock': 'increase_stock',
+  'expedite current orders': 'expedite',
+  'activate substitute skus': 'substitute_sku',
+  // Labels from this page's ACTION_LABELS (canonical past-tense)
+  'switched to alternate supplier': 'switch_supplier',
+  'pre-ordered safety stock': 'increase_stock',
+  'expedited current orders': 'expedite',
+  'activated substitute skus': 'substitute_sku',
+  'issued reorder': 'reorder',
+}
+
+/** Given a resolution_note string, extract the action_type that was actually chosen. */
+function resolvedActionType(note: string | null, fallback: string): string {
+  if (!note) return fallback
+  const parts = note.split(' — ')
+  const actionPart = parts.find(p => p.startsWith('Action taken:'))
+  if (!actionPart) return fallback
+  const label = actionPart.replace('Action taken:', '').trim().toLowerCase()
+  return LABEL_TO_ACTION_TYPE[label] ?? fallback
+}
 const ACTION_ICONS: Record<string, any> = {
   switch_supplier: ShieldCheck,
   increase_stock:  BarChart3,
@@ -274,8 +301,11 @@ export default function ResolvedActionDetailPage() {
   )
 
   const { chosenActionLabel, handledExternally, userNote } = parseNote(card?.resolution_note ?? null)
-  const prevention = PREVENTION[card?.action_type ?? ''] ?? PREVENTION.reorder
-  const ActionIcon = ACTION_ICONS[card?.action_type ?? ''] ?? CheckCircle2
+  // Use the action that was actually chosen (from resolution_note) for icon / prevention tips.
+  // Fall back to card.action_type (original recommendation) when no note was recorded.
+  const actualActionType = resolvedActionType(card?.resolution_note ?? null, card?.action_type ?? '')
+  const prevention = PREVENTION[actualActionType] ?? PREVENTION.reorder
+  const ActionIcon = ACTION_ICONS[actualActionType] ?? CheckCircle2
 
   /* ── Loading / not found ─────────────────────────────────────────────── */
   if (cardsLoading) {
@@ -460,7 +490,7 @@ export default function ResolvedActionDetailPage() {
                 {[60, 60, 60].map(h => <div key={h} className="skeleton" style={{ height: h, borderRadius: '0.5rem' }} />)}
               </div>
             ) : sim ? (
-              <OptionsList sim={sim} chosenActionType={card.action_type} />
+              <OptionsList sim={sim} chosenActionType={resolvedActionType(card.resolution_note, card.action_type)} />
             ) : (
               <p style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', fontStyle: 'italic' }}>
                 Simulation data not available for this supplier.

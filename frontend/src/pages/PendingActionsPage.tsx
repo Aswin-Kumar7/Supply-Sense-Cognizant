@@ -1,19 +1,11 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { useActionCards } from '../hooks/useQueries'
+import { useActionCards, useWeightedRiskAnalysis, useProcurementCards } from '../hooks/useQueries'
 import { queryKeys } from '../hooks/queryKeys'
 import { api } from '../services/api'
-import { ClipboardList, CheckCircle2, ArrowUpRight, Circle, TrendingDown, ShieldCheck } from 'lucide-react'
-import type { ActionCard } from '../types'
-
-const PRIORITY_COLOR: Record<string, string> = {
-  critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#6B7280',
-}
-const PRIORITY_BG: Record<string, string> = {
-  critical: '#FEF2F2', high: '#FFFBEB', medium: '#EFF6FF', low: '#F9FAFB',
-}
-const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+import { ClipboardList, CheckCircle2, ArrowUpRight, TrendingDown, ShieldCheck, AlertTriangle } from 'lucide-react'
+import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
 
 function formatINR(v: number) {
   if (v >= 1_00_00_000) return `₹${(v / 1_00_00_000).toFixed(1)}Cr`
@@ -22,153 +14,131 @@ function formatINR(v: number) {
   return `₹${v}`
 }
 
-/* ── Supplier entry (one row per supplier) ────────────────────────────── */
-interface SupplierEntry {
-  supplierId: string
-  cards: ActionCard[]
-  isResolved: boolean
-  representative: ActionCard   // card shown for display
-  topPriority: string
-  totalExposure: number
-}
+const LEVEL_CONFIG = {
+  critical: { color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', label: 'Critical' },
+  high:     { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', label: 'High' },
+  medium:   { color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', label: 'Medium' },
+  low:      { color: '#059669', bg: '#F0FDF4', border: '#BBF7D0', label: 'Low' },
+} as const
 
-function buildSupplierEntries(cards: ActionCard[]): SupplierEntry[] {
-  // Group by supplier_id — skip cards without a supplier
-  const groups = new Map<string, ActionCard[]>()
-  for (const card of cards) {
-    if (!card.supplier_id) continue
-    const g = groups.get(card.supplier_id) ?? []
-    g.push(card)
-    groups.set(card.supplier_id, g)
-  }
-
-  return [...groups.entries()].map(([supplierId, grp]) => {
-    const hasUnresolved = grp.some(c => !c.is_resolved)
-    const isResolved = !hasUnresolved
-
-    // Best card to display: most urgent unresolved, or most recently resolved
-    const representative = [...grp].sort((a, b) => {
-      if (a.is_resolved !== b.is_resolved) return a.is_resolved ? 1 : -1
-      const pa = PRIORITY_ORDER[a.priority] ?? 9
-      const pb = PRIORITY_ORDER[b.priority] ?? 9
-      if (pa !== pb) return pa - pb
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    })[0]
-
-    const unresolvedCards = grp.filter(c => !c.is_resolved)
-    const topPriority = [...grp].sort(
-      (a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9)
-    )[0]?.priority ?? 'low'
-    const totalExposure = unresolvedCards.reduce((s, c) => s + c.estimated_impact_inr, 0)
-      || grp.reduce((s, c) => s + c.estimated_impact_inr, 0)
-
-    return { supplierId, cards: grp, isResolved, representative, topPriority, totalExposure }
-  })
-}
-
-/* ── Supplier row ─────────────────────────────────────────────────────── */
-function SupplierRow({ entry, onToggle }: {
-  entry: SupplierEntry
-  onToggle: (supplierId: string, currentlyResolved: boolean) => Promise<void>
-}) {
+/* ── Pending row — mirrors RisksPage RiskRow exactly ─────────────────── */
+function PendingRow({ risk, card }: { risk: SupplierRiskAnalysis; card: IntelligentActionCard }) {
   const navigate = useNavigate()
-  const [busy, setBusy] = useState(false)
-  const { representative, isResolved, topPriority, totalExposure, supplierId } = entry
-  const color = PRIORITY_COLOR[topPriority] ?? '#6B7280'
-  const bg = PRIORITY_BG[topPriority] ?? '#F9FAFB'
-
-  async function handleToggle(e: React.MouseEvent) {
-    e.stopPropagation()
-    setBusy(true)
-    await onToggle(supplierId, isResolved)
-    setBusy(false)
-  }
-
-  function handleRowClick() {
-    if (isResolved) {
-      // Go to resolution summary
-      navigate(`/activity/${representative.id}`)
-    } else {
-      // Go to mitigation plan
-      navigate(`/risks/${supplierId}/mitigation`)
-    }
-  }
+  const cfg = LEVEL_CONFIG[risk.risk_level] ?? LEVEL_CONFIG.low
+  const urgent = card.days_to_stockout <= 7
+  const needsAction = risk.risk_level === 'critical' || risk.risk_level === 'high'
 
   return (
     <div
+      onClick={() => navigate(`/risks/${risk.supplier_id}`)}
       style={{
         display: 'grid',
-        gridTemplateColumns: '40px 1fr auto auto',
+        gridTemplateColumns: '4px 1fr 90px 100px 110px 100px',
         alignItems: 'center',
         gap: '1rem',
-        padding: '1rem 1.25rem',
+        padding: '0.875rem 1rem 0.875rem 0',
+        borderBottom: '1px solid var(--border)',
         cursor: 'pointer',
+        background: '#fff',
         transition: 'background 120ms ease',
-        opacity: isResolved ? 0.55 : 1,
       }}
-      onClick={handleRowClick}
-      onMouseEnter={e => { e.currentTarget.style.background = '#F9F9F9' }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+      onMouseEnter={e => { e.currentTarget.style.background = '#FAFAFA' }}
+      onMouseLeave={e => { e.currentTarget.style.background = '#fff' }}
     >
-      {/* Toggle */}
-      <button
-        onClick={handleToggle}
-        disabled={busy}
-        title={isResolved ? 'Mark as pending' : 'Mark as done'}
-        style={{
-          width: 36, height: 36, borderRadius: '50%',
-          border: `2px solid ${isResolved ? '#16a34a' : color}`,
-          background: isResolved ? '#dcfce7' : bg,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: busy ? 'wait' : 'pointer',
-          flexShrink: 0, transition: 'all 150ms ease',
-        }}
-      >
-        {isResolved
-          ? <CheckCircle2 size={16} color="#16a34a" />
-          : <Circle size={16} color={color} style={{ opacity: busy ? 0.4 : 0.3 }} />
-        }
-      </button>
+      <div style={{ width: '4px', height: '40px', borderRadius: '2px', background: cfg.color, flexShrink: 0 }} />
 
-      {/* Title + meta */}
       <div style={{ minWidth: 0 }}>
-        <div style={{
-          fontSize: '0.875rem', fontWeight: 600,
-          color: isResolved ? '#6B7280' : '#000',
-          textDecoration: isResolved ? 'line-through' : 'none',
-          marginBottom: '0.25rem', lineHeight: 1.4,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {representative.title}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          <span style={{
-            fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase',
-            letterSpacing: '0.05em', color, padding: '2px 7px',
-            borderRadius: '99px', background: bg, border: `1px solid ${color}22`,
-          }}>
-            {topPriority}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#000' }}>{risk.supplier_name}</span>
+          <span style={{ fontSize: '0.45rem', fontWeight: 800, padding: '2px 5px', borderRadius: '3px', background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, letterSpacing: '0.05em' }}>
+            {cfg.label.toUpperCase()}
           </span>
-          <span style={{ fontSize: '0.75rem', color: '#6B7280' }}>{representative.action_type}</span>
-          {isResolved && (
-            <span style={{ fontSize: '0.6875rem', color: '#16a34a', fontWeight: 600 }}>✓ Resolved</span>
-          )}
+        </div>
+        {card.title && (
+          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '340px' }}>
+            {card.title}
+          </div>
+        )}
+      </div>
+
+      <div style={{ textAlign: 'right' }}>
+        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: cfg.color, fontFamily: 'monospace', lineHeight: 1 }}>
+          {(risk.overall_score * 100).toFixed(0)}%
+        </div>
+        <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 600, textTransform: 'uppercase', marginTop: '2px' }}>likelihood</div>
+      </div>
+
+      <div style={{ textAlign: 'right' }}>
+        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', fontFamily: 'monospace', lineHeight: 1 }}>
+          {formatINR(card.financial_exposure_inr)}
+        </div>
+        <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 600, textTransform: 'uppercase', marginTop: '2px' }}>if it fails</div>
+      </div>
+
+      <div style={{ textAlign: 'right' }}>
+        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: urgent ? '#DC2626' : '#000', fontFamily: 'monospace', lineHeight: 1 }}>
+          {card.days_to_stockout}d
+        </div>
+        <div style={{ fontSize: '0.5rem', color: urgent ? '#DC2626' : 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', marginTop: '2px' }}>
+          {urgent ? '⚠ stockout' : 'to stockout'}
         </div>
       </div>
 
-      {/* Impact */}
-      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: topPriority === 'critical' ? '#DC2626' : '#000', fontFamily: 'monospace' }}>
-          {formatINR(totalExposure)}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.6875rem', fontWeight: 600, color: needsAction ? cfg.color : 'var(--ink-4)' }}>
+          {needsAction ? 'Take action' : 'View detail'}
+          <ArrowUpRight size={12} />
         </div>
-        <div style={{ fontSize: '0.5625rem', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em' }}>Impact</div>
       </div>
+    </div>
+  )
+}
 
-      {/* Arrow */}
-      {!isResolved
-        ? <ArrowUpRight size={14} color="#9CA3AF" style={{ flexShrink: 0 }} />
-        : <div style={{ width: 14 }} />
-      }
+/* ── Resolved row ────────────────────────────────────────────────────── */
+function ResolvedRow({ risk, card, resolvedCardId }: {
+  risk: SupplierRiskAnalysis
+  card: IntelligentActionCard
+  resolvedCardId: string | null
+}) {
+  const navigate = useNavigate()
+  return (
+    <div
+      onClick={() => navigate(resolvedCardId ? `/activity/${resolvedCardId}` : `/risks/${risk.supplier_id}`)}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '4px 1fr 100px 100px 80px',
+        alignItems: 'center',
+        gap: '1rem',
+        padding: '0.75rem 1rem',
+        borderBottom: '1px solid var(--border)',
+        cursor: 'pointer',
+        opacity: 0.6,
+        transition: 'opacity 120ms ease',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = '#F9FAF9' }}
+      onMouseLeave={e => { e.currentTarget.style.opacity = '0.6'; e.currentTarget.style.background = 'transparent' }}
+    >
+      <div style={{ width: '4px', height: '32px', borderRadius: '2px', background: '#16a34a', flexShrink: 0 }} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <CheckCircle2 size={12} color="#16a34a" />
+          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#166534', textDecoration: 'line-through', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {risk.supplier_name}
+          </span>
+        </div>
+        <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', marginTop: '2px', marginLeft: '1.25rem' }}>
+          Action completed
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--ink-4)' }}>
+        {(risk.overall_score * 100).toFixed(0)}% risk
+      </div>
+      <div style={{ textAlign: 'right', fontSize: '0.75rem', color: '#16a34a', fontWeight: 600, fontFamily: 'monospace' }}>
+        {formatINR(card.financial_exposure_inr)}
+      </div>
+      <div style={{ textAlign: 'right', fontSize: '0.6875rem', color: '#16a34a', fontWeight: 600 }}>
+        Resolved
+      </div>
     </div>
   )
 }
@@ -178,10 +148,13 @@ type Filter = 'pending' | 'resolved' | 'all'
 export default function PendingActionsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { data, isLoading } = useActionCards()
+  const { data: actionData, isLoading: cardsLoading } = useActionCards()
+  const { data: risks, isLoading: risksLoading } = useWeightedRiskAnalysis()
+  const { data: procCards, isLoading: procLoading } = useProcurementCards()
   const [filter, setFilter] = useState<Filter>('pending')
 
-  // Sync on page open so counts stay aligned with Risks page
+  const isLoading = cardsLoading || risksLoading || procLoading
+
   useEffect(() => {
     api.syncRisks()
       .then(({ synced }) => {
@@ -193,48 +166,83 @@ export default function PendingActionsPage() {
       .catch(() => {})
   }, [queryClient])
 
-  const allCards = data?.action_cards ?? []
+  // Procurement card map: supplierId → card
+  const procCardMap = useMemo(
+    () => new Map((procCards as IntelligentActionCard[] ?? []).map(c => [c.supplier_id, c])),
+    [procCards]
+  )
 
-  // One entry per supplier — this is the source of truth for all counts
-  const entries = useMemo(() => buildSupplierEntries(allCards), [allCards])
-
-  const pendingEntries  = entries.filter(e => !e.isResolved)
-  const resolvedEntries = entries.filter(e => e.isResolved)
-
-  const totalExposure = pendingEntries.reduce((s, e) => s + e.totalExposure, 0)
-  const totalSaved    = resolvedEntries.reduce((s, e) => s + e.totalExposure, 0)
-
-  const filtered = [...entries]
-    .filter(e => {
-      if (filter === 'pending')  return !e.isResolved
-      if (filter === 'resolved') return e.isResolved
-      return true
-    })
-    .sort((a, b) => {
-      if (a.isResolved !== b.isResolved) return a.isResolved ? 1 : -1
-      return (PRIORITY_ORDER[a.topPriority] ?? 9) - (PRIORITY_ORDER[b.topPriority] ?? 9)
-    })
-
-  const handleToggle = useCallback(async (
-    supplierId: string,
-    currentlyResolved: boolean,
-  ) => {
-    if (currentlyResolved) {
-      // Unresolve ALL cards for the supplier — not just the representative one
-      await api.unresolveAllSupplierCards(supplierId)
-    } else {
-      // Resolve ALL cards for this supplier at once
-      await api.resolveAllSupplierCards(supplierId)
+  // Resolved supplier IDs (all action cards resolved)
+  const resolvedSupplierIds = useMemo(() => {
+    const bySupplier = new Map<string, { resolved: number; total: number }>()
+    for (const c of actionData?.action_cards ?? []) {
+      if (!c.supplier_id) continue
+      const entry = bySupplier.get(c.supplier_id) ?? { resolved: 0, total: 0 }
+      entry.total++
+      if (c.is_resolved) entry.resolved++
+      bySupplier.set(c.supplier_id, entry)
     }
-    queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
-    queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
-    queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
-    queryClient.invalidateQueries({ queryKey: queryKeys.financial })
-    queryClient.invalidateQueries({ queryKey: queryKeys.disruptions })
-    queryClient.invalidateQueries({ queryKey: queryKeys.stockout })
-    queryClient.invalidateQueries({ queryKey: queryKeys.procurement })
-    queryClient.invalidateQueries({ queryKey: queryKeys.executiveBrief })
-  }, [queryClient])
+    return new Set(
+      [...bySupplier.entries()]
+        .filter(([, { resolved, total }]) => total > 0 && resolved === total)
+        .map(([id]) => id)
+    )
+  }, [actionData])
+
+  // Resolved card ID per supplier (for navigation to activity summary)
+  const resolvedCardIdMap = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of actionData?.action_cards ?? []) {
+      if (!c.supplier_id || !c.is_resolved) continue
+      const existing = m.get(c.supplier_id)
+      if (!existing || new Date(c.resolved_at ?? c.created_at) > new Date(
+        (actionData!.action_cards.find(x => x.id === existing)?.resolved_at ?? '')
+      )) {
+        m.set(c.supplier_id, c.id)
+      }
+    }
+    return m
+  }, [actionData])
+
+  const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
+
+  // Active risks — identical filter to RisksPage
+  const activeRisks = useMemo(() => riskList.filter(r => {
+    if (resolvedSupplierIds.has(r.supplier_id)) return false
+    if (r.risk_level === 'low') return false
+    const card = procCardMap.get(r.supplier_id)
+    if (!card || card.financial_exposure_inr === 0) return false
+    return true
+  }), [riskList, resolvedSupplierIds, procCardMap])
+
+  // Resolved risks — identical filter to RisksPage resolved section
+  const resolvedRisks = useMemo(() => riskList.filter(r => {
+    if (!resolvedSupplierIds.has(r.supplier_id)) return false
+    if (r.risk_level === 'low') return false
+    const card = procCardMap.get(r.supplier_id)
+    if (!card || card.financial_exposure_inr === 0) return false
+    return true
+  }), [riskList, resolvedSupplierIds, procCardMap])
+
+  // Sort active by exposure descending (same as Risks page)
+  const sortedActive = useMemo(
+    () => [...activeRisks].sort((a, b) =>
+      (procCardMap.get(b.supplier_id)?.financial_exposure_inr ?? 0) -
+      (procCardMap.get(a.supplier_id)?.financial_exposure_inr ?? 0)
+    ),
+    [activeRisks, procCardMap]
+  )
+
+  const totalExposure = useMemo(
+    () => activeRisks.reduce((s, r) => s + (procCardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0), 0),
+    [activeRisks, procCardMap]
+  )
+  const totalSaved = useMemo(
+    () => resolvedRisks.reduce((s, r) => s + (procCardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0), 0),
+    [resolvedRisks, procCardMap]
+  )
+
+  const actionNeeded = activeRisks.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -251,7 +259,7 @@ export default function PendingActionsPage() {
           Pending Actions
         </h1>
         <p style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', marginTop: '0.25rem' }}>
-          One action per supplier · resolve to clear from the Risks page
+          Mirrors the Risks page — same suppliers, same data
         </p>
       </div>
 
@@ -265,7 +273,7 @@ export default function PendingActionsPage() {
             <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#DC2626', marginBottom: '0.25rem' }}>Exposure at Risk</div>
             <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#DC2626', lineHeight: 1, fontFamily: 'monospace' }}>{formatINR(totalExposure)}</div>
             <div style={{ fontSize: '0.75rem', color: '#EF4444', marginTop: '0.25rem' }}>
-              across {pendingEntries.length} supplier{pendingEntries.length !== 1 ? 's' : ''}
+              across {activeRisks.length} supplier{activeRisks.length !== 1 ? 's' : ''}
             </div>
           </div>
         </div>
@@ -278,15 +286,30 @@ export default function PendingActionsPage() {
             <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#16a34a', marginBottom: '0.25rem' }}>Risk Mitigated</div>
             <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#16a34a', lineHeight: 1, fontFamily: 'monospace' }}>{formatINR(totalSaved)}</div>
             <div style={{ fontSize: '0.75rem', color: '#22c55e', marginTop: '0.25rem' }}>
-              across {resolvedEntries.length} supplier{resolvedEntries.length !== 1 ? 's' : ''}
+              across {resolvedRisks.length} supplier{resolvedRisks.length !== 1 ? 's' : ''}
             </div>
           </div>
         </div>
       </div>
 
+      {/* Action-needed banner */}
+      {actionNeeded > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.75rem',
+          padding: '0.625rem 1rem',
+          background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '0.5rem',
+          fontSize: '0.8125rem',
+        }}>
+          <AlertTriangle size={14} style={{ color: '#DC2626', flexShrink: 0 }} />
+          <span style={{ color: '#991B1B', fontWeight: 600 }}>
+            {actionNeeded} supplier{actionNeeded !== 1 ? 's' : ''} require immediate action
+          </span>
+        </div>
+      )}
+
       {/* Filter tabs */}
       <div style={{ display: 'flex', gap: '0.25rem' }}>
-        {(['pending', 'resolved', 'all'] as Filter[]).map(f => (
+        {(['pending', 'resolved'] as Filter[]).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -299,46 +322,64 @@ export default function PendingActionsPage() {
               cursor: 'pointer',
             }}
           >
-            {f === 'pending'  ? `Pending (${pendingEntries.length})`
-            : f === 'resolved' ? `Resolved (${resolvedEntries.length})`
-            : `All (${entries.length})`}
+            {f === 'pending' ? `Pending (${activeRisks.length})` : `Resolved (${resolvedRisks.length})`}
           </button>
         ))}
       </div>
 
       {/* Table */}
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr auto auto', gap: '1rem', padding: '0.625rem 1.25rem', background: '#F9F9F9', borderBottom: '1px solid var(--border)' }}>
-          {['', 'Supplier', 'Impact', ''].map((col, i) => (
-            <div key={i} style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 2 ? 'right' : 'left' }}>
-              {col}
-            </div>
-          ))}
+
+        {/* Header */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '4px 1fr 90px 100px 110px 100px',
+          gap: '1rem', padding: '0.625rem 1rem 0.625rem 0',
+          background: '#F9F9F9', borderBottom: '1px solid var(--border)',
+        }}>
+          <div />
+          <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Supplier</div>
+          <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Likelihood</div>
+          <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>If It Fails</div>
+          <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Stockout</div>
+          <div />
         </div>
 
         {isLoading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>Loading actions…</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: '3rem', textAlign: 'center' }}>
-            <CheckCircle2 size={32} color="#16a34a" style={{ marginBottom: '0.75rem' }} />
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#000' }}>All clear</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '0.25rem' }}>No pending actions at this time</div>
-          </div>
+          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>Loading…</div>
+        ) : filter === 'pending' ? (
+          sortedActive.length === 0 ? (
+            <div style={{ padding: '3rem', textAlign: 'center' }}>
+              <CheckCircle2 size={32} color="#16a34a" style={{ marginBottom: '0.75rem' }} />
+              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#000' }}>All clear</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '0.25rem' }}>No pending actions at this time</div>
+            </div>
+          ) : (
+            sortedActive.map(r => (
+              <PendingRow key={r.supplier_id} risk={r} card={procCardMap.get(r.supplier_id)!} />
+            ))
+          )
         ) : (
-          <div>
-            {filtered.map((entry, i, arr) => (
-              <div key={entry.supplierId}>
-                <SupplierRow entry={entry} onToggle={handleToggle} />
-                {i < arr.length - 1 && <div style={{ height: '1px', background: 'var(--border)', margin: '0 1.25rem' }} />}
-              </div>
-            ))}
-          </div>
+          resolvedRisks.length === 0 ? (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
+              No resolved actions yet.
+            </div>
+          ) : (
+            resolvedRisks.map(r => (
+              <ResolvedRow
+                key={r.supplier_id}
+                risk={r}
+                card={procCardMap.get(r.supplier_id)!}
+                resolvedCardId={resolvedCardIdMap.get(r.supplier_id) ?? null}
+              />
+            ))
+          )
         )}
       </div>
 
       <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
         <ClipboardList size={11} />
-        Click the circle to toggle resolved · click any row to view the mitigation plan
+        Click any row to view supplier risk detail
       </div>
 
     </div>

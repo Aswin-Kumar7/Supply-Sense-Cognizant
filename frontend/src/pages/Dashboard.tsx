@@ -16,7 +16,7 @@ import { Badge } from '../components/ui/Badge'
 import { ProvenanceTag } from '../components/ui/ProvenanceTag'
 import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
-import type { SupplierRiskAnalysis, Disruption, ActionCard, IntelligentActionCard, ExecutiveBrief } from '../types'
+import type { SupplierRiskAnalysis, Disruption, IntelligentActionCard, ExecutiveBrief } from '../types'
 import { AlertTriangle, AlertCircle, DollarSign, Package, Users, Activity, Wind, Truck, Search, ClipboardList, Link as LinkIcon, Calendar, ChevronRight } from 'lucide-react'
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
@@ -579,10 +579,12 @@ function primarySignal(factors: SupplierRiskAnalysis['factors']): { name: string
 }
 
 /* ── Critical Issues table ───────────────────────────────────────────── */
-function CriticalIssuesTable({ risks, cardMap, resolvedSupplierIds }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard>; resolvedSupplierIds: Set<string> }) {
+function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard> }) {
   const navigate = useNavigate()
+  // risks is already filtered (no resolved, no low, no ₹0) — just keep critical/high and sort
   const topIssues = risks
-    .filter(r => (r.risk_level === 'critical' || r.risk_level === 'high') && !resolvedSupplierIds.has(r.supplier_id))
+    .filter(r => r.risk_level === 'critical' || r.risk_level === 'high')
+    .filter(r => (cardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0) > 0)
     .sort((a, b) => {
       const expA = cardMap.get(a.supplier_id)?.financial_exposure_inr ?? 0
       const expB = cardMap.get(b.supplier_id)?.financial_exposure_inr ?? 0
@@ -689,8 +691,8 @@ function DisruptionFeed({ disruptions }: { disruptions: Disruption[] }) {
   const navigate = useNavigate()
   const TYPE_ICON: Record<string, React.ReactNode> = { cyclone: <Wind size={18} />, strike: <Truck size={18} />, logistics: <Package size={18} />, inventory: <Activity size={18} />, quality: <Search size={18} />, regulatory: <ClipboardList size={18} /> }
 
-  // Same filter as DisruptionsPage — hide low-severity noise
-  const significant = disruptions.filter(d => d.severity !== 'low')
+  // Only active, non-low disruptions — matches DisruptionsPage
+  const significant = disruptions.filter(d => d.is_active && d.severity !== 'low')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '1rem', overflow: 'hidden' }}>
@@ -744,9 +746,9 @@ function DisruptionFeed({ disruptions }: { disruptions: Disruption[] }) {
 }
 
 /* ── Top exposures list ───────────────────────────────────────────────── */
-function TopExposures({ financial }: { financial: any }) {
+function TopExposures({ exposures }: { exposures: any[] }) {
   const navigate = useNavigate()
-  const top = financial?.top_exposures?.slice(0, 5) ?? []
+  const top = exposures
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '1rem', overflow: 'hidden' }}>
@@ -799,56 +801,68 @@ function TopExposures({ financial }: { financial: any }) {
 }
 
 /* ── Pending actions list ────────────────────────────────────────────── */
-function PendingActions({ cards }: { cards: ActionCard[] }) {
+function PendingActionsWidget({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard> }) {
   const navigate = useNavigate()
-  const top = cards.filter(c => !c.is_resolved).slice(0, 5)
+  // Same data as RisksPage — sorted by exposure desc, top 5
+  const top = risks
+    .slice()
+    .sort((a, b) => (cardMap.get(b.supplier_id)?.financial_exposure_inr ?? 0) - (cardMap.get(a.supplier_id)?.financial_exposure_inr ?? 0))
+    .slice(0, 5)
+
+  if (top.length === 0) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '1rem' }}>
+        No pending actions
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '1rem', overflow: 'hidden' }}>
-      {top.map((card, i, arr) => (
-        <div key={card.id}>
-          <div
-            onClick={() => navigate(`/risks/${card.supplier_id}/mitigation`)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '1rem',
-              padding: '1rem 1.25rem',
-              background: 'transparent',
-              cursor: 'pointer',
-              transition: 'background 200ms ease',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'var(--bg-hover)'
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'transparent'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '0.5rem', background: 'var(--bg-hover)', color: '#000', flexShrink: 0 }}>
-              <ClipboardList size={18} />
-            </div>
+      {top.map((risk, i, arr) => {
+        const card = cardMap.get(risk.supplier_id)
+        const isUrgent = risk.risk_level === 'critical' || risk.risk_level === 'high'
+        return (
+          <div key={risk.supplier_id}>
+            <div
+              onClick={() => navigate(`/risks/${risk.supplier_id}/mitigation`)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '1rem',
+                padding: '1rem 1.25rem',
+                background: 'transparent',
+                cursor: 'pointer',
+                transition: 'background 200ms ease',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '0.5rem', background: isUrgent ? '#FEF2F2' : 'var(--bg-hover)', color: isUrgent ? '#c55b55' : '#000', flexShrink: 0 }}>
+                <ClipboardList size={18} />
+              </div>
 
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--ink-1)', marginBottom: '0.25rem', lineHeight: 1.4 }}>
-                {card.title}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--ink-1)', marginBottom: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {risk.supplier_name}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <Badge level={risk.risk_level} />
+                  {card && <span style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontFamily: 'monospace' }}>{card.days_to_stockout}d to stockout</span>}
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <Badge level={card.priority} />
-                <span style={{ fontSize: '0.6875rem', color: 'var(--ink-2)', fontWeight: 500 }}>Requires Action</span>
-              </div>
-            </div>
 
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ fontSize: '0.875rem', fontWeight: 500, color: card.priority === 'critical' ? '#c55b55' : '#000' }}>
-                {formatINR(card.estimated_impact_inr)}
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: '0.875rem', fontWeight: 600, color: isUrgent ? '#c55b55' : '#000', fontFamily: 'monospace' }}>
+                  {formatINR(card?.financial_exposure_inr ?? 0)}
+                </div>
+                <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', marginTop: '1px', fontWeight: 500 }}>Exposure</div>
               </div>
-              <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', textTransform: 'uppercase', marginTop: '1px', fontWeight: 500 }}>Impact</div>
             </div>
+            {i < arr.length - 1 && (
+              <div style={{ height: '1px', background: 'var(--border)', margin: '0 1.25rem' }} />
+            )}
           </div>
-          {i < arr.length - 1 && (
-            <div style={{ height: '1px', background: 'var(--border)', margin: '0 1.25rem' }} />
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -892,7 +906,27 @@ export function Dashboard() {
     )
   }, [actionData])
 
-  const activeRiskList = useMemo(() => riskList.filter(r => !resolvedSupplierIds.has(r.supplier_id)), [riskList, resolvedSupplierIds])
+  // Mirror exact same filter as RisksPage and PendingActionsPage
+  const activeRiskList = useMemo(() => riskList.filter(r => {
+    if (resolvedSupplierIds.has(r.supplier_id)) return false
+    if (r.risk_level === 'low') return false
+    const card = cardMap.get(r.supplier_id)
+    if (!card || card.financial_exposure_inr === 0) return false
+    return true
+  }), [riskList, resolvedSupplierIds, cardMap])
+
+  // Total unresolved exposure — shown in Financial Exposure KPI
+  const activeExposureTotal = useMemo(
+    () => activeRiskList.reduce((s, r) => s + (cardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0), 0),
+    [activeRiskList, cardMap]
+  )
+
+  // Top 5 unresolved active exposures for the widget (pre-filtered)
+  const activeTopExposures = useMemo(() => {
+    return (financial?.top_exposures ?? [])
+      .filter((e: any) => !resolvedSupplierIds.has(e.supplier_id) && e.total_exposure_inr > 0)
+      .slice(0, 5)
+  }, [financial, resolvedSupplierIds])
 
   // Sync action cards with live risk data on mount — ensures Pending Actions mirrors Risks
   useEffect(() => {
@@ -903,6 +937,7 @@ export function Dashboard() {
       .catch(() => {/* silent — sync failure shouldn't break the dashboard */})
   }, [queryClient])
 
+  // activeRiskList already excludes low-risk and ₹0 suppliers
   const criticalCount = activeRiskList.filter(r => r.risk_level === 'critical').length
   const highRiskCount = activeRiskList.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
 
@@ -1023,11 +1058,11 @@ export function Dashboard() {
         />
         <KPICard
           label="Financial Exposure"
-          value={loadingSummary ? '—' : formatINR(financial?.total_financial_exposure_inr ?? 0)}
-          sub={`Revenue at risk: ${formatINR(financial?.total_revenue_at_risk_inr ?? 0)}`}
+          value={loadingRisks ? '—' : formatINR(activeExposureTotal)}
+          sub={`${activeRiskList.length} unresolved supplier${activeRiskList.length !== 1 ? 's' : ''} · active`}
           accent="#D29729"
           icon={KPI_ICONS.financial}
-          loading={loadingSummary}
+          loading={loadingRisks}
           onClick={() => navigate('/risks')}
           provenance="rule"
         />
@@ -1066,7 +1101,7 @@ export function Dashboard() {
           <div className="card-flush">
             {loadingRisks
               ? <div style={{ padding: '1rem' }}><Skeleton h={40} /><Skeleton h={40} /><Skeleton h={40} /></div>
-              : <CriticalIssuesTable risks={activeRiskList} cardMap={cardMap} resolvedSupplierIds={resolvedSupplierIds} />
+              : <CriticalIssuesTable risks={activeRiskList} cardMap={cardMap} />
             }
           </div>
         </div>
@@ -1121,7 +1156,7 @@ export function Dashboard() {
           />
             {!financial
               ? <><Skeleton h={52} /><Skeleton h={52} /><Skeleton h={52} /></>
-              : <TopExposures financial={financial} />
+              : <TopExposures exposures={activeTopExposures} />
             }
         </div>
 
@@ -1132,9 +1167,9 @@ export function Dashboard() {
             action="View all"
             onAction={() => navigate('/actions')}
           />
-            {!actionData
+            {loadingRisks
               ? <><Skeleton h={52} /><Skeleton h={52} /><Skeleton h={52} /></>
-              : <PendingActions cards={actionData.action_cards} />
+              : <PendingActionsWidget risks={activeRiskList} cardMap={cardMap} />
             }
         </div>
 

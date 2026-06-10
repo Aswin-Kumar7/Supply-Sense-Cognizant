@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useWeightedRiskAnalysis, useProcurementCards, useFinancialSummary, useActionCards } from '../hooks/useQueries'
+import { useWeightedRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
 import { Search, AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
 
@@ -150,7 +150,6 @@ export default function RisksPage() {
 
   const { data: risks, isLoading, isCustom: customWeightsActive } = useWeightedRiskAnalysis()
   const { data: cards } = useProcurementCards()
-  const { data: financial } = useFinancialSummary()
   const { data: actionData } = useActionCards()
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
@@ -180,12 +179,20 @@ export default function RisksPage() {
   const activeRisks = useMemo(() => riskList.filter(r => {
     if (resolvedSupplierIds.has(r.supplier_id)) return false
     if (r.risk_level === 'low') return false
-    // If a procurement card exists for this supplier but shows ₹0, cost data is missing — hide it
+    // Only show suppliers where there is actual money at stake.
+    // No card = no financial data. Card with ₹0 = cost data missing or stock healthy.
+    // Either way: no financial exposure means no actionable risk.
     const card = cardMap.get(r.supplier_id)
-    if (card && card.financial_exposure_inr === 0) return false
+    if (!card || card.financial_exposure_inr === 0) return false
     return true
   }), [riskList, resolvedSupplierIds, cardMap])
-  const resolvedRisks = useMemo(() => riskList.filter(r => resolvedSupplierIds.has(r.supplier_id) && r.risk_level !== 'low'), [riskList, resolvedSupplierIds])
+  const resolvedRisks = useMemo(() => riskList.filter(r => {
+    if (!resolvedSupplierIds.has(r.supplier_id)) return false
+    if (r.risk_level === 'low') return false
+    const card = cardMap.get(r.supplier_id)
+    if (!card || card.financial_exposure_inr === 0) return false
+    return true
+  }), [riskList, resolvedSupplierIds, cardMap])
 
   const counts = useMemo(() => ({
     critical: activeRisks.filter(r => r.risk_level === 'critical').length,
@@ -209,6 +216,12 @@ export default function RisksPage() {
 
   const actionNeeded = activeRisks.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
 
+  // Sum exposure only across active (unresolved) suppliers
+  const totalActiveExposure = useMemo(
+    () => activeRisks.reduce((sum, r) => sum + (cardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0), 0),
+    [activeRisks, cardMap]
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
@@ -227,11 +240,11 @@ export default function RisksPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-end' }}>
-            {financial && (
+            {totalActiveExposure > 0 && (
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Exposure</div>
+                <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Unresolved Exposure</div>
                 <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#DC2626', fontFamily: 'monospace' }}>
-                  {formatINR(financial.total_financial_exposure_inr)}
+                  {formatINR(totalActiveExposure)}
                 </div>
               </div>
             )}
