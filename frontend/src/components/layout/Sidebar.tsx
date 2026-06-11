@@ -147,7 +147,7 @@ function SidebarLink({
   )
 }
 
-/* ── Sidebar ────────────────────────────────────────────────────────── */
+/* ── Sidebar ────────────────────────────────────────────────────── */
 export function Sidebar() {
   const { data: risks } = useRiskAnalysis()
   const { data: disruptions } = useDisruptions()
@@ -169,11 +169,24 @@ export function Sidebar() {
       overflowY: 'auto',
       overflowX: 'hidden',
     }}>
-      <div style={{ padding: '0 0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <div style={{ width: '28px', height: '28px', background: 'var(--primary)', borderRadius: '0.375rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>
+
+      {/* ── Brand / Logo ───────────────────────────────────────── */}
+      <div style={{ padding: '0 0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+        <div style={{
+          width: '32px', height: '32px',
+          background: 'linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)',
+          borderRadius: '0.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontWeight: 900, fontSize: '1rem',
+          boxShadow: '0 2px 8px rgba(37,99,235,0.35)',
+          flexShrink: 0,
+        }}>
           S
         </div>
-        <span style={{ fontSize: '1.125rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em' }}>SupplySense</span>
+        <div>
+          <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>SupplySense</div>
+          <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', fontWeight: 500, letterSpacing: '0.04em', marginTop: '1px' }}>AI Supply Chain · v0.5.0</div>
+        </div>
       </div>
 
       <SidebarSection label="Dashboard" />
@@ -184,12 +197,64 @@ export function Sidebar() {
       <SidebarLink to="/companies" icon={Icons.companies} label="Suppliers" />
       <SidebarLink to="/alternate-suppliers" icon={Icons.alternates} label="Sales Report" />
 
+      <SidebarSection label="AI" />
+      <SidebarLink to="/advisor" icon={Icons.advisor} label="AI Advisor" />
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      <div style={{ height: '1px', background: 'var(--border)', margin: '1rem 0' }} />
-      
+      {/* ── Contributor Card ───────────────────────────────────── */}
+      <div style={{
+        margin: '0.5rem 0',
+        padding: '0.75rem',
+        background: 'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 100%)',
+        border: '1px solid #DBEAFE',
+        borderRadius: '0.625rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.625rem',
+      }}>
+        <div style={{
+          width: '30px', height: '30px',
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, #2563EB, #7C3AED)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontWeight: 700, fontSize: '0.75rem',
+          flexShrink: 0,
+        }}>
+          AK
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            Aswin Kumar
+          </div>
+          <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', marginTop: '1px' }}>UI / Frontend Dev</div>
+        </div>
+        <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+          <a
+            href="https://github.com/Aswin-Kumar7"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '22px', height: '22px',
+              color: 'var(--ink-3)',
+              borderRadius: '0.25rem',
+              transition: 'color 150ms',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#2563EB')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-3)')}
+            title="GitHub"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <div style={{ height: '1px', background: 'var(--border)', margin: '0.5rem 0' }} />
+
       <SidebarSection label="Support" />
       <SidebarLink to="/settings" icon={Icons.settings} label="Settings" />
       <SidebarLink to="/help" icon={<svg width={16} height={16} viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 14.5v.5M10 7c0-1.5 2-1.5 2 0 0 1.5-2 1.5-2 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>} label="Help Center" />

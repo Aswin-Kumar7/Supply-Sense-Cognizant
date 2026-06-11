@@ -228,15 +228,22 @@ export function TopBar() {
         <HealthDot health={health} />
         <div style={{ width: '1px', height: '20px', background: 'var(--border)' }} />
         <LiveClock />
-        <div style={{
-          width: '36px', height: '36px', borderRadius: '50%',
-          background: 'var(--bg-hover)',
-          border: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.8125rem', fontWeight: 700, color: 'var(--ink-1)',
-          flexShrink: 0,
-          marginLeft: '0.5rem'
-        }}>
+        <div
+          title="Aswin Kumar · UI / Frontend Dev"
+          style={{
+            width: '36px', height: '36px', borderRadius: '50%',
+            background: 'linear-gradient(135deg, #2563EB, #7C3AED)',
+            border: '2px solid #DBEAFE',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.6875rem', fontWeight: 800, color: '#fff',
+            flexShrink: 0,
+            marginLeft: '0.5rem',
+            cursor: 'default',
+            boxShadow: '0 2px 6px rgba(37,99,235,0.3)',
+            letterSpacing: '0.02em',
+          }}
+        >
+          AK
         </div>
       </div>
     </header>

@@ -6,10 +6,10 @@
 
 /* ── Design tokens ──────────────────────────────────────────────────── */
 :root {
-  --bg-app:         #FAFAFA;
+  --bg-app:         #F8FAFC;
   --bg-card:        #FFFFFF;
   --bg-hover:       #F3F4F6;
-  --bg-sidebar:     #FFFFFF;
+  --bg-sidebar:     #FDFDFF;
   --bg-topbar:      #FFFFFF;
 
   --border:         #F3F4F6;
@@ -20,7 +20,7 @@
   --primary-hover:  #1D4ED8;
 
   --ink-1:          #111827;
-  --ink-2:          #4B5563;
+  --ink-2:          #374151;
   --ink-3:          #6B7280;
   --ink-4:          #9CA3AF;
   --ink-5:          #D1D5DB;
@@ -31,10 +31,10 @@
   --radius-xl:      1.25rem;
 
   --shadow-xs:  0 1px 2px rgba(0,0,0,0.02);
-  --shadow-sm:  0 1px 3px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02);
-  --shadow-md:  0 4px 12px rgba(0,0,0,0.03), 0 1px 4px rgba(0,0,0,0.02);
-  --shadow-lg:  0 8px 28px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.03);
-  --shadow-xl:  0 20px 60px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.03);
+  --shadow-lg:  0 8px 28px rgba(0,0,0,0.07), 0 2px 8px rgba(0,0,0,0.04);
+  --shadow-xl:  0 20px 60px rgba(0,0,0,0.09), 0 4px 16px rgba(0,0,0,0.05);
 
   --transition: 150ms cubic-bezier(0.16,1,0.3,1);
   --transition-md: 220ms cubic-bezier(0.16,1,0.3,1);
