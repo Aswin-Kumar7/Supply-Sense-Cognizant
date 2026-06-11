@@ -147,7 +147,7 @@ function SidebarLink({
   )
 }
 
-/* ── Sidebar ────────────────────────────────────────────────────── */
+/* ── Sidebar ────────────────────────────────────────────────────────── */
 export function Sidebar() {
   const { data: risks } = useRiskAnalysis()
   const { data: disruptions } = useDisruptions()
@@ -170,7 +170,7 @@ export function Sidebar() {
       overflowX: 'hidden',
     }}>
 
-      {/* ── Brand / Logo ───────────────────────────────────────── */}
+      {/* ── Brand / Logo ─────────────────────────────────────────── */}
       <div style={{ padding: '0 0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
         <div style={{
           width: '32px', height: '32px',
@@ -203,7 +203,7 @@ export function Sidebar() {
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* ── Contributor Card ───────────────────────────────────── */}
+      {/* ── Contributor Card ─────────────────────────────────────── */}
       <div style={{
         margin: '0.5rem 0',
         padding: '0.75rem',
@@ -222,17 +222,17 @@ export function Sidebar() {
           color: '#fff', fontWeight: 700, fontSize: '0.75rem',
           flexShrink: 0,
         }}>
-          AK
+          NV
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            Aswin Kumar
+            Naveen
           </div>
           <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', marginTop: '1px' }}>UI / Frontend Dev</div>
         </div>
         <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
           <a
-            href="https://github.com/Aswin-Kumar7"
+            href="https://github.com/navee"
             target="_blank"
             rel="noopener noreferrer"
             style={{

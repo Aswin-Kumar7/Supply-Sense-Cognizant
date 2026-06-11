@@ -796,7 +796,7 @@ export function Dashboard() {
             Sales Dashboard
           </h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)' }}>
-            Welcome back, <strong style={{ color: 'var(--primary)' }}>Aswin</strong> — {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+            Welcome back, <strong style={{ color: 'var(--primary)' }}>Naveen</strong> — {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
 

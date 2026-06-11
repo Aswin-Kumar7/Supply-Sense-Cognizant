@@ -229,7 +229,7 @@ export function TopBar() {
         <div style={{ width: '1px', height: '20px', background: 'var(--border)' }} />
         <LiveClock />
         <div
-          title="Aswin Kumar · UI / Frontend Dev"
+          title="Naveen · UI / Frontend Dev"
           style={{
             width: '36px', height: '36px', borderRadius: '50%',
             background: 'linear-gradient(135deg, #2563EB, #7C3AED)',
@@ -243,7 +243,7 @@ export function TopBar() {
             letterSpacing: '0.02em',
           }}
         >
-          AK
+          NV
         </div>
       </div>
     </header>

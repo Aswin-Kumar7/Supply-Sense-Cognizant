@@ -297,9 +297,9 @@ npm run dev
 
 | Name | Role | GitHub |
 |---|---|---|
-| Aswin Kumar | UI / Frontend Development | [@Aswin-Kumar7](https://github.com/Aswin-Kumar7) |
+| Naveen | UI / Frontend Development | [@naveen](https://github.com/naveen) |
 
-### UI Contributions (Aswin Kumar)
+### UI Contributions (Naveen)
 - Redesigned Sidebar with gradient logo mark and contributor identity card
 - Enhanced TopBar user avatar with gradient initials and hover tooltips
 - Improved CSS design tokens — refined shadow scale and color palette
