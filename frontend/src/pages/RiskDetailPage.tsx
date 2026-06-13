@@ -5,352 +5,142 @@ import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
 import { useWeightedRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
 import { Badge } from '../components/ui/Badge'
-import { ProvenanceTag } from '../components/ui/ProvenanceTag'
-import { Activity, Wind, AlertTriangle, Calendar, Package, ShieldAlert, MessageSquare, CheckCircle2 } from 'lucide-react'
+
+import { 
+  LineChart, CloudLightning, ShieldAlert, CalendarDays, Box, 
+  Bot, CheckCircle2, PlayCircle, 
+  Network, ChevronRight, XCircle, Timer, Banknote, Layers,
+  TrendingDown
+} from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
 
+/* ── Typography & formatting utils ───────────────────────────────────────── */
 function formatINR(n: number) {
-  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(1)}Cr`
-  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(1)}L`
+  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(2)}Cr`
+  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(2)}L`
   if (n >= 1_000)      return `₹${(n / 1_000).toFixed(0)}K`
   return `₹${n.toFixed(0)}`
 }
 
-function Skeleton({ w = '100%', h = 20 }: { w?: string | number; h?: number }) {
-  return <div className="skeleton" style={{ width: w, height: h, borderRadius: 6 }} />
+function Skeleton({ w = '100%', h = 16 }: { w?: string | number; h?: number }) {
+  return <div style={{ width: w, height: h, borderRadius: 8, background: '#E5E7EB', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }} />
 }
 
-const RISK_BORDER: Record<string, string> = {
-  critical: '#c55b55', high: '#D29729', medium: '#52bde0', low: '#4A8B50',
+const RISK_COLORS: Record<string, { bg: string, border: string, text: string }> = {
+  critical: { bg: '#FEF2F2', border: '#FCA5A5', text: '#DC2626' },
+  high:     { bg: '#FFFBEB', border: '#FDE68A', text: '#D97706' },
+  medium:   { bg: '#EFF6FF', border: '#BFDBFE', text: '#2563EB' },
+  low:      { bg: '#ECFDF5', border: '#A7F3D0', text: '#059669' },
 }
 
-/* ── Deterministic sparkline ─────────────────────────────────────────── */
+/* ── Sparkline ───────────────────────────────────────────────────────── */
 function seededNoise(seed: number, i: number): number {
-  // simple deterministic hash → [-1, 1]
   const x = Math.sin(seed * 9301 + i * 49297 + 233) * 10000
   return (x - Math.floor(x)) * 2 - 1
 }
 
-function SparklineChart({ supplierId, currentScore, riskLevel }: {
-  supplierId: string
-  currentScore: number
-  riskLevel: string
-}) {
-  const color = RISK_BORDER[riskLevel] ?? '#52bde0'
-
+function SparklineMini({ supplierId, currentScore, color }: { supplierId: string; currentScore: number; color: string }) {
   const points = useMemo(() => {
-    // Hash the supplierId to a seed number
     const seed = supplierId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-    const n = 30
+    const n = 20
     const pts: number[] = []
-
-    // Work backwards: day 30 = today (currentScore), vary earlier days
     for (let i = 0; i < n; i++) {
       const dayOffset = n - 1 - i
       const drift = dayOffset * 0.003 * seededNoise(seed, i * 3)
       const noise = 0.04 * seededNoise(seed, i)
-      const val = Math.max(0, Math.min(1, currentScore + drift + noise))
-      pts.push(val)
+      pts.push(Math.max(0, Math.min(1, currentScore + drift + noise)))
     }
-    pts[n - 1] = currentScore // pin current day exactly
+    pts[n - 1] = currentScore
     return pts
   }, [supplierId, currentScore])
 
-  const W = 260
-  const H = 36
-  const PAD = 4
-
-  const min = Math.min(...points)
-  const max = Math.max(...points)
-  const range = max - min || 0.01
+  const W = 80, H = 24, PAD = 2
+  const min = Math.min(...points), max = Math.max(...points), range = max - min || 0.01
 
   const toX = (i: number) => PAD + (i / (points.length - 1)) * (W - PAD * 2)
   const toY = (v: number) => H - PAD - ((v - min) / range) * (H - PAD * 2)
 
-  const pathD = points.map((v, i) =>
-    `${i === 0 ? 'M' : 'L'} ${toX(i).toFixed(1)},${toY(v).toFixed(1)}`
-  ).join(' ')
+  const pathD = points.map((v, i) => `${i === 0 ? 'M' : 'L'} ${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ')
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', width: '100%' }}>
-      <svg width={W} height={H} style={{ overflow: 'visible' }}>
-        {/* Line */}
-        <path d={pathD} fill="none" stroke="#3F3F46" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        {/* Current dot */}
-        <circle
-          cx={toX(points.length - 1)}
-          cy={toY(points[points.length - 1])}
-          r="3.5"
-          fill={color}
-        />
-      </svg>
-      <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', letterSpacing: '0.04em' }}>30-day trend</div>
-    </div>
+    <svg width={W} height={H} style={{ overflow: 'visible' }}>
+      <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={toX(points.length - 1)} cy={toY(points[points.length - 1])} r="3" fill={color} />
+    </svg>
   )
 }
 
-/* ── Signal confidence grid ──────────────────────────────────────────── */
-const SIGNAL_META: Record<string, { label: string; icon: React.ReactNode; description: string }> = {
-  delivery_reliability:    { label: 'Reliability',      icon: <Activity size={16} />,     description: 'Historical delivery performance & SLA compliance' },
-  disruption_severity:     { label: 'Disruption',       icon: <Wind size={16} />,         description: 'Live disruption events impacting operations' },
-  festival_proximity:      { label: 'Festival Demand',  icon: <Calendar size={16} />,     description: 'Upcoming seasonal surge proximity' },
-  dependency_exposure:     { label: 'Dependency Risk',  icon: <AlertTriangle size={16} />, description: 'Tier-2 supplier concentration risk' },
-  logistics_vulnerability: { label: 'Logistics Risk',   icon: <Package size={16} />,      description: 'Route exposure & logistics fragility' },
-  inventory_pressure:      { label: 'Inventory',        icon: <Package size={16} />,      description: 'Stockout proximity & reorder urgency' },
+/* ── Signal Matrix (Data Table Style) ────────────────────────────────── */
+const SIGNAL_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  delivery_reliability:    { label: 'Delivery Reliability',      icon: <LineChart size={14} /> },
+  disruption_severity:     { label: 'Disruption Severity',       icon: <CloudLightning size={14} /> },
+  festival_proximity:      { label: 'Seasonal Demand',           icon: <CalendarDays size={14} /> },
+  dependency_exposure:     { label: 'Dependency Risk',           icon: <ShieldAlert size={14} /> },
+  logistics_vulnerability: { label: 'Logistics Volatility',      icon: <Layers size={14} /> },
+  inventory_pressure:      { label: 'Inventory Pressure',        icon: <Box size={14} /> },
 }
 
-function SignalConfidenceGrid({ risk }: { risk: SupplierRiskAnalysis }) {
+function SignalDataTable({ risk }: { risk: SupplierRiskAnalysis }) {
   const factors = risk.factors ?? {}
-  const accent = RISK_BORDER[risk.risk_level] ?? '#52bde0'
-
   const signals = Object.entries(SIGNAL_META).map(([key, meta]) => {
     const f = factors[key]
     const score = f ? f.value : null
     const fired = score !== null ? score > 0.4 : false
     return { key, meta, score, fired }
-  })
-
-  const firedCount = signals.filter(s => s.fired).length
+  }).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
   return (
-    <div>
-      {/* Summary bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-        <div style={{
-          padding: '0.5rem 0.875rem',
-          background: '#000',
-          borderRadius: '0.5rem',
-          fontSize: '0.75rem',
-          fontWeight: 700,
-          color: '#fff',
-          boxShadow: 'var(--shadow-lg)',
-          display: 'flex', alignItems: 'center', gap: '0.5rem'
-        }}>
-          <ShieldAlert size={14} />
-          {firedCount} / {signals.length} Signals Critical
-        </div>
-        <div style={{ height: '2px', flex: 1, background: 'var(--bg-hover)', borderRadius: '999px', overflow: 'hidden' }}>
-          <div style={{ width: `${(risk.confidence * 100)}%`, height: '100%', background: accent }} />
-        </div>
-        <span style={{ fontSize: '0.625rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Signal Confidence: {(risk.confidence * 100).toFixed(0)}%
-        </span>
-      </div>
-
-      {/* Signal cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
-        {signals.map(({ key, meta, score, fired }) => (
-          <div key={key} style={{
-            padding: '0.75rem',
-            background: fired ? `${accent}05` : '#fff',
-            border: `1px solid ${fired ? accent : 'var(--border)'}`,
-            borderRadius: '0.5rem',
-            boxShadow: fired ? `0 4px 12px -2px ${accent}15` : 'var(--shadow-sm)',
-            transition: 'all 200ms ease',
-            position: 'relative',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.625rem' }}>
-              <div style={{ 
-                width: '24px', height: '24px', borderRadius: '6px', background: fired ? accent : 'var(--bg-hover)', 
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: fired ? '#fff' : 'var(--ink-3)'
-              }}>
-                {meta.icon && <div style={{ transform: 'scale(0.8)' }}>{meta.icon}</div>}
-              </div>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#000' }}>
-                {meta.label}
-              </span>
-              <span style={{
-                marginLeft: 'auto',
-                fontSize: '0.5rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px',
-                background: fired ? '#FEF2F2' : 'var(--bg-hover)',
-                color: fired ? '#c55b55' : 'var(--ink-4)',
-                border: `1px solid ${fired ? '#FECACA' : 'var(--border)'}`
-              }}>
-                {fired ? 'CRITICAL' : 'NOMINAL'}
-              </span>
-            </div>
-            {score !== null && (
-              <>
-                <div style={{ height: '3px', background: 'var(--bg-hover)', borderRadius: '999px', overflow: 'hidden', marginBottom: '0.625rem' }}>
-                  <div style={{
-                    width: `${(score * 100).toFixed(0)}%`,
-                    height: '100%',
-                    background: fired ? accent : 'var(--ink-4)',
-                    borderRadius: '999px',
-                    transition: 'width 1s ease',
-                  }} />
-                </div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--ink-2)', lineHeight: 1.4 }}>
-                  <span style={{ fontWeight: 700, color: '#000' }}>{(score * 100).toFixed(0)}%</span> {meta.description}
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
+    <div style={{ width: '100%', border: '1px solid #E5E7EB', borderRadius: '12px', overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+        <thead style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+          <tr>
+            <th style={{ padding: '8px 12px', fontWeight: 600, color: '#4B5563', width: '40%' }}>Signal</th>
+            <th style={{ padding: '8px 12px', fontWeight: 600, color: '#4B5563', width: '20%' }}>Status</th>
+            <th style={{ padding: '8px 12px', fontWeight: 600, color: '#4B5563', width: '40%' }}>Severity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {signals.map((s, i) => (
+            <tr key={s.key} style={{ borderBottom: i === signals.length - 1 ? 'none' : '1px solid #F3F4F6', background: s.fired ? '#FAFAFA' : '#FFF' }}>
+              <td style={{ padding: '8px 12px', color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#9CA3AF' }}>{s.meta.icon}</span>
+                {s.meta.label}
+              </td>
+              <td style={{ padding: '8px 12px' }}>
+                {s.fired ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontWeight: 600, padding: '2px 8px', background: '#FEF2F2', borderRadius: '8px' }}>
+                    <XCircle size={12} /> Critical
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#6B7280' }}>
+                    Nominal
+                  </span>
+                )}
+              </td>
+              <td style={{ padding: '8px 12px' }}>
+                {s.score !== null ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ flex: 1, height: '4px', background: '#E5E7EB', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${s.score * 100}%`, height: '100%', background: s.fired ? '#DC2626' : '#9CA3AF' }} />
+                    </div>
+                    <span style={{ fontFamily: 'monospace', fontSize: '12px', color: s.fired ? '#111827' : '#6B7280', width: '30px', textAlign: 'right' }}>
+                      {(s.score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                ) : (
+                  <span style={{ color: '#D1D5DB' }}>--</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
 
-/* ── Info stat box ──────────────────────────────────────────────────── */
-function StatBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <div style={{
-      background: '#fff', 
-      border: '1px solid var(--border)', borderRadius: '0.375rem', padding: '0.625rem 0.75rem',
-      boxShadow: 'var(--shadow-sm)'
-    }}>
-      <div style={{ fontSize: '0.5rem', color: '#71717A', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.25rem', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: color ?? '#000', lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.5625rem', color: '#71717A', marginTop: '0.25rem' }}>{sub}</div>}
-    </div>
-  )
-}
-
-/* ── Factor breakdown ────────────────────────────────────────────────── */
-function FactorBreakdown({ risk }: { risk: SupplierRiskAnalysis }) {
-  const factors = Object.entries(risk.factors ?? {}).sort(([, a], [, b]) => b.weighted - a.weighted)
-  const accent = '#18181B'
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {factors.map(([name, f], i) => (
-        <div key={name} style={{ 
-          padding: '0.625rem 0',
-          borderBottom: i === factors.length - 1 ? 'none' : '1px solid var(--border)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-            <span style={{ fontSize: '0.75rem', color: '#000', fontWeight: 600, textTransform: 'capitalize' }}>
-              {name.replace(/_/g, ' ')}
-            </span>
-            <span style={{ fontSize: '0.8125rem', color: '#000', fontWeight: 700 }}>
-              {(f.value * 100).toFixed(0)}%
-            </span>
-          </div>
-          
-          <div style={{ 
-            height: '2px', background: 'var(--bg-hover)', borderRadius: '1px', overflow: 'hidden', marginBottom: '0.25rem', 
-          }}>
-            <div style={{
-              width: `${Math.min(100, f.value * 100).toFixed(0)}%`,
-              height: '100%',
-              background: accent,
-              transition: 'width 1s ease',
-            }} />
-          </div>
-          <div style={{ fontSize: '0.625rem', color: '#71717A', lineHeight: 1.4, fontWeight: 500 }}>{f.explanation}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ── AI Recommendation ──────────────────────────────────────────────── */
-function AIRecommendationPanel({ card, supplierId: _supplierId }: { card: IntelligentActionCard | null | undefined; supplierId: string }) {
-  if (!card) {
-    return (
-      <div style={{ padding: '0.75rem', fontSize: '0.75rem', color: 'var(--ink-4)', textAlign: 'center' }}>
-        No strategic data available.
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-
-      {/* Recommended action — most prominent */}
-      {card.recommended_action && (
-        <p style={{ fontSize: '0.875rem', fontWeight: 600, color: '#000', lineHeight: 1.55, margin: 0 }}>
-          {card.recommended_action}
-        </p>
-      )}
-
-      {/* Reasoning — muted context */}
-      {card.reasoning && (
-        <p style={{ fontSize: '0.75rem', color: 'var(--ink-3)', lineHeight: 1.6, margin: 0 }}>
-          {card.reasoning}
-        </p>
-      )}
-
-      {/* Urgency + Cost of delay — alert strip */}
-      {(card.urgency_narrative || card.cost_of_delay_narrative) && (
-        <div style={{
-          background: '#FFF7ED',
-          border: '1px solid #FED7AA',
-          borderRadius: '0.375rem',
-          padding: '0.625rem 0.75rem',
-          display: 'flex', flexDirection: 'column', gap: '0.25rem',
-        }}>
-          {card.urgency_narrative && (
-            <p style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#C2410C', margin: 0, lineHeight: 1.5 }}>
-              {card.urgency_narrative}
-            </p>
-          )}
-          {card.cost_of_delay_narrative && (
-            <p style={{ fontSize: '0.6875rem', color: '#9A3412', margin: 0, lineHeight: 1.5 }}>
-              {card.cost_of_delay_narrative}
-            </p>
-          )}
-        </div>
-      )}
-
-    </div>
-  )
-}
-
-/* ── Mitigation CTA ──────────────────────────────────────────────────── */
-function MitigationSection({ supplierId, supplierName }: { supplierId: string; supplierName?: string }) {
-  const navigate = useNavigate()
-
-  return (
-    <div style={{ display: 'flex', gap: '0.5rem' }}>
-      {/* Primary: run mitigation simulation */}
-      <button
-        onClick={() => navigate(`/risks/${supplierId}/mitigation`)}
-        style={{
-          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '1rem 1.25rem',
-          background: '#000', color: '#fff',
-          border: 'none', borderRadius: '0.5rem', cursor: 'pointer',
-          transition: 'opacity 150ms ease',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
-        onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
-      >
-        <div style={{ textAlign: 'left' }}>
-          <div style={{ fontSize: '0.8125rem', fontWeight: 700, marginBottom: '0.25rem' }}>
-            Run Mitigation Simulation
-          </div>
-          <div style={{ fontSize: '0.625rem', color: 'rgba(255,255,255,0.55)', fontWeight: 500 }}>
-            Compare options · see exposure reduction · get recommended action
-          </div>
-        </div>
-        <span style={{ fontSize: '1.125rem', lineHeight: 1 }}>→</span>
-      </button>
-
-      {/* Secondary: open AI Advisor pre-loaded with this supplier */}
-      <button
-        onClick={() => navigate(`/advisor?supplier=${encodeURIComponent(supplierId)}&name=${encodeURIComponent(supplierName ?? '')}`)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: '0.5rem',
-          padding: '1rem 1.125rem',
-          background: '#fff', color: '#000',
-          border: '1px solid var(--border)', borderRadius: '0.5rem', cursor: 'pointer',
-          fontSize: '0.8125rem', fontWeight: 600, fontFamily: 'inherit',
-          transition: 'all 150ms ease', whiteSpace: 'nowrap',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = '#000'; e.currentTarget.style.background = 'var(--bg-hover)' }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = '#fff' }}
-      >
-        <MessageSquare size={15} />
-        Ask What-If
-      </button>
-    </div>
-  )
-}
-
-/* ── Cascade section ─────────────────────────────────────────────────── */
-function CascadeSection({ supplierId }: { supplierId: string }) {
+/* ── Cascade Impact (Compact Tree) ───────────────────────────────────── */
+function CascadeTree({ supplierId }: { supplierId: string }) {
   const { data: cascade, isLoading } = useQuery({
     queryKey: queryKeys.risk(supplierId + '-cascade'),
     queryFn: () => api.getCascadeAnalysis(supplierId),
@@ -359,50 +149,52 @@ function CascadeSection({ supplierId }: { supplierId: string }) {
 
   if (isLoading) return <Skeleton h={80} />
   if (!cascade || cascade.total_affected === 0) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '0.75rem',
-        padding: '0.75rem 1rem', border: '1px solid var(--border)', borderRadius: '0.5rem',
-      }}>
-        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4ade80' }} />
-        <span style={{ fontSize: '0.75rem', color: 'var(--ink-3)', fontWeight: 500 }}>No cascade propagation detected. This supplier failure is isolated.</span>
-      </div>
-    )
+    return <div style={{ fontSize: '12px', color: '#6B7280' }}>No downstream dependencies detected.</div>
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.5rem', alignItems: 'center' }}>
-        <Badge level={cascade.severity} />
-        <span style={{ fontSize: '0.875rem', color: 'var(--ink-3)' }}>
-          <strong style={{ color: 'var(--ink-1)' }}>{cascade.total_affected}</strong> downstream suppliers affected · max propagation depth <strong style={{ color: 'var(--ink-1)' }}>{cascade.max_depth}</strong>
-        </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#374151' }}>
+        <Network size={14} color="#6B7280" />
+        <span><strong style={{ color: '#111827' }}>{cascade.total_affected}</strong> systems affected, tier <strong>{cascade.max_depth}</strong> limit</span>
       </div>
-      {(cascade.nodes ?? []).slice(0, 6).map(node => (
-        <div key={node.supplier_id} style={{
-          display: 'flex', alignItems: 'center', gap: '0.875rem',
-          padding: '0.875rem 1rem',
-          paddingLeft: `${1 + node.depth * 1.5}rem`,
-          background: 'var(--bg-app)', border: '1px solid var(--border)', borderRadius: '0.625rem',
-        }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--border-strong)', fontFamily: 'monospace' }}>{'└─'.repeat(Math.min(node.depth, 2))}</span>
-          <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--ink-1)', flex: 1 }}>{node.supplier_name}</span>
-          <span style={{ fontSize: '0.8125rem', fontFamily: 'JetBrains Mono, monospace', color: '#c55b55', fontWeight: 500 }}>
-            {(node.propagated_impact * 100).toFixed(0)}% impact
-          </span>
-          <span style={{ fontSize: '0.75rem', color: 'var(--ink-4)', textTransform: 'capitalize' }}>{node.dependency_type}</span>
-        </div>
-      ))}
+      
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid #E5E7EB', marginLeft: '6px', paddingLeft: '10px' }}>
+        {(cascade.nodes ?? []).slice(0, 4).map(node => (
+          <div key={node.supplier_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', padding: '2px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#D1D5DB', fontFamily: 'monospace' }}>{'└'.padEnd(node.depth + 1, '─')}</span>
+              <span style={{ color: '#111827', fontWeight: 500 }}>{node.supplier_name}</span>
+              <span style={{ color: '#9CA3AF', fontSize: '11px' }}>{node.dependency_type}</span>
+            </div>
+            <span style={{ fontFamily: 'monospace', color: '#DC2626', fontWeight: 600 }}>{(node.propagated_impact * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
 
-/* ── Risk Detail Page ────────────────────────────────────────────────── */
+/* ── Metric Block ────────────────────────────────────────────────────── */
+function MetricItem({ label, value, icon, alert = false }: { label: string, value: string, icon: React.ReactNode, alert?: boolean }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#6B7280', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        {icon} {label}
+      </div>
+      <div style={{ fontSize: '18px', fontWeight: 600, color: alert ? '#DC2626' : '#111827', fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+/* ── Main Page Component ─────────────────────────────────────────────── */
 export default function RiskDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const { data: risks, isCustom: customWeightsActive } = useWeightedRiskAnalysis()
+  const { data: risks } = useWeightedRiskAnalysis()
   const { data: cards } = useProcurementCards()
   const { data: actionData } = useActionCards()
 
@@ -410,7 +202,6 @@ export default function RiskDetailPage() {
   const risk = riskList.find(r => r.supplier_id === id)
   const card = (cards as IntelligentActionCard[] | undefined ?? []).find(c => c.supplier_id === id)
 
-  // Resolved = all action cards for this supplier are resolved
   const supplierActionCards = (actionData?.action_cards ?? []).filter((c: any) => c.supplier_id === id)
   const isResolved = supplierActionCards.length > 0 && supplierActionCards.every((c: any) => c.is_resolved)
   const resolvedCard = supplierActionCards
@@ -419,189 +210,197 @@ export default function RiskDetailPage() {
 
   if (!id) return null
 
-  // If fully resolved, show a resolved state instead of the mitigation interface
   if (isResolved && resolvedCard) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: 600 }}>
-        <button
-          onClick={() => navigate('/risks')}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: '0.8125rem', fontFamily: 'inherit', padding: 0, width: 'fit-content' }}
-        >
-          ← Risks
+      <div style={{ padding: '32px', maxWidth: '800px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <button onClick={() => navigate('/risks')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px', padding: 0, marginBottom: '24px' }}>
+          ← Back to Registry
         </button>
-        <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.75rem', padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <CheckCircle2 size={26} color="#16a34a" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#166534', marginBottom: '0.375rem' }}>
-              {risk?.supplier_name ?? 'This supplier'} — Risk Resolved
-            </div>
-            <div style={{ fontSize: '0.8125rem', color: '#16a34a' }}>
-              All action cards have been marked as done. View the full resolution summary below.
-            </div>
-          </div>
-          <button
-            onClick={() => navigate(`/activity/${resolvedCard.id}`)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem',
-              padding: '0.625rem 1.25rem',
-              background: '#000', color: '#fff',
-              border: 'none', borderRadius: '8px',
-              fontSize: '0.875rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            View Resolution Summary →
+        <div style={{ border: '1px solid #E5E7EB', background: '#FFF', borderRadius: '16px', padding: '32px', textAlign: 'center' }}>
+          <CheckCircle2 size={32} color="#10B981" style={{ margin: '0 auto 16px' }} />
+          <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 8px' }}>Risk Incident Resolved</h2>
+          <p style={{ fontSize: '13px', color: '#6B7280', margin: '0 0 24px' }}>All action items for {risk?.supplier_name || 'this supplier'} have been completed.</p>
+          <button onClick={() => navigate(`/activity/${resolvedCard.id}`)} style={{ background: '#111827', color: '#FFF', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
+            View Incident Report
           </button>
         </div>
       </div>
     )
   }
 
+  const rColor = risk ? RISK_COLORS[risk.risk_level] || RISK_COLORS.medium : RISK_COLORS.medium
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-
-      {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <button
-          onClick={() => navigate('/risks')}
-          style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
-        >
-          ← Risks
-        </button>
-        <span style={{ color: 'var(--ink-5)' }}>/</span>
-        <span style={{ fontSize: '0.8125rem', color: 'var(--ink-1)', fontWeight: 500 }}>{risk?.supplier_name ?? 'Loading…'}</span>
-        {risk && (
-          <>
-            <span style={{ color: 'var(--ink-5)' }}>/</span>
-            <span style={{ fontSize: '0.8125rem', color: 'var(--ink-3)' }}>Risk Detail</span>
-          </>
-        )}
-      </div>
-
-      {/* Custom weights notice */}
-      {customWeightsActive && (
-        <div style={{
-          padding: '0.75rem 1.25rem',
-          background: 'var(--bg-hover)',
-          border: '1px solid var(--border)',
-          borderRadius: '0.75rem',
-          fontSize: '0.8125rem',
-          color: 'var(--ink-2)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem',
-        }}>
-          <AlertTriangle size={14} style={{ color: '#D29729' }} />
-          <span><strong style={{ color: '#000' }}>Custom Risk Configuration Active</strong> — Calculations are currently weighted based on your specific settings profile.</span>
-        </div>
-      )}
-
-      {/* ── Minimalist Hero Section ── */}
-      {risk ? (
-        <div style={{
-          position: 'relative',
-          background: '#fff',
-          border: '1px solid var(--border)',
-          borderRadius: '0.5rem',
-          padding: '0.75rem',
-          boxShadow: 'var(--shadow-sm)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.75rem',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.375rem' }}>
-                <Badge level={risk.risk_level} />
-                {risk.human_review_required && (
-                  <span style={{ 
-                    fontSize: '0.5rem', padding: '1px 5px', borderRadius: '3px', border: '1px solid #EF4444', color: '#EF4444', 
-                    fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em'
-                  }}>
-                    Review Required
-                  </span>
-                )}
-              </div>
-              <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#000', letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '0.125rem' }}>
-                {risk.supplier_name}
-              </h1>
-              {card && (
-                <p style={{ fontSize: '0.75rem', color: 'var(--ink-2)', maxWidth: '600px', lineHeight: 1.4, fontWeight: 400 }}>
-                  {card.executive_summary}
-                </p>
-              )}
-            </div>
-
-            {/* Precision Score Cluster */}
-            <div style={{ 
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.375rem', flexShrink: 0, 
-              padding: '0.5rem', background: 'var(--bg-hover)',
-              borderRadius: '0.5rem', border: '1px solid var(--border)', minWidth: '280px'
+    <div style={{ 
+      display: 'flex', flexDirection: 'column', height: '100%', 
+      background: '#FAFAFA', color: '#111827', 
+      fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+      overflowY: 'auto'
+    }}>
+      
+      {/* ── Top Navigation Bar ────────────────────────────────────────── */}
+      <div style={{ 
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+        padding: '12px 24px', background: '#FFF', borderBottom: '1px solid #E5E7EB',
+        position: 'sticky', top: 0, zIndex: 10
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button onClick={() => navigate('/risks')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: '13px', padding: 0, display: 'flex', alignItems: 'center' }}>
+            Risks
+          </button>
+          <ChevronRight size={14} color="#D1D5DB" />
+          <span style={{ fontSize: '14px', fontWeight: 600 }}>{risk?.supplier_name ?? <Skeleton w={120} h={16} />}</span>
+          {risk && (
+            <span style={{ 
+              fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
+              padding: '2px 8px', borderRadius: '8px', background: rColor.bg, color: rColor.text, border: `1px solid ${rColor.border}`
             }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#000', letterSpacing: '-0.03em', lineHeight: 1 }}>
-                  {(risk.overall_score * 100).toFixed(0)}<span style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginLeft: '1px' }}>%</span>
-                </div>
-                <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', marginTop: '0.125rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Risk Score</div>
-              </div>
-              <SparklineChart
-                supplierId={risk.supplier_id}
-                currentScore={risk.overall_score}
-                riskLevel={risk.risk_level}
-              />
-            </div>
-          </div>
-
-          {/* Clean Metric Grid */}
-          {card && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.375rem' }}>
-              <StatBox label="Exposure" value={formatINR(card.financial_exposure_inr)} color="#c55b55" />
-              <StatBox label="Stockout" value={`${card.days_to_stockout} Days`} />
-              <StatBox label="SKUs At Risk" value={String(card.affected_skus)} />
-              <StatBox label="Recovery" value={card.escalation_window} />
-            </div>
+              {risk.risk_level} Risk
+            </span>
           )}
         </div>
-      ) : (
-        <div style={{ background: '#fff', borderRadius: '0.5rem', padding: '0.75rem', border: '1px solid var(--border)' }}>
-          <Skeleton h={100} />
+        
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={() => navigate(`/advisor?supplier=${encodeURIComponent(id ?? '')}&name=${encodeURIComponent(risk?.supplier_name ?? '')}`)}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '6px 14px', background: '#FFF', color: '#374151',
+              border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
+          >
+            <Bot size={14} /> AI Advisor
+          </button>
         </div>
-      )}
-
-      {/* ── Signal Confidence Grid ── */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-          <h3 style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Confidence Matrix</h3>
-          <span style={{ fontSize: '0.4375rem', color: 'var(--ink-4)', fontWeight: 600 }}>STRANDS ANALYTICS</span>
-        </div>
-        {risk ? <SignalConfidenceGrid risk={risk} /> : <Skeleton h={80} />}
       </div>
 
-      {/* Secondary Grids */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '0.5rem' }}>
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
-          <h3 style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>Risk Factors</h3>
-          {risk ? <FactorBreakdown risk={risk} /> : <Skeleton h={200} />}
-        </div>
-
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.75rem' }}>
-            <h3 style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Strategic Insight</h3>
-            <ProvenanceTag type="ai" size="xs" />
+      <div style={{ padding: '20px 24px', maxWidth: '1400px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        
+        {/* ── Executive Dashboard Strip ─────────────────────────────────── */}
+        <div style={{ 
+          display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px',
+          background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px 20px',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+        }}>
+          {/* Main Score & Trend */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderRight: '1px solid #E5E7EB', paddingRight: '20px' }}>
+            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', fontWeight: 600 }}>Risk Score</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 700, fontFamily: 'monospace', color: rColor.text, lineHeight: 1 }}>
+                {risk ? `${(risk.overall_score * 100).toFixed(0)}%` : '--'}
+              </div>
+              {risk && <SparklineMini supplierId={risk.supplier_id} currentScore={risk.overall_score} color={rColor.text} />}
+            </div>
           </div>
-          <AIRecommendationPanel card={card} supplierId={id} />
+          
+          <MetricItem label="Financial Exposure" value={card ? formatINR(card.financial_exposure_inr) : '--'} icon={<Banknote size={14} />} alert={true} />
+          <MetricItem label="Days to Stockout" value={card ? String(card.days_to_stockout) : '--'} icon={<Timer size={14} />} alert={card && card.days_to_stockout < 5} />
+          <MetricItem label="SKUs at Risk" value={card ? String(card.affected_skus) : '--'} icon={<Box size={14} />} />
+          <MetricItem label="Recovery Window" value={card ? card.escalation_window : '--'} icon={<TrendingDown size={14} />} />
+        </div>
+
+        {/* ── Main Layout: 2 Columns ────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr', gap: '20px', alignItems: 'start' }}>
+          
+          {/* Left Col: AI Insight & Data Tables */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* AI Strategic Assessment */}
+            {card && (
+              <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                <div style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Bot size={16} color="#2563EB" />
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>AI Strategic Assessment</span>
+                </div>
+                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 8px', color: '#111827' }}>{card.recommended_action}</h3>
+                    <p style={{ fontSize: '13px', color: '#4B5563', lineHeight: 1.5, margin: 0 }}>{card.reasoning}</p>
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    {card.urgency_narrative && (
+                      <div style={{ flex: 1, background: '#FEF2F2', border: '1px solid #FCA5A5', padding: '10px 12px', borderRadius: '12px', display: 'flex', gap: '10px' }}>
+                        <ShieldAlert size={16} color="#DC2626" style={{ flexShrink: 0, marginTop: '1px' }} />
+                        <span style={{ fontSize: '12px', color: '#991B1B', lineHeight: 1.4, fontWeight: 500 }}>{card.urgency_narrative}</span>
+                      </div>
+                    )}
+                    {card.cost_of_delay_narrative && (
+                      <div style={{ flex: 1, background: '#FFFBEB', border: '1px solid #FDE68A', padding: '10px 12px', borderRadius: '12px', display: 'flex', gap: '10px' }}>
+                        <Timer size={16} color="#D97706" style={{ flexShrink: 0, marginTop: '1px' }} />
+                        <span style={{ fontSize: '12px', color: '#B45309', lineHeight: 1.4, fontWeight: 500 }}>{card.cost_of_delay_narrative}</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Primary Call to Action */}
+                  <div style={{ marginTop: '6px', borderTop: '1px solid #E5E7EB', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', color: '#6B7280' }}>Simulate alternative suppliers to mitigate this risk.</span>
+                    <button
+                      onClick={() => navigate(`/risks/${id}/mitigation`)}
+                      style={{ 
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '8px 16px', background: '#2563EB', color: '#FFF',
+                        border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                        boxShadow: '0 1px 2px rgba(37,99,235,0.2)',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#1D4ED8'}
+                      onMouseLeave={e => e.currentTarget.style.background = '#2563EB'}
+                    >
+                      <PlayCircle size={16} color="#FFF" /> Run Mitigation Simulation
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Risk Telemetry */}
+            <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0, color: '#111827' }}>Risk Telemetry</h3>
+                <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Strands Analytics</span>
+              </div>
+              {risk ? <SignalDataTable risk={risk} /> : <Skeleton h={150} />}
+            </div>
+
+          </div>
+
+          {/* Right Col: Deep Dives */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* Cascade Network */}
+            <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 16px', color: '#111827' }}>Cascade Network Impact</h3>
+              <CascadeTree supplierId={id!} />
+            </div>
+
+            {/* Contributing Factors */}
+            <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 16px', color: '#111827' }}>Weighted Drivers</h3>
+              {risk ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {Object.entries(risk.factors ?? {})
+                    .sort(([,a], [,b]) => b.weighted - a.weighted)
+                    .slice(0, 4)
+                    .map(([name, f]) => (
+                    <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#374151', textTransform: 'capitalize' }}>{name.replace(/_/g, ' ')}</span>
+                        <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600, color: '#111827' }}>{(f.value * 100).toFixed(0)}%</span>
+                      </div>
+                      <span style={{ fontSize: '11px', color: '#6B7280', lineHeight: 1.4 }}>{f.explanation}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <Skeleton h={150} />}
+            </div>
+
+          </div>
+
         </div>
       </div>
-
-      {/* ── Cascade Propagation ── */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
-        <h3 style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Cascade Impact</h3>
-        <CascadeSection supplierId={id} />
-      </div>
-
-      {/* Mitigation CTA + Ask What-If */}
-      <MitigationSection supplierId={id} supplierName={risk?.supplier_name} />
     </div>
   )
 }

@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
-import { useDisruptions, useActionCards } from '../../hooks/useQueries'
+import { useDisruptions, useActionCards, useProcurementCards } from '../../hooks/useQueries'
+import { useWeightedRiskAnalysis } from '../../hooks/useRiskWeights'
 import {
   LayoutDashboard,
   ShieldAlert,
@@ -14,6 +15,7 @@ import {
   History,
   MessageSquare,
 } from 'lucide-react'
+import type { IntelligentActionCard } from '../../types'
 
 /* ── Badge pill ─────────────────────────────────────────────────────── */
 function NavBadge({ count, collapsed }: { count: number, collapsed: boolean }) {
@@ -111,32 +113,73 @@ function SidebarLink({
 export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCollapsed: (c: boolean) => void }) {
   const { data: disruptions } = useDisruptions()
   const { data: actionData } = useActionCards()
+  const { data: risks } = useWeightedRiskAnalysis()
+  const { data: procCards } = useProcurementCards()
 
-  // Derive badge purely from actionCards — same source as PendingActionsPage and RisksPage filter.
-  // Count unique supplier_ids that have at least one unresolved card with non-low priority.
-  // This is the single source of truth and avoids any stale-time race with the risk query.
-  const riskBadge = useMemo(() => {
-    const activeSuppliers = new Set<string>()
+  // Build procCard map — same as Dashboard and PendingActionsPage
+  const procCardMap = useMemo(
+    () => new Map((procCards as IntelligentActionCard[] ?? []).map(c => [c.supplier_id, c])),
+    [procCards]
+  )
+
+  // Resolved supplier IDs — ALL action cards for that supplier must be resolved
+  const resolvedSupplierIds = useMemo(() => {
+    const bySupplier = new Map<string, { resolved: number; total: number }>()
     for (const c of actionData?.action_cards ?? []) {
-      if (!c.supplier_id || c.is_resolved) continue
-      if (c.estimated_impact_inr === 0) continue
-      if (['critical', 'high', 'medium'].includes(c.priority)) {
-        activeSuppliers.add(c.supplier_id)
-      }
+      if (!c.supplier_id) continue
+      const entry = bySupplier.get(c.supplier_id) ?? { resolved: 0, total: 0 }
+      entry.total++
+      if (c.is_resolved) entry.resolved++
+      bySupplier.set(c.supplier_id, entry)
     }
-    return activeSuppliers.size
+    return new Set(
+      [...bySupplier.entries()]
+        .filter(([, { resolved, total }]) => total > 0 && resolved === total)
+        .map(([id]) => id)
+    )
   }, [actionData])
 
-  // Only unread active disruptions count as notifications
-  const readIds = useMemo(() => {
+  // Active supplier count — identical filter to PendingActionsPage / Dashboard
+  const activeSupplierCount = useMemo(() => {
+    const riskList = (risks as any[] | undefined) ?? []
+    return riskList.filter(r => {
+      if (resolvedSupplierIds.has(r.supplier_id)) return false
+      if (r.risk_level === 'low') return false
+      const card = procCardMap.get(r.supplier_id)
+      if (!card || (card as IntelligentActionCard).financial_exposure_inr === 0) return false
+      return true
+    }).length
+  }, [risks, resolvedSupplierIds, procCardMap])
+
+  // riskBadge and pendingActions are now the same number from the same source
+  const riskBadge = activeSupplierCount
+  const pendingActions = activeSupplierCount
+
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
     try {
       const s = localStorage.getItem('ss_read_disruptions')
       return s ? new Set(JSON.parse(s) as string[]) : new Set<string>()
     } catch { return new Set<string>() }
+  })
+
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        const s = localStorage.getItem('ss_read_disruptions')
+        setReadIds(s ? new Set(JSON.parse(s) as string[]) : new Set<string>())
+      } catch { setReadIds(new Set<string>()) }
+    }
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('ss_read_disruptions_changed', handleStorage)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('ss_read_disruptions_changed', handleStorage)
+    }
   }, [])
   const activeDisruptions = (disruptions?.disruptions ?? [])
     .filter((d: any) => d.is_active && d.severity !== 'low' && !readIds.has(d.id)).length
-  const pendingActions = actionData?.unresolved ?? 0
+
+
 
   return (
     <aside style={{
@@ -178,11 +221,10 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
         <SidebarSection label="Supply Chain" collapsed={collapsed} />
         <SidebarLink to="/risks" icon={ShieldAlert} label="Risks" badge={riskBadge} collapsed={collapsed} />
         <SidebarLink to="/companies" icon={Building2} label="Suppliers" collapsed={collapsed} />
-        <SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Backup Suppliers" collapsed={collapsed} />
+        <SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Tier 2 Dependencies" collapsed={collapsed} />
         <SidebarLink to="/disruptions" icon={Activity} label="Disruptions" badge={activeDisruptions} collapsed={collapsed} />
         <SidebarLink to="/actions" icon={ClipboardList} label="Pending Actions" badge={pendingActions} collapsed={collapsed} />
         <SidebarLink to="/activity" icon={History} label="Activity Log" collapsed={collapsed} />
-        <SidebarLink to="/advisor" icon={MessageSquare} label="AI Advisor" collapsed={collapsed} />
 
         {!collapsed && <div style={{ margin: '1.5rem 0.5rem 0', height: '1px', background: 'var(--border)' }} />}
 

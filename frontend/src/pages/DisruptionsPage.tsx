@@ -19,6 +19,7 @@ export function getReadIds(): Set<string> {
 
 export function persistReadIds(ids: Set<string>) {
   localStorage.setItem(DISRUPTIONS_STORAGE_KEY, JSON.stringify([...ids]))
+  window.dispatchEvent(new Event('ss_read_disruptions_changed'))
 }
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */

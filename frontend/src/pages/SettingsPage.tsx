@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useSync } from '../hooks/useGlobalSync'
 import { useRiskAnalysis } from '../hooks/useQueries'
 import { applyWeights, DEFAULT_WEIGHTS as HookDefaults } from '../hooks/useRiskWeights'
-import { Settings, Database, Activity, Scale, ShieldAlert, ChevronRight, CheckCircle2, RotateCcw } from 'lucide-react'
+import { Database, Activity, Scale, ShieldAlert, CheckCircle2, RotateCcw } from 'lucide-react'
 import type { SupplierRiskAnalysis } from '../types'
 
 const WEIGHTS_KEY = 'ss_risk_weights'

@@ -1,371 +1,323 @@
-/**
- * Alternate Suppliers Page
- * Chip-selector layout: pick a primary supplier, browse its backup options,
- * click a backup to open the detail panel.
- * Accepts navigation state { primarySupplierId, altSupplierId } from CompanyDetailPage.
- */
-
-import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { useSuppliers } from '../hooks/useQueries'
-import { Badge } from '../components/ui/Badge'
 import {
-  Building2, MapPin, ChevronLeft, Package,
-  ShieldCheck, X,
+  Building2, MapPin, Search, Network, Box, ShieldCheck, X, Zap
 } from 'lucide-react'
-import type { AlternateSupplierRecord } from '../types'
+import type { AlternateSupplierRecord, Supplier } from '../types'
 
-/* ── helpers ──────────────────────────────────────────────────────────── */
+/* ── Helpers ──────────────────────────────────────────────────────────── */
 function fmt(n: number, dp = 1) { return n.toFixed(dp) }
-function reliabilityLevel(s: number): 'low' | 'medium' | 'high' | 'critical' {
-  if (s >= 0.88) return 'low'
-  if (s >= 0.78) return 'medium'
-  if (s >= 0.65) return 'high'
-  return 'critical'
-}
-function buildRationale(alt: AlternateSupplierRecord, primaryLead: number): string {
-  const delta = alt.lead_time_days - primaryLead
-  const leadStr = delta === 0 ? 'same delivery time as primary'
-    : delta > 0 ? `${delta}-day longer delivery`
-    : `${Math.abs(delta)}-day faster delivery`
-  return `${alt.supplier_name} offers ${fmt(alt.reliability_score * 100, 0)}% reliability with ${leadStr} ` +
-    `and ${fmt(alt.quality_score * 100, 0)}% quality score. Extra cost vs. primary: +${fmt(alt.cost_premium_pct)}%. ` +
-    `Suitable as ${alt.cost_premium_pct < 10 ? 'primary fallback' : 'emergency backup'}.`
-}
 
-function Skeleton({ h = 20, w = '100%' }: { h?: number; w?: string }) {
-  return <div className="skeleton" style={{ height: h, width: w, borderRadius: 6 }} />
-}
-
-/* ── AltMiniCard — clickable card in the grid ─────────────────────────── */
-function AltMiniCard({
-  alt, primaryLead, selected, onClick,
+/* ── Tier 2 Detail Panel (Slide Over) ─────────────────────────────────── */
+function Tier2DetailPanel({
+  alt, onClose,
 }: {
   alt: AlternateSupplierRecord
-  primaryLead: number
-  selected: boolean
-  onClick: () => void
-}) {
-  const isBest = alt.cost_premium_pct < 10 && alt.reliability_score >= 0.85
-  const delta = alt.lead_time_days - primaryLead
-
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        background: selected ? '#000' : '#fff',
-        border: `1px solid ${selected ? '#000' : isBest ? '#000' : 'var(--border)'}`,
-        borderRadius: '0.625rem',
-        padding: '1rem',
-        cursor: 'pointer',
-        textAlign: 'left',
-        boxShadow: selected ? '0 4px 16px rgba(0,0,0,0.18)' : 'var(--shadow-sm)',
-        position: 'relative',
-        transition: 'all 160ms ease',
-      }}
-    >
-      {isBest && !selected && (
-        <span style={{
-          position: 'absolute', top: '-8px', left: '0.75rem',
-          fontSize: '0.5rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px',
-          background: '#059669', color: '#fff', letterSpacing: '0.05em',
-        }}>BEST PICK</span>
-      )}
-
-      <div style={{ marginBottom: '0.625rem' }}>
-        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: selected ? '#fff' : '#000', lineHeight: 1.2 }}>
-          {alt.supplier_name}
-        </div>
-        <div style={{ fontSize: '0.625rem', color: selected ? 'rgba(255,255,255,0.6)' : 'var(--ink-4)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-          <MapPin size={10} /> {alt.city}, {alt.region}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
-        <div>
-          <div style={{ fontSize: '0.5rem', color: selected ? 'rgba(255,255,255,0.5)' : 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '1px' }}>Extra Cost</div>
-          <div style={{ fontSize: '0.875rem', fontWeight: 700, color: selected ? '#fff' : (alt.cost_premium_pct < 10 ? '#059669' : '#D29729'), fontFamily: 'monospace' }}>
-            +{fmt(alt.cost_premium_pct)}%
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: '0.5rem', color: selected ? 'rgba(255,255,255,0.5)' : 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '1px' }}>Deliver</div>
-          <div style={{ fontSize: '0.875rem', fontWeight: 700, color: selected ? '#fff' : '#000', fontFamily: 'monospace' }}>
-            {alt.lead_time_days}d
-            {delta !== 0 && (
-              <span style={{ fontSize: '0.5rem', color: selected ? 'rgba(255,255,255,0.5)' : (delta > 0 ? '#D29729' : '#059669'), marginLeft: '2px' }}>
-                {delta > 0 ? `+${delta}` : delta}
-              </span>
-            )}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: '0.5rem', color: selected ? 'rgba(255,255,255,0.5)' : 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '1px' }}>Reliability</div>
-          <div style={{ fontSize: '0.875rem', fontWeight: 700, color: selected ? '#fff' : '#000', fontFamily: 'monospace' }}>
-            {fmt(alt.reliability_score * 100, 0)}%
-          </div>
-        </div>
-      </div>
-    </button>
-  )
-}
-
-/* ── AltDetailPanel — right-side panel ──────────────────────────────── */
-function AltDetailPanel({
-  alt, primaryLead, onClose,
-}: {
-  alt: AlternateSupplierRecord
-  primaryLead: number
   onClose: () => void
 }) {
-  const isBest = alt.cost_premium_pct < 10 && alt.reliability_score >= 0.85
   const relPct = alt.reliability_score * 100
   const qualPct = alt.quality_score * 100
 
   return (
     <div style={{
-      background: '#fff',
-      border: '1px solid var(--border)',
-      borderRadius: '0.75rem',
-      padding: '1.25rem',
-      boxShadow: 'var(--shadow-md)',
+      position: 'absolute',
+      right: 0,
+      top: 0,
+      bottom: 0,
+      width: '380px',
+      background: '#18181B',
+      borderLeft: '1px solid #27272A',
+      boxShadow: '-8px 0 32px rgba(0,0,0,0.5)',
+      padding: '32px',
       display: 'flex',
       flexDirection: 'column',
-      gap: '1rem',
-      position: 'sticky',
-      top: '1rem',
+      gap: '24px',
+      zIndex: 50,
+      overflowY: 'auto'
     }}>
-      {/* Panel header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          {isBest && (
-            <span style={{
-              display: 'inline-block', marginBottom: '0.375rem',
-              fontSize: '0.5rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
-              background: '#059669', color: '#fff', letterSpacing: '0.05em',
-            }}>BEST PICK</span>
-          )}
-          <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#000', lineHeight: 1.2, marginBottom: '0.25rem' }}>
-            {alt.supplier_name}
-          </h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'var(--ink-3)' }}>
-            <MapPin size={12} /> {alt.city}, {alt.region}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#FAFAFA', margin: 0 }}>
+              {alt.supplier_name}
+            </h2>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', color: '#A1A1AA' }}>
+            <MapPin size={14} /> {alt.city}, {alt.region}
           </div>
         </div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: 'var(--ink-4)' }}>
+        <button onClick={onClose} style={{ background: '#27272A', border: 'none', borderRadius: '50%', padding: '6px', cursor: 'pointer', color: '#A1A1AA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <X size={16} />
         </button>
       </div>
 
-      {/* Stats grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-        <div style={{ padding: '0.75rem', background: 'var(--bg-hover)', borderRadius: '0.5rem' }}>
-          <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Extra Cost</div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: alt.cost_premium_pct < 10 ? '#059669' : '#D29729', fontFamily: 'monospace', lineHeight: 1 }}>
-            +{fmt(alt.cost_premium_pct)}%
-          </div>
-          <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', marginTop: '2px' }}>vs. primary supplier</div>
+      <div style={{ padding: '16px', background: '#27272A', borderRadius: '12px', border: '1px solid #3F3F46' }}>
+        <div style={{ fontSize: '0.6875rem', color: '#A1A1AA', textTransform: 'uppercase', fontWeight: 700, marginBottom: '4px' }}>Category</div>
+        <div style={{ fontSize: '1rem', fontWeight: 600, color: '#FAFAFA', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Box size={16} color="#A1A1AA" /> {alt.category}
         </div>
-        <div style={{ padding: '0.75rem', background: 'var(--bg-hover)', borderRadius: '0.5rem' }}>
-          <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Days to Deliver</div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#000', fontFamily: 'monospace', lineHeight: 1 }}>
-            {alt.lead_time_days}d
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#A1A1AA' }}>Fulfillment Reliability</span>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#FAFAFA' }}>{fmt(relPct, 0)}%</span>
           </div>
-          <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', marginTop: '2px' }}>
-            {alt.lead_time_days === primaryLead ? 'same as primary' : alt.lead_time_days > primaryLead ? `+${alt.lead_time_days - primaryLead}d slower` : `${primaryLead - alt.lead_time_days}d faster`}
+          <div style={{ height: '6px', background: '#3F3F46', borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{ width: `${relPct}%`, height: '100%', background: relPct >= 85 ? '#10B981' : '#F59E0B', borderRadius: '3px' }} />
+          </div>
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#A1A1AA' }}>Quality Compliance Score</span>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#FAFAFA' }}>{fmt(qualPct, 0)}%</span>
+          </div>
+          <div style={{ height: '6px', background: '#3F3F46', borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{ width: `${qualPct}%`, height: '100%', background: '#3B82F6', borderRadius: '3px' }} />
           </div>
         </div>
       </div>
 
-      {/* Reliability bar */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-          <span style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Reliability</span>
-          <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', fontFamily: 'monospace' }}>{fmt(relPct, 0)}%</span>
-        </div>
-        <div style={{ height: '6px', background: 'var(--bg-hover)', borderRadius: '3px', overflow: 'hidden' }}>
-          <div style={{ width: `${relPct}%`, height: '100%', background: relPct >= 88 ? '#059669' : relPct >= 78 ? '#2563EB' : '#D29729', transition: 'width 0.6s ease', borderRadius: '3px' }} />
-        </div>
-      </div>
-
-      {/* Quality bar */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-          <span style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quality Score</span>
-          <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', fontFamily: 'monospace' }}>{fmt(qualPct, 0)}%</span>
-        </div>
-        <div style={{ height: '6px', background: 'var(--bg-hover)', borderRadius: '3px', overflow: 'hidden' }}>
-          <div style={{ width: `${qualPct}%`, height: '100%', background: '#000', transition: 'width 0.6s ease', borderRadius: '3px' }} />
-        </div>
-      </div>
-
-      {/* SKU */}
       {(alt.covers_sku || alt.sku_code) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem', background: 'var(--bg-hover)', borderRadius: '0.375rem' }}>
-          <Package size={14} color="var(--ink-4)" />
-          <span style={{ fontSize: '0.75rem', color: 'var(--ink-3)', fontWeight: 500 }}>{alt.covers_sku ?? alt.sku_code}</span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '16px', background: '#064E3B', border: '1px solid #047857', borderRadius: '12px', marginTop: 'auto' }}>
+          <Network size={20} color="#34D399" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <div style={{ fontSize: '0.75rem', color: '#6EE7B7', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>Indirect Provisioning</div>
+            <div style={{ fontSize: '0.875rem', color: '#FAFAFA', fontWeight: 600, lineHeight: 1.4 }}>
+              Tier 1 relies on this vendor for components used in: <span style={{ color: '#34D399' }}>{alt.covers_sku ?? alt.sku_code}</span>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Rationale */}
-      <div style={{ padding: '0.875rem', background: 'var(--bg-hover)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.5rem' }}>
-          <ShieldCheck size={13} color="var(--ink-4)" />
-          <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sourcing Analysis</span>
-        </div>
-        <p style={{ fontSize: '0.75rem', color: '#000', lineHeight: 1.6, margin: 0 }}>
-          {buildRationale(alt, primaryLead)}
-        </p>
-      </div>
-
-      <Badge level={reliabilityLevel(alt.reliability_score)} />
     </div>
   )
 }
 
-/* ── AlternatesGrid — for a single primary supplier ──────────────────── */
-function AlternatesGrid({
-  supplierId, leadTime, highlightAltId, onSelectAlt, selectedAltId,
+/* ── Dependency Graph Visualization ───────────────────────────────────── */
+function DependencyGraph({
+  tier1,
+  onSelectAlt,
+  selectedAltId,
 }: {
-  supplierId: string
-  leadTime: number
-  highlightAltId?: string
+  tier1: Supplier
   onSelectAlt: (alt: AlternateSupplierRecord) => void
   selectedAltId?: string
 }) {
-  const cardRef = useRef<HTMLDivElement | null>(null)
-
   const { data, isLoading } = useQuery({
-    queryKey: ['alternates', supplierId],
-    queryFn: () => api.getAlternateSuppliersDirect(supplierId),
+    queryKey: ['alternates', tier1.id],
+    queryFn: () => api.getAlternateSuppliersDirect(tier1.id),
     staleTime: 300_000,
   })
 
-  // Deduplicate
   const alts: AlternateSupplierRecord[] = []
   const seen = new Set<string>()
   for (const a of (data?.alternates ?? [])) {
     if (!seen.has(a.alternate_id)) { seen.add(a.alternate_id); alts.push(a) }
   }
 
-  // Auto-scroll to highlighted alt
-  useEffect(() => {
-    if (highlightAltId && cardRef.current) {
-      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-  }, [highlightAltId, alts.length])
-
   if (isLoading) {
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' }}>
-        {[1, 2, 3].map(i => <Skeleton key={i} h={140} />)}
-      </div>
-    )
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#A1A1AA' }}>Analyzing network graph...</div>
   }
-  if (alts.length === 0) {
-    return <p style={{ fontSize: '0.75rem', color: 'var(--ink-4)', padding: '1rem 0' }}>No backup suppliers configured for this vendor.</p>
-  }
+
+  const nodeWidth = 280
+  const nodeHeight = 90
+  const verticalSpacing = 130
+  const startX = 80
+  const targetX = 500
+
+  // Calculate canvas dimensions
+  const nodesCount = Math.max(1, alts.length)
+  const totalHeight = nodesCount * verticalSpacing
+  const containerHeight = Math.max(600, totalHeight + 100)
+  
+  const rootY = containerHeight / 2 - nodeHeight / 2
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' }}>
-      {alts.map(alt => (
-        <div key={alt.alternate_id} ref={alt.alternate_id === highlightAltId ? cardRef : undefined}>
-          <AltMiniCard
-            alt={alt}
-            primaryLead={leadTime}
-            selected={selectedAltId === alt.alternate_id}
-            onClick={() => onSelectAlt(alt)}
-          />
+    <div style={{ position: 'relative', width: '100%', height: `${containerHeight}px`, overflow: 'hidden' }}>
+      
+      {/* Background Grid Pattern */}
+      <div style={{ 
+        position: 'absolute', inset: 0, 
+        backgroundImage: 'radial-gradient(#3F3F46 1px, transparent 0)', 
+        backgroundSize: '24px 24px', 
+        opacity: 0.3 
+      }} />
+
+      {/* SVG Connectors */}
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        {alts.map((alt, i) => {
+          const leafY = (i * verticalSpacing) + (containerHeight - totalHeight)/2
+          const isSelected = selectedAltId === alt.alternate_id
+          const isHealthy = alt.reliability_score >= 0.85
+          
+          const strokeColor = isSelected ? '#3B82F6' : isHealthy ? '#34D399' : '#F59E0B'
+          
+          // Bezier curve from right edge of Root to left edge of Leaf
+          const startPt = `${startX + nodeWidth},${rootY + nodeHeight / 2}`
+          const endPt = `${targetX},${leafY + nodeHeight / 2}`
+          const ctrl1 = `${startX + nodeWidth + 100},${rootY + nodeHeight / 2}`
+          const ctrl2 = `${targetX - 100},${leafY + nodeHeight / 2}`
+          const pathD = `M ${startPt} C ${ctrl1} ${ctrl2} ${endPt}`
+
+          return (
+            <g key={`path-${alt.alternate_id}`}>
+              <path
+                d={pathD}
+                fill="none"
+                stroke={strokeColor}
+                strokeWidth={isSelected ? 3 : 2}
+                strokeDasharray={isSelected ? 'none' : '4 4'}
+                opacity={isSelected ? 1 : 0.4}
+                style={{ transition: 'all 0.3s ease' }}
+              />
+              <circle cx={targetX} cy={leafY + nodeHeight / 2} r="4" fill={strokeColor} />
+            </g>
+          )
+        })}
+        {/* Connection point on Root */}
+        {alts.length > 0 && <circle cx={startX + nodeWidth} cy={rootY + nodeHeight / 2} r="5" fill="#3B82F6" />}
+      </svg>
+
+      {/* DOM Nodes */}
+      
+      {/* Tier 1 Root Node */}
+      <div style={{
+        position: 'absolute',
+        left: startX,
+        top: rootY,
+        width: nodeWidth,
+        height: nodeHeight,
+        background: 'rgba(24, 24, 27, 0.8)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid #3F3F46',
+        borderRadius: '12px',
+        padding: '16px',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        zIndex: 10
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          <Building2 size={18} color="#FAFAFA" />
+          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#FAFAFA' }}>{tier1.name}</div>
         </div>
-      ))}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '0.6875rem', fontWeight: 700, background: '#3F3F46', color: '#FAFAFA', padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.05em' }}>TIER 1 PRIMARY</span>
+          <span style={{ fontSize: '0.75rem', color: '#A1A1AA', display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12} /> {tier1.city}</span>
+        </div>
+      </div>
+
+      {/* Tier 2 Leaf Nodes */}
+      {alts.map((alt, i) => {
+        const leafY = (i * verticalSpacing) + (containerHeight - totalHeight)/2
+        const isSelected = selectedAltId === alt.alternate_id
+        const isHealthy = alt.reliability_score >= 0.85
+
+        return (
+          <button
+            key={alt.alternate_id}
+            onClick={() => onSelectAlt(alt)}
+            style={{
+              position: 'absolute',
+              left: targetX,
+              top: leafY,
+              width: nodeWidth,
+              height: nodeHeight,
+              background: isSelected ? '#1E3A8A' : 'rgba(24, 24, 27, 0.8)',
+              backdropFilter: 'blur(12px)',
+              border: `1px solid ${isSelected ? '#3B82F6' : isHealthy ? '#064E3B' : '#78350F'}`,
+              borderRadius: '12px',
+              padding: '16px',
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.2s ease',
+              zIndex: isSelected ? 20 : 10,
+              boxShadow: isSelected ? '0 0 20px rgba(59,130,246,0.3)' : '0 4px 12px rgba(0,0,0,0.2)'
+            }}
+            onMouseEnter={e => { if(!isSelected) e.currentTarget.style.borderColor = '#3F3F46' }}
+            onMouseLeave={e => { if(!isSelected) e.currentTarget.style.borderColor = isHealthy ? '#064E3B' : '#78350F' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+              <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#FAFAFA' }}>{alt.supplier_name}</div>
+              {/* Status Dot */}
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isHealthy ? '#10B981' : '#F59E0B', boxShadow: `0 0 8px ${isHealthy ? '#10B981' : '#F59E0B'}` }} />
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#A1A1AA', textTransform: 'uppercase', letterSpacing: '0.05em' }}>TIER 2</span>
+              <span style={{ fontSize: '0.75rem', color: '#D4D4D8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <ShieldCheck size={12} color={isHealthy ? '#10B981' : '#F59E0B'} />
+                Rel: {(alt.reliability_score * 100).toFixed(0)}%
+              </span>
+            </div>
+          </button>
+        )
+      })}
+      
+      {alts.length === 0 && (
+        <div style={{ position: 'absolute', left: targetX, top: rootY, width: 300, color: '#A1A1AA', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Network size={16} /> No mapped Tier 2 dependencies found.
+        </div>
+      )}
     </div>
   )
 }
 
-/* ── Page ────────────────────────────────────────────────────────────── */
+/* ── Main Page Layout ─────────────────────────────────────────────────── */
 export default function AlternateSuppliersPage() {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const locationState = (location.state ?? {}) as { primarySupplierId?: string; altSupplierId?: string }
+  const { data: supplierData } = useSuppliers()
+  const tier1Suppliers = (supplierData?.suppliers ?? [])
 
-  const { data: supplierData, isLoading } = useSuppliers()
-  const suppliers = supplierData?.suppliers ?? []
+  const [activeTier1Id, setActiveTier1Id] = useState<string | null>(null)
+  const [selectedTier2, setSelectedTier2] = useState<AlternateSupplierRecord | null>(null)
 
-  // Active primary supplier chip
-  const [activeSupplierId, setActiveSupplierId] = useState<string | null>(
-    locationState.primarySupplierId ?? null
-  )
-  // Selected alt for detail panel
-  const [selectedAlt, setSelectedAlt] = useState<AlternateSupplierRecord | null>(null)
-
-  // Auto-set the first supplier when data loads (if none active)
   useEffect(() => {
-    if (!activeSupplierId && suppliers.length > 0) {
-      setActiveSupplierId(suppliers[0].id)
+    if (!activeTier1Id && tier1Suppliers.length > 0) {
+      setActiveTier1Id(tier1Suppliers[0].id)
     }
-  }, [suppliers.length])
+  }, [tier1Suppliers.length])
 
-  const activeSupplier = suppliers.find(s => s.id === activeSupplierId)
+  const activeTier1 = tier1Suppliers.find(s => s.id === activeTier1Id)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#09090B', borderRadius: '16px', overflow: 'hidden' }}>
+      
+      {/* Top Navigation Bar */}
+      <div style={{ background: '#18181B', borderBottom: '1px solid #27272A', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '24px' }}>
         <div>
-          {locationState.primarySupplierId && (
-            <button
-              onClick={() => navigate(`/companies/${locationState.primarySupplierId}`)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.375rem',
-                fontSize: '0.75rem', color: 'var(--ink-3)', background: 'none', border: 'none',
-                cursor: 'pointer', fontWeight: 500, padding: 0, marginBottom: '0.5rem',
-              }}
-            >
-              <ChevronLeft size={14} /> Back to supplier
-            </button>
-          )}
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#000', letterSpacing: '-0.02em', lineHeight: 1 }}>
-            Backup Suppliers
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#FAFAFA', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Zap size={20} color="#3B82F6" /> Real-Time Dependency Map
           </h1>
-          <p style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '0.25rem', fontWeight: 400 }}>
-            Vetted alternates per primary vendor — cost, delivery, reliability
-          </p>
+          <p style={{ fontSize: '0.8125rem', color: '#A1A1AA', margin: 0 }}>Select a primary vendor to analyze its sub-tier network blast radius.</p>
         </div>
-        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>Primary Vendors</div>
-            <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#000', lineHeight: 1 }}>{suppliers.length}</div>
-          </div>
-        </div>
-      </div>
 
-      {/* Chip selector */}
-      {isLoading ? (
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} h={34} w="120px" />)}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {suppliers.map(s => {
-            const active = s.id === activeSupplierId
+        <div style={{ width: '1px', height: '40px', background: '#27272A' }} />
+
+        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', flex: 1, scrollbarWidth: 'none' }}>
+          {tier1Suppliers.map(s => {
+            const isActive = s.id === activeTier1Id
             return (
               <button
                 key={s.id}
-                onClick={() => { setActiveSupplierId(s.id); setSelectedAlt(null) }}
+                onClick={() => { setActiveTier1Id(s.id); setSelectedTier2(null) }}
                 style={{
-                  padding: '0.375rem 0.875rem',
-                  background: active ? '#000' : '#fff',
-                  color: active ? '#fff' : '#000',
-                  border: `1px solid ${active ? '#000' : 'var(--border)'}`,
-                  borderRadius: '999px',
-                  fontSize: '0.75rem',
+                  padding: '8px 16px',
+                  background: isActive ? '#FAFAFA' : '#27272A',
+                  color: isActive ? '#09090B' : '#FAFAFA',
+                  border: 'none',
+                  borderRadius: '20px',
+                  fontSize: '0.8125rem',
                   fontWeight: 600,
                   cursor: 'pointer',
-                  transition: 'all 150ms ease',
                   whiteSpace: 'nowrap',
+                  transition: 'all 0.2s ease',
+                  flexShrink: 0
                 }}
               >
                 {s.name}
@@ -373,41 +325,29 @@ export default function AlternateSuppliersPage() {
             )
           })}
         </div>
-      )}
+      </div>
 
-      {/* Main content: grid + detail panel */}
-      {activeSupplierId && activeSupplier && (
-        <div style={{ display: 'grid', gridTemplateColumns: selectedAlt ? '1fr 320px' : '1fr', gap: '1rem', alignItems: 'start' }}>
-          {/* Left: alt cards */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.75rem', padding: '1.25rem', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <Building2 size={15} color="#000" />
-              <h2 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000' }}>{activeSupplier.name}</h2>
-              <span style={{ fontSize: '0.625rem', padding: '2px 6px', borderRadius: '4px', background: '#000', color: '#fff', fontWeight: 700 }}>TIER {activeSupplier.tier}</span>
-              <span style={{ marginLeft: 'auto', fontSize: '0.625rem', color: 'var(--ink-4)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <MapPin size={11} /> {activeSupplier.city}, {activeSupplier.region}
-              </span>
-            </div>
-
-            <AlternatesGrid
-              supplierId={activeSupplierId}
-              leadTime={activeSupplier.lead_time_days}
-              highlightAltId={locationState.primarySupplierId === activeSupplierId ? locationState.altSupplierId : undefined}
-              selectedAltId={selectedAlt?.alternate_id}
-              onSelectAlt={(alt) => setSelectedAlt(prev => prev?.alternate_id === alt.alternate_id ? null : alt)}
-            />
+      {/* Main Graph Canvas */}
+      <div style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
+        {activeTier1 ? (
+          <DependencyGraph
+            tier1={activeTier1}
+            selectedAltId={selectedTier2?.alternate_id}
+            onSelectAlt={setSelectedTier2}
+          />
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#A1A1AA' }}>
+            Loading primary vendors...
           </div>
+        )}
 
-          {/* Right: detail panel */}
-          {selectedAlt && (
-            <AltDetailPanel
-              alt={selectedAlt}
-              primaryLead={activeSupplier.lead_time_days}
-              onClose={() => setSelectedAlt(null)}
-            />
-          )}
-        </div>
-      )}
+        {selectedTier2 && (
+          <Tier2DetailPanel
+            alt={selectedTier2}
+            onClose={() => setSelectedTier2(null)}
+          />
+        )}
+      </div>
     </div>
   )
 }

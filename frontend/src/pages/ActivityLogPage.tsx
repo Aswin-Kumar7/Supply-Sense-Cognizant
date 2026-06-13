@@ -408,19 +408,19 @@ function LogEntry({ card }: { card: ActionCard }) {
 }
 
 /* ── Stat Card ──────────────────────────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, sub, color = '#000', bg = '#F9FAFB', border = 'var(--border)' }: {
+function StatCard({ icon: Icon, label, value, sub, color = '#111827', iconColor, bg = '#FFF', border = '#E5E7EB', iconBg = '#F3F4F6', iconBorder = '#E5E7EB' }: {
   icon: any; label: string; value: string; sub?: string
-  color?: string; bg?: string; border?: string
+  color?: string; iconColor?: string; bg?: string; border?: string; iconBg?: string; iconBorder?: string
 }) {
   return (
-    <div style={{ padding: '1.25rem 1.5rem', background: bg, border: `1px solid ${border}`, borderRadius: '0.75rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-      <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: '#fff', border: `1px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon size={20} color={color} />
+    <div style={{ padding: '24px', background: bg, border: `1px solid ${border}`, borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+      <div style={{ width: '56px', height: '56px', borderRadius: '12px', background: iconBg, border: `1px solid ${iconBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={28} color={iconColor ?? color} />
       </div>
       <div>
-        <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color, marginBottom: '0.25rem' }}>{label}</div>
-        <div style={{ fontSize: '1.5rem', fontWeight: 800, color, lineHeight: 1, fontFamily: 'monospace' }}>{value}</div>
-        {sub && <div style={{ fontSize: '0.6875rem', color, opacity: 0.7, marginTop: '0.25rem' }}>{sub}</div>}
+        <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', marginBottom: '4px' }}>{label}</div>
+        <div style={{ fontSize: '2rem', fontWeight: 800, color, lineHeight: 1, fontFamily: 'monospace' }}>{value}</div>
+        {sub && <div style={{ fontSize: '0.8125rem', color, fontWeight: 600, opacity: 0.8, marginTop: '6px' }}>{sub}</div>}
       </div>
     </div>
   )
@@ -511,15 +511,18 @@ export default function ActivityLogPage() {
       </div>
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
         <StatCard
           icon={CheckCircle2}
           label="Total Resolved"
           value={String(resolvedCards.length)}
           sub={`${thisWeek} this week`}
-          color="#059669"
-          bg="#F0FDF4"
-          border="#BBF7D0"
+          color="#10B981"
+          iconColor="#10B981"
+          bg="#FFF"
+          border="#E5E7EB"
+          iconBg="#F0FDF4"
+          iconBorder="#BBF7D0"
         />
         <StatCard
           icon={ShieldCheck}
@@ -527,8 +530,11 @@ export default function ActivityLogPage() {
           value={formatINR(resolvedCards.reduce((s, c) => s + c.estimated_impact_inr, 0))}
           sub="cumulative across all time"
           color="#2563EB"
-          bg="#EFF6FF"
-          border="#BFDBFE"
+          iconColor="#2563EB"
+          bg="#FFF"
+          border="#E5E7EB"
+          iconBg="#EFF6FF"
+          iconBorder="#BFDBFE"
         />
         <StatCard
           icon={BarChart3}
@@ -536,8 +542,11 @@ export default function ActivityLogPage() {
           value={String(resolvedCards.filter(c => c.priority === 'critical').length)}
           sub={`${resolvedCards.filter(c => c.priority === 'high').length} high priority`}
           color="#DC2626"
-          bg="#FEF2F2"
-          border="#FECACA"
+          iconColor="#DC2626"
+          bg="#FFF"
+          border="#E5E7EB"
+          iconBg="#FEF2F2"
+          iconBorder="#FECACA"
         />
       </div>
 

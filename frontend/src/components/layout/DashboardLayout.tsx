@@ -3,6 +3,7 @@ import { useRef, useEffect, useState } from 'react'
 import { TopBar } from './TopBar'
 import { Sidebar } from './Sidebar'
 import { FallbackApprovalBanner } from '../ui/FallbackApprovalBanner'
+import { FloatingChatWidget } from '../ui/FloatingChatWidget'
 import { useSSECacheInvalidation } from '../../hooks/useSSECacheInvalidation'
 import { useGlobalSync, GlobalSyncContext } from '../../hooks/useGlobalSync'
 
@@ -39,6 +40,7 @@ export function DashboardLayout() {
             <Outlet />
           </main>
         </div>
+        <FloatingChatWidget />
       </div>
     </GlobalSyncContext.Provider>
   )

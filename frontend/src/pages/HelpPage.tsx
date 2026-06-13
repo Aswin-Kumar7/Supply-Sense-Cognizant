@@ -6,7 +6,6 @@ import {
   Database, 
   Scale, 
   Info,
-  ChevronRight,
   ArrowUpRight
 } from 'lucide-react'
 

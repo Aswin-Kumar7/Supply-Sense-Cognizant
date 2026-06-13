@@ -22,7 +22,7 @@ import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
 import { useRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
 import { Badge } from '../components/ui/Badge'
-import { ProvenanceTag } from '../components/ui/ProvenanceTag'
+
 import type { SupplierRiskAnalysis, IntelligentActionCard, MitigationSimulation, AlternateSupplierRecord } from '../types'
 
 function formatINR(n: number) {
@@ -210,7 +210,7 @@ function MitigationOptions({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.25rem' }}>
         <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Select one action to take</span>
-        <ProvenanceTag type="rule" size="xs" />
+
       </div>
 
       {sim.options.map((opt, i) => {
@@ -697,7 +697,7 @@ export default function RiskMitigationPlan() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.5rem' }}>
               <ShieldCheck size={12} color="#000" />
               <span style={{ fontSize: '0.5625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#71717A' }}>Agent Rationale</span>
-              <ProvenanceTag type="ai" size="xs" />
+
             </div>
             <p style={{ fontSize: '0.6875rem', lineHeight: 1.5, color: '#000', fontWeight: 400 }}>
               {card?.executive_summary ?? 'Executing strategic alignment with secondary supply chain networks to neutralize upstream volatility.'}
