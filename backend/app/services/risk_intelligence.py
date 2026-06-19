@@ -198,8 +198,14 @@ class RiskIntelligenceService:
     # ============ CASCADE PROPAGATION ============
 
     async def get_cascade_analysis(self, supplier_id: UUID) -> dict:
-        """Get cascade propagation analysis for a specific supplier."""
-        # Get the supplier's disruption impact
+        """Get cascade propagation analysis for a specific supplier.
+
+        Two-pass approach:
+        1. Downstream cascade — who is affected if this supplier fails?
+        2. If empty (typical for Tier-1 suppliers that sit at the top of
+           consumption), fall back to upstream dependency exposure — what
+           does this supplier depend on, and how critical are those inputs?
+        """
         disruption_q = await self.db.execute(
             select(Disruption).where(
                 Disruption.supplier_id == supplier_id,
@@ -210,6 +216,12 @@ class RiskIntelligenceService:
         impact = max((d.impact_score for d in disruptions), default=0.5)
 
         result = await cascade_engine.propagate(self.db, supplier_id, impact)
+
+        if result.total_affected == 0:
+            result = await cascade_engine.get_dependency_exposure(
+                self.db, supplier_id, impact
+            )
+
         return {
             "source_supplier_id": result.source_supplier_id,
             "source_supplier_name": result.source_supplier_name,
