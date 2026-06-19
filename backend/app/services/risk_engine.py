@@ -23,6 +23,7 @@ Why NOT AI for this:
 - Auditors need deterministic trails
 - AI adds value in INTERPRETING these scores, not computing them
 """
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta

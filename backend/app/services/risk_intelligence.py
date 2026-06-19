@@ -1,20 +1,10 @@
 """
 Risk Intelligence Service - Orchestration Layer.
-
-Coordinates all deterministic engines to produce comprehensive
-risk analysis for the dashboard and API consumers.
-
-This service:
-1. Fetches data from repositories
-2. Feeds data into deterministic engines
-3. Aggregates results into API-ready responses
-4. Publishes risk events to the event bus
-
-It does NOT contain business logic itself - that lives in the engines.
 """
+from __future__ import annotations
 
 from uuid import UUID
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -137,7 +127,7 @@ class RiskIntelligenceService:
         - 1 active disruption in last 14 days   → 'at_risk'
         - Otherwise                             → 'stable'
         """
-        cutoff = datetime.utcnow() - timedelta(days=14)
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=14)
         result = await self.db.execute(
             select(func.count()).where(
                 Disruption.supplier_id == supplier_id,
@@ -279,20 +269,28 @@ class RiskIntelligenceService:
         """))
         disrupted_ids = {str(r[0]) for r in disrupted_q.fetchall()}
 
+        # Fetch festival multipliers per category for accurate demand forecasting
+        festival_cache: dict[str, float] = {}
+
         forecasts = []
         for row in rows:
+            category = row[3]
+            if category not in festival_cache:
+                festival_cache[category] = await self._get_festival_multiplier(category)
+
             forecast = stockout_engine.forecast_sku(
                 sku_id=str(row[0]),
                 sku_code=row[1],
                 sku_name=row[2],
                 supplier_name=row[8],
-                category=row[3],
+                category=category,
                 current_stock=row[4],
                 daily_demand=row[5],
                 unit_cost_inr=row[6],
                 is_critical=row[7],
                 supplier_disrupted=str(row[10]) in disrupted_ids,
                 lead_time_days=row[9],
+                festival_multiplier=festival_cache[category],
             )
             forecasts.append(forecast)
 
@@ -377,14 +375,17 @@ class RiskIntelligenceService:
         )
         active_disruption_rows = disruptions_q.scalars().all()
         disruptions = [{"severity": d.severity, "impact_score": d.impact_score} for d in active_disruption_rows]
-        actual_impact = max((d.impact_score for d in active_disruption_rows), default=0.5)
+        actual_impact = max((d.impact_score for d in active_disruption_rows), default=0.0)
 
         # Get delivery stats
         delivery_stats = await self._get_delivery_stats(supplier.id)
 
-        # Get cascade impact using real disruption impact score
-        cascade_result = await cascade_engine.propagate(self.db, supplier.id, actual_impact)
-        cascade_impact = cascade_result.total_propagated_impact
+        # Only compute cascade impact when supplier has active disruptions
+        if active_disruption_rows:
+            cascade_result = await cascade_engine.propagate(self.db, supplier.id, actual_impact)
+            cascade_impact = cascade_result.total_propagated_impact
+        else:
+            cascade_impact = 0.0
 
         # Get festival demand multiplier for this category
         festival_multiplier = await self._get_festival_multiplier(supplier.category)

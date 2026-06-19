@@ -20,7 +20,8 @@ import {
 } from 'lucide-react'
 import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
-import { useRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
+import { useProcurementCards, useActionCards } from '../hooks/useQueries'
+import { useWeightedRiskAnalysis } from '../hooks/useRiskWeights'
 import { Badge } from '../components/ui/Badge'
 
 import type { SupplierRiskAnalysis, IntelligentActionCard, MitigationSimulation, AlternateSupplierRecord } from '../types'
@@ -498,7 +499,7 @@ export default function RiskMitigationPlan() {
     }
   }, [])
 
-  const { data: risks } = useRiskAnalysis()
+  const { data: risks } = useWeightedRiskAnalysis()
   const { data: cards } = useProcurementCards()
   const { data: actionData } = useActionCards()
   const { data: cascade } = useQuery({
@@ -525,8 +526,8 @@ export default function RiskMitigationPlan() {
 
   if (!id) return null
 
-  const risk = (risks as SupplierRiskAnalysis[] | undefined ?? []).find(r => r.supplier_id === id)
-  const card = (cards as IntelligentActionCard[] | undefined ?? []).find(c => c.supplier_id === id)
+  const risk = ((risks as SupplierRiskAnalysis[] | undefined) ?? []).find(r => r.supplier_id === id)
+  const card = ((cards as IntelligentActionCard[] | undefined) ?? []).find(c => c.supplier_id === id)
 
   // If ALL action cards for this supplier are resolved, redirect to resolution summary
   const supplierActionCards = (actionData?.action_cards ?? []).filter((c: any) => c.supplier_id === id)

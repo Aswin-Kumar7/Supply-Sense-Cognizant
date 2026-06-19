@@ -4,11 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
 import { useWeightedRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
-import { Badge } from '../components/ui/Badge'
-
-import { 
-  LineChart, CloudLightning, ShieldAlert, CalendarDays, Box, 
-  Bot, CheckCircle2, PlayCircle, 
+import {
+  LineChart, CloudLightning, ShieldAlert, CalendarDays, Box,
+  CheckCircle2, PlayCircle, Cpu,
   Network, ChevronRight, XCircle, Timer, Banknote, Layers,
   TrendingDown
 } from 'lucide-react'
@@ -200,7 +198,7 @@ export default function RiskDetailPage() {
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
   const risk = riskList.find(r => r.supplier_id === id)
-  const card = (cards as IntelligentActionCard[] | undefined ?? []).find(c => c.supplier_id === id)
+  const card = ((cards as IntelligentActionCard[] | undefined) ?? []).find(c => c.supplier_id === id)
 
   const supplierActionCards = (actionData?.action_cards ?? []).filter((c: any) => c.supplier_id === id)
   const isResolved = supplierActionCards.length > 0 && supplierActionCards.every((c: any) => c.is_resolved)
@@ -262,15 +260,15 @@ export default function RiskDetailPage() {
         
         <div style={{ display: 'flex', gap: '12px' }}>
           <button
-            onClick={() => navigate(`/advisor?supplier=${encodeURIComponent(id ?? '')}&name=${encodeURIComponent(risk?.supplier_name ?? '')}`)}
-            style={{ 
+            onClick={() => navigate(`/risks/${id}/mitigation`)}
+            style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               padding: '6px 14px', background: '#FFF', color: '#374151',
               border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
               boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
             }}
           >
-            <Bot size={14} /> AI Advisor
+            <PlayCircle size={14} /> Run Mitigation
           </button>
         </div>
       </div>
@@ -310,7 +308,7 @@ export default function RiskDetailPage() {
             {card && (
               <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
                 <div style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Bot size={16} color="#2563EB" />
+                  <Cpu size={16} color="#2563EB" />
                   <span style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>AI Strategic Assessment</span>
                 </div>
                 <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>

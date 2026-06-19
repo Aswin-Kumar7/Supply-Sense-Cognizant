@@ -1,8 +1,10 @@
 """
 Action card API endpoints.
 """
+from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -99,7 +101,7 @@ async def simulate_mitigation(
 
 
 class ResolveActionRequest(BaseModel):
-    resolution_note: str | None = None
+    resolution_note: Optional[str] = None
 
 
 @router.patch("/{action_card_id}/resolve")
@@ -114,7 +116,7 @@ async def resolve_action_card(
     if not card:
         raise HTTPException(status_code=404, detail="Action card not found")
     card.is_resolved = True
-    card.resolved_at = datetime.utcnow()  # TIMESTAMP WITHOUT TIME ZONE — do not use timezone-aware
+    card.resolved_at = datetime.now(timezone.utc).replace(tzinfo=None)  # TIMESTAMP WITHOUT TIME ZONE — do not use timezone-aware
     # Persist the resolution note (may be None if user provided no free-text)
     note = (body.resolution_note or "").strip() or None
     card.resolution_note = note
@@ -144,7 +146,7 @@ async def resolve_all_for_supplier(
     if not cards:
         return {"status": "no_cards", "supplier_id": str(supplier_id), "count": 0}
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     note = (body.resolution_note or "").strip() or None
     for card in cards:
         card.is_resolved = True

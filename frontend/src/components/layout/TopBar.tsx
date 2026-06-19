@@ -143,7 +143,7 @@ function Logo() {
 }
 
 /* ── TopBar ─────────────────────────────────────────────────────────── */
-export function TopBar({ collapsed: _collapsed, setCollapsed: _setCollapsed }: { collapsed: boolean, setCollapsed: (c: boolean) => void }) {
+export function TopBar() {
   const { data: health } = useHealth()
 
   return (

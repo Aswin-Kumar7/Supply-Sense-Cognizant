@@ -1,7 +1,9 @@
 """
 Supplier schemas for API serialization.
 """
+from __future__ import annotations
 
+from typing import Optional
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
@@ -17,12 +19,11 @@ class SupplierResponse(BaseModel):
     tier: int
     reliability_score: float
     lead_time_days: int
-    risk_zone: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
+    risk_zone: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     created_at: datetime
-    # XAI tooltip: each factor's raw value, weighted contribution, and explanation
-    risk_breakdown: dict | None = None
+    risk_breakdown: Optional[dict] = None
 
     class Config:
         from_attributes = True

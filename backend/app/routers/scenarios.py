@@ -14,7 +14,7 @@ Each scenario:
 - Streams cascading effects to the frontend
 """
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from app.core.database import AsyncSessionLocal
@@ -190,7 +190,7 @@ async def set_event_speed(mode: str):
         "turbo": (0.2, 0.8),
     }
     if mode not in speeds:
-        return {"error": f"Unknown mode. Available: {list(speeds.keys())}"}
+        raise HTTPException(status_code=400, detail=f"Unknown mode. Available: {list(speeds.keys())}")
 
     min_s, max_s = speeds[mode]
     synthetic_engine.set_interval(min_s, max_s)

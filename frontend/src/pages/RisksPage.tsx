@@ -140,7 +140,7 @@ export default function RisksPage() {
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
   const cardMap = useMemo(
-    () => new Map((cards as IntelligentActionCard[] | undefined ?? []).map(c => [c.supplier_id, c])),
+    () => new Map(((cards as IntelligentActionCard[] | undefined) ?? []).map(c => [c.supplier_id, c])),
     [cards]
   )
 

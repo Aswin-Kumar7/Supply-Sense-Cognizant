@@ -1,7 +1,9 @@
 """
 Disruption schemas for API serialization.
 """
+from __future__ import annotations
 
+from typing import Optional
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import date, datetime
@@ -9,16 +11,16 @@ from datetime import date, datetime
 
 class DisruptionResponse(BaseModel):
     id: UUID
-    supplier_id: UUID
+    supplier_id: Optional[UUID] = None
     disruption_type: str
     severity: str
     title: str
-    description: str | None = None
+    description: Optional[str] = None
     start_date: date
-    end_date: date | None = None
+    end_date: Optional[date] = None
     impact_score: float
     affected_skus_count: int
-    region: str | None = None
+    region: Optional[str] = None
     is_active: bool
     created_at: datetime
 

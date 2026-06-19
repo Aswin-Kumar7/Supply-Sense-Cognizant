@@ -1,21 +1,10 @@
 """
 Server-Sent Events (SSE) endpoint for real-time dashboard updates.
-
-Architecture:
-- Each client connection subscribes to the central EventBus
-- Events are serialized as JSON and streamed via SSE
-- Auto-cleanup on client disconnect
-- Supports event type filtering via query params
-
-Why SSE over WebSockets:
-- Unidirectional (server→client) is all we need for monitoring
-- Auto-reconnect built into browser EventSource API
-- Works through HTTP proxies and load balancers
-- Simpler to scale: stateless connections, no upgrade handshake
-- Future: can add WebSocket for bidirectional agent chat
 """
+from __future__ import annotations
 
 import asyncio
+from typing import Optional
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
@@ -26,7 +15,7 @@ from app.agents.strands_agents import _AGENT_TRACE, STRANDS_AVAILABLE
 router = APIRouter(prefix="/events", tags=["Events"])
 
 
-async def _event_stream(request: Request, event_types: str | None = None):
+async def _event_stream(request: Request, event_types: Optional[str] = None):
     """
     Generator that yields events from the bus.
     Cleans up subscription on client disconnect.
@@ -65,7 +54,7 @@ async def _event_stream(request: Request, event_types: str | None = None):
 @router.get("/stream")
 async def stream_events(
     request: Request,
-    types: str | None = None,
+    types: Optional[str] = None,
 ):
     """
     SSE endpoint for real-time supply chain events.

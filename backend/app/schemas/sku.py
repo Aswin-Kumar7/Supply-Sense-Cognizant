@@ -1,7 +1,9 @@
 """
 SKU schemas for API serialization.
 """
+from __future__ import annotations
 
+from typing import Optional
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
@@ -12,7 +14,7 @@ class SKUResponse(BaseModel):
     sku_code: str
     name: str
     category: str
-    subcategory: str | None = None
+    subcategory: Optional[str] = None
     supplier_id: UUID
     unit_cost_inr: float
     current_stock: int

@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { useSuppliers } from '../hooks/useQueries'
 import {
-  Building2, MapPin, Search, Network, Box, ShieldCheck, X, Zap
+  Building2, MapPin, Network, Box, ShieldCheck, X, Zap
 } from 'lucide-react'
 import type { AlternateSupplierRecord, Supplier } from '../types'
 
@@ -281,7 +280,7 @@ export default function AlternateSuppliersPage() {
     if (!activeTier1Id && tier1Suppliers.length > 0) {
       setActiveTier1Id(tier1Suppliers[0].id)
     }
-  }, [tier1Suppliers.length])
+  }, [tier1Suppliers.length, activeTier1Id])
 
   const activeTier1 = tier1Suppliers.find(s => s.id === activeTier1Id)
 

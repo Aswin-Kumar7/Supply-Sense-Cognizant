@@ -9,6 +9,7 @@ Cache strategy:
   unless the stored result is actually stale.
 - Manual cache bust: POST /procurement/cache/invalidate
 """
+from __future__ import annotations
 
 import json
 import time
@@ -85,11 +86,14 @@ async def _save_to_db(key: str, result: object) -> None:
 
 # ── Core get-or-generate logic ────────────────────────────────────────────────
 
-async def _get_or_generate(key: str, ttl: int, coro_factory):
+async def _get_or_generate(key: str, ttl: int, coro_factory, refresh_fn=None):
     """
     1. Return in-process cache if fresh.
     2. Try DB if in-process is cold.
     3. Otherwise generate (blocking first time, background if stale).
+
+    refresh_fn: async function(service) -> result, used for background refresh
+                with a fresh DB session. Falls back to coro_factory if not provided.
     """
     if _age(key) < ttl:
         return _CACHE[key][0]
@@ -104,7 +108,7 @@ async def _get_or_generate(key: str, ttl: int, coro_factory):
         # Serve the stale result immediately; refresh in background
         if not _GENERATING.get(key):
             _GENERATING[key] = True
-            asyncio.create_task(_refresh(key, coro_factory))
+            asyncio.create_task(_refresh(key, refresh_fn or coro_factory))
         return _CACHE[key][0]
 
     # First ever call — must wait
@@ -118,11 +122,14 @@ async def _get_or_generate(key: str, ttl: int, coro_factory):
         _GENERATING[key] = False
 
 
-async def _refresh(key: str, coro_factory):
+async def _refresh(key: str, refresh_fn):
+    """Background refresh using a fresh DB session (not the request-scoped one)."""
     try:
-        result = await coro_factory()
-        _CACHE[key] = (result, time.monotonic())
-        await _save_to_db(key, result)
+        async with AsyncSessionLocal() as session:
+            service = ProcurementService(session)
+            result = await refresh_fn(service)
+            _CACHE[key] = (result, time.monotonic())
+            await _save_to_db(key, result)
     except Exception as exc:
         logger.warning(f"procurement cache: background refresh failed for '{key}': {exc}")
     finally:
@@ -152,6 +159,7 @@ async def get_intelligent_action_cards(
     return await _get_or_generate(
         "action_cards", ttl_seconds,
         lambda: service.generate_action_cards(),
+        refresh_fn=lambda svc: svc.generate_action_cards(),
     )
 
 
@@ -168,6 +176,7 @@ async def get_executive_brief(
     return await _get_or_generate(
         "exec_brief", ttl_seconds,
         lambda: service.generate_executive_brief(),
+        refresh_fn=lambda svc: svc.generate_executive_brief(),
     )
 
 
@@ -178,10 +187,11 @@ async def get_alternate_recommendation(
     db: AsyncSession = Depends(get_db),
 ):
     """Alternate supplier recommendation with configurable TTL cache."""
+    sid = str(supplier_id)
     service = ProcurementService(db)
     return await _get_or_generate_alternate(
-        str(supplier_id), ttl_seconds,
-        lambda: service.get_alternate_supplier_recommendation(str(supplier_id)),
+        sid, ttl_seconds,
+        lambda: service.get_alternate_supplier_recommendation(sid),
     )
 
 

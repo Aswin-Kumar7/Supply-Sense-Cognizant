@@ -10,6 +10,8 @@ Coordinates the full procurement intelligence pipeline:
 This is the main entry point for Module 5 API endpoints.
 """
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -174,7 +176,7 @@ class ProcurementService:
             "avg_days_to_stockout": stockout.avg_days_to_stockout,
             # AI-generated content
             **brief,
-            "generated_at": __import__("datetime").datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def get_alternate_supplier_recommendation(self, supplier_id: str) -> dict:
@@ -184,7 +186,8 @@ class ProcurementService:
         )).scalar_one_or_none()
 
         if not supplier:
-            return {"error": "Supplier not found"}
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Supplier not found")
 
         # Get disruption context
         disruption_q = await self.db.execute(
@@ -220,7 +223,7 @@ class ProcurementService:
             primary_city=supplier.city,
             primary_reliability=supplier.reliability_score,
             primary_lead_time=supplier.lead_time_days,
-            primary_risk=0.5,
+            primary_risk=round(1.0 - supplier.reliability_score, 2),
             issue=issue,
             alternates=alternates,
         )

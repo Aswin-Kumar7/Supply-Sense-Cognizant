@@ -2,9 +2,11 @@
 Disruption event model.
 Tracks supply chain disruptions: natural disasters, strikes, quality issues.
 """
+from __future__ import annotations
 
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timezone
+from typing import Optional
 from sqlalchemy import String, Float, Integer, DateTime, Date, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -18,7 +20,7 @@ class Disruption(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+    supplier_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=True
     )
     disruption_type: Mapped[str] = mapped_column(
@@ -36,5 +38,5 @@ class Disruption(Base):
     region: Mapped[str] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
+        DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
     )

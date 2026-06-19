@@ -3,6 +3,7 @@ Centralized application configuration.
 Uses pydantic-settings for type-safe environment variable parsing.
 """
 
+from typing import Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     # Guardrail ID — optional. When set, attached to every Bedrock invocation.
     # Blocks: hallucinated supplier names, rupee figures not matching engine outputs,
     #         false certainty claims when confidence is low.
-    bedrock_guardrail_id: str | None = None
+    bedrock_guardrail_id: Optional[str] = None
     bedrock_guardrail_version: str = "DRAFT"
 
     # Server

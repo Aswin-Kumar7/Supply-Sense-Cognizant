@@ -13,7 +13,6 @@ import {
   Menu,
   ClipboardList,
   History,
-  MessageSquare,
 } from 'lucide-react'
 import type { IntelligentActionCard } from '../../types'
 

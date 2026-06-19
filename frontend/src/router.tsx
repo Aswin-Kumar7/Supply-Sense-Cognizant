@@ -101,6 +101,16 @@ export const router = createBrowserRouter([
         path: 'help',
         element: <LazyRoute><HelpPage /></LazyRoute>,
       },
+      {
+        path: '*',
+        element: (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem 2rem', textAlign: 'center', gap: '1rem' }}>
+            <div style={{ fontSize: '3rem', fontWeight: 900, color: 'var(--ink-5)', fontFamily: 'JetBrains Mono, monospace' }}>404</div>
+            <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--ink-2)' }}>Page not found</div>
+            <a href="/" style={{ fontSize: '0.875rem', color: 'var(--ink-3)', textDecoration: 'underline' }}>Back to dashboard</a>
+          </div>
+        ),
+      },
     ],
   },
 ])

@@ -1,19 +1,7 @@
 """
 AWS Bedrock Inference Layer for SupplySense.
-
-Centralized model configuration with:
-- Structured prompting framework
-- Retry handling with exponential backoff
-- Response parsing and validation
-- Fallback to deterministic outputs when AI is unavailable
-- Future guardrail support hooks
-
-Architecture:
-- Single Bedrock client shared across all agents
-- Structured prompt templates prevent hallucination
-- AI NEVER generates financial numbers (those come from deterministic engines)
-- AI generates: narratives, reasoning, prioritization, explanations
 """
+from __future__ import annotations
 
 import json
 import asyncio
@@ -83,7 +71,7 @@ class BedrockInference:
             return ""
 
         max_tokens = max_tokens or settings.bedrock_max_tokens
-        temperature = temperature or settings.bedrock_temperature
+        temperature = temperature if temperature is not None else settings.bedrock_temperature
 
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",

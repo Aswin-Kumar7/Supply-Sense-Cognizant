@@ -4,7 +4,8 @@ Represents recommended procurement/mitigation actions.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Optional
 from sqlalchemy import String, Float, Integer, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -26,16 +27,16 @@ class ActionCard(Base):
     priority: Mapped[str] = mapped_column(
         String(20), nullable=False
     )  # low, medium, high, critical
-    supplier_id: Mapped[uuid.UUID] = mapped_column(
+    supplier_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=True
     )
-    sku_id: Mapped[uuid.UUID] = mapped_column(
+    sku_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("skus.id"), nullable=True
     )
     estimated_impact_inr: Mapped[float] = mapped_column(Float, default=0.0)
     is_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
-    resolution_note: Mapped[str] = mapped_column(Text, nullable=True)
+    resolution_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
+        DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
     )
-    resolved_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

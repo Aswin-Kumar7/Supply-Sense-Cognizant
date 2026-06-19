@@ -24,6 +24,7 @@ else:
             "pool_size": 20,
             "max_overflow": 10,
             "pool_pre_ping": True,
+            "pool_recycle": 300,
         }
     )
 
@@ -50,8 +51,6 @@ async def get_db() -> AsyncSession:
         except Exception:
             await session.rollback()
             raise
-        finally:
-            await session.close()
 
 
 async def init_db():
@@ -61,8 +60,9 @@ async def init_db():
         # Add resolution_note column if it was added after initial schema creation.
         # PostgreSQL: ADD COLUMN IF NOT EXISTS is safe to run on every startup.
         if not _is_sqlite:
+            from sqlalchemy import text as sa_text
             await conn.execute(
-                __import__("sqlalchemy").text(
+                sa_text(
                     "ALTER TABLE action_cards ADD COLUMN IF NOT EXISTS resolution_note TEXT"
                 )
             )

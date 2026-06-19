@@ -1,12 +1,9 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import {
-  useDashboardSummary, useDisruptions, useStockoutForecast,
+  useDisruptions, useStockoutForecast,
   useActionCards, useProcurementCards, useWeightedRiskAnalysis,
 } from '../hooks/useQueries'
-import { api } from '../services/api'
-import { queryKeys } from '../hooks/queryKeys'
 import type { SupplierRiskAnalysis, IntelligentActionCard, ActionCard } from '../types'
 import {
   AlertTriangle, Package, Activity, Wind, Truck, ClipboardList,
@@ -563,9 +560,7 @@ function ExposureDonutChart({ activeRisks, cardMap }: { activeRisks: SupplierRis
 /* ── Dashboard ───────────────────────────────────────────────────────── */
 export function Dashboard() {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
 
-  useDashboardSummary()
   const { data: risks, isLoading: loadingRisks }   = useWeightedRiskAnalysis()
   const { data: disruptions, isLoading: loadingD } = useDisruptions()
   const { data: stockout }                         = useStockoutForecast()
@@ -576,7 +571,7 @@ export function Dashboard() {
   const allCards = actionData?.action_cards ?? []
 
   const cardMap = useMemo(
-    () => new Map((procCards as IntelligentActionCard[] | undefined ?? []).map(c => [c.supplier_id, c])),
+    () => new Map(((procCards as IntelligentActionCard[] | undefined) ?? []).map(c => [c.supplier_id, c])),
     [procCards]
   )
 
@@ -618,11 +613,7 @@ export function Dashboard() {
   const highCount          = activeRiskList.filter(r => r.risk_level === 'high').length
   const disruptions_active = (disruptions?.disruptions ?? []).filter((d: any) => d.is_active && d.severity !== 'low').length
 
-  useEffect(() => {
-    api.syncRisks().then(({ synced }) => {
-      if (synced > 0) queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
-    }).catch(() => {})
-  }, [queryClient])
+  // syncRisks is handled centrally in DashboardLayout
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

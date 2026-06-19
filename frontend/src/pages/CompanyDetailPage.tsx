@@ -2,8 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { useSuppliers, useSKUs, useDisruptions, useActionCards } from '../hooks/useQueries'
-import { Badge } from '../components/ui/Badge'
-import { ChevronLeft, Package, AlertTriangle, Globe, ChevronRight, MapPin, Truck, ShieldAlert, Star, Box, Activity, CalendarDays, TrendingDown } from 'lucide-react'
+import { ChevronLeft, Package, Globe, ChevronRight, MapPin, Truck, ShieldAlert, Star, Box, Activity, CalendarDays, TrendingDown } from 'lucide-react'
 import type { Supplier, SKURisk, Disruption } from '../types'
 
 function Skeleton({ h = 20, w = '100%' }: { h?: number; w?: string | number }) {
@@ -300,7 +299,7 @@ export default function CompanyDetailPage() {
                         <CalendarDays size={12} color="#9CA3AF" /> <strong style={{ color: '#111827' }}>Reported:</strong> {new Date(d.start_date).toLocaleDateString()}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#4B5563' }}>
-                        <TrendingDown size={12} color="#9CA3AF" /> <strong style={{ color: '#111827' }}>Impact Score:</strong> {d.impact_score.toFixed(1)}/10
+                        <TrendingDown size={12} color="#9CA3AF" /> <strong style={{ color: '#111827' }}>Impact:</strong> {(d.impact_score * 100).toFixed(0)}%
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#4B5563' }}>
                         <Box size={12} color="#9CA3AF" /> <strong style={{ color: '#111827' }}>Affected SKUs:</strong> {d.affected_skus_count} SKUs impacted

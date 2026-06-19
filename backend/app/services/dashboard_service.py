@@ -57,8 +57,8 @@ class DashboardService:
         risk_svc = RiskIntelligenceService(self.db)
         live_risks = await risk_svc.compute_all_supplier_risks()
 
-        high_risk = sum(1 for r in live_risks if r["risk_level"] == "critical")
-        medium_risk = sum(1 for r in live_risks if r["risk_level"] in ("high", "medium"))
+        high_risk = sum(1 for r in live_risks if r["risk_level"] in ("critical", "high"))
+        medium_risk = sum(1 for r in live_risks if r["risk_level"] == "medium")
 
         return SupplierHealthSummary(
             total_suppliers=total,

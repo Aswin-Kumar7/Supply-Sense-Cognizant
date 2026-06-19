@@ -1,9 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import { useActionCards, useWeightedRiskAnalysis, useProcurementCards } from '../hooks/useQueries'
-import { queryKeys } from '../hooks/queryKeys'
-import { api } from '../services/api'
 import {
   ShieldAlert, CheckCircle2, ArrowRight, TrendingDown, ShieldCheck,
   AlertOctagon, Zap, Clock, Banknote
@@ -198,8 +195,6 @@ function ResolvedRow({ risk, card, resolvedCardId }: {
 type Filter = 'pending' | 'resolved'
 
 export default function PendingActionsPage() {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { data: actionData, isLoading: cardsLoading } = useActionCards()
   const { data: risks, isLoading: risksLoading } = useWeightedRiskAnalysis()
   const { data: procCards, isLoading: procLoading } = useProcurementCards()
@@ -207,16 +202,7 @@ export default function PendingActionsPage() {
 
   const isLoading = cardsLoading || risksLoading || procLoading
 
-  useEffect(() => {
-    api.syncRisks()
-      .then(({ synced }) => {
-        if (synced > 0) {
-          queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
-          queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
-        }
-      })
-      .catch(() => { })
-  }, [queryClient])
+  // syncRisks is handled centrally in DashboardLayout via useEffect
 
   const procCardMap = useMemo(
     () => new Map((procCards as IntelligentActionCard[] ?? []).map(c => [c.supplier_id, c])),

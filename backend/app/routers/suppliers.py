@@ -25,26 +25,6 @@ async def list_suppliers(
     return await service.get_all_suppliers(limit=limit, offset=offset)
 
 
-@router.get("/{supplier_id}", response_model=SupplierResponse)
-async def get_supplier(
-    supplier_id: UUID,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get a single supplier by ID."""
-    service = SupplierService(db)
-    return await service.get_supplier(supplier_id)
-
-
-@router.get("/{supplier_id}/dependencies")
-async def get_supplier_dependencies(
-    supplier_id: UUID,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get dependency tree for a supplier."""
-    service = SupplierService(db)
-    return await service.get_dependencies(supplier_id)
-
-
 @router.get("/dependencies/all")
 async def get_all_dependencies(
     db: AsyncSession = Depends(get_db),
@@ -148,6 +128,26 @@ async def get_alternate_supplier_detail(
         "estimated_order_value_inr": round(total_order_value, 2),
         "primary_supplier_id": str(primary_supplier_id),
     }
+
+
+@router.get("/{supplier_id}", response_model=SupplierResponse)
+async def get_supplier(
+    supplier_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single supplier by ID."""
+    service = SupplierService(db)
+    return await service.get_supplier(supplier_id)
+
+
+@router.get("/{supplier_id}/dependencies")
+async def get_supplier_dependencies(
+    supplier_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get dependency tree for a supplier."""
+    service = SupplierService(db)
+    return await service.get_dependencies(supplier_id)
 
 
 @router.get("/{supplier_id}/alternate-suppliers")

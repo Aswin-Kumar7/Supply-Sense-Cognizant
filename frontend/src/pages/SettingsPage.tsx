@@ -2,36 +2,12 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSync } from '../hooks/useGlobalSync'
 import { useRiskAnalysis } from '../hooks/useQueries'
-import { applyWeights, DEFAULT_WEIGHTS as HookDefaults } from '../hooks/useRiskWeights'
+import { applyWeights, DEFAULT_WEIGHTS, loadWeights } from '../hooks/useRiskWeights'
+import type { RiskWeights } from '../hooks/useRiskWeights'
 import { Database, Activity, Scale, ShieldAlert, CheckCircle2, RotateCcw } from 'lucide-react'
 import type { SupplierRiskAnalysis } from '../types'
 
 const WEIGHTS_KEY = 'ss_risk_weights'
-
-interface RiskWeights {
-  delivery_reliability: number
-  disruption_severity: number
-  inventory_pressure: number
-  logistics_vulnerability: number
-  dependency_exposure: number
-  festival_proximity: number
-}
-
-const DEFAULT_WEIGHTS: RiskWeights = {
-  delivery_reliability:     0.25,
-  disruption_severity:      0.25,
-  inventory_pressure:       0.20,
-  logistics_vulnerability:  0.15,
-  dependency_exposure:      0.10,
-  festival_proximity:       0.05,
-}
-
-function loadWeights(): RiskWeights {
-  try {
-    const raw = localStorage.getItem(WEIGHTS_KEY)
-    return raw ? JSON.parse(raw) : DEFAULT_WEIGHTS
-  } catch { return DEFAULT_WEIGHTS }
-}
 
 function saveWeights(w: RiskWeights) {
   localStorage.setItem(WEIGHTS_KEY, JSON.stringify(w))
@@ -109,7 +85,7 @@ function LiveWeightPreview({ weights }: { weights: RiskWeights }) {
 
   const recomputed = useMemo(() => {
     if (!sample) return null
-    return applyWeights(sample, weights as typeof HookDefaults)
+    return applyWeights(sample, weights as typeof DEFAULT_WEIGHTS)
   }, [sample, weights])
 
   if (!sample || !recomputed) return null
@@ -369,7 +345,7 @@ export default function SettingsPage() {
       <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--bg-hover)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--ink-3)', fontWeight: 500 }}>
-            <span style={{ fontWeight: 700, color: '#000' }}>SupplySense v1.0.0</span> · Advanced AI Procurement Intelligence
+            <span style={{ fontWeight: 700, color: '#000' }}>SupplySense v1.4.2</span> · Advanced AI Procurement Intelligence
           </div>
           <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 600 }}>
             STX-2026-SYNTHETIC-INDIA

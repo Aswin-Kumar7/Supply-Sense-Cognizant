@@ -4,7 +4,7 @@ Point-in-time risk assessments for suppliers and SKUs.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import String, Float, Integer, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,5 +29,5 @@ class RiskSnapshot(Base):
     stockout_probability: Mapped[float] = mapped_column(Float, default=0.0)
     days_of_stock: Mapped[int] = mapped_column(Integer, default=30)
     snapshot_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
+        DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
     )

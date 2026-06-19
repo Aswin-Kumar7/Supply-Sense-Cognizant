@@ -114,8 +114,8 @@ function round4(n: number): number {
  */
 export function useWeightedRiskAnalysis() {
   const query = useRiskAnalysis()
-  // Re-read localStorage each time this hook is called (happens on page mount / navigation)
-  const weights = loadWeights()
+  const weightsJson = useMemo(() => JSON.stringify(loadWeights()), [])
+  const weights = useMemo(() => JSON.parse(weightsJson) as RiskWeights, [weightsJson])
   const isCustom = hasCustomWeights(weights)
 
   const data = useMemo(() => {
@@ -123,7 +123,7 @@ export function useWeightedRiskAnalysis() {
     const raw = query.data as SupplierRiskAnalysis[]
     if (!isCustom) return raw
     return raw.map(a => applyWeights(a, weights))
-  }, [query.data, isCustom, weights])
+  }, [query.data, isCustom, weights, weightsJson])
 
   return {
     ...query,

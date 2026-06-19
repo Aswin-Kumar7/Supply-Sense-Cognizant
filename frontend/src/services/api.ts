@@ -13,7 +13,6 @@ import type {
   ExecutiveBrief,
   AlternateSuppliersResponse,
   ChatResponse,
-  SimulateMitigationResponse,
   HealthStatus,
 } from '../types'
 
@@ -76,16 +75,6 @@ export const api = {
     request<IntelligentActionCard[]>(`/procurement/action-cards${ttlSeconds ? `?ttl_seconds=${ttlSeconds}` : ''}`),
   getExecutiveBrief: (ttlSeconds?: number) =>
     request<ExecutiveBrief>(`/procurement/executive-brief${ttlSeconds ? `?ttl_seconds=${ttlSeconds}` : ''}`),
-  getAlternateSuppliers: (id: string) =>
-    request<any>(`/procurement/alternate-suppliers/${id}`),
-
-  // Mitigation simulation
-  simulateMitigationAction: (supplierId: string) =>
-    request<SimulateMitigationResponse>('/actions/simulate-mitigation', {
-      method: 'POST',
-      body: JSON.stringify({ supplier_id: supplierId }),
-    }),
-
   // Chat
   sendChatMessage: (message: string, sessionId?: string | null) =>
     request<ChatResponse>('/chat', {

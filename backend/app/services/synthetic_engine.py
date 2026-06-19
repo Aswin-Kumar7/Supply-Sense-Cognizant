@@ -1,21 +1,7 @@
 """
 Synthetic Disruption Engine for SupplySense.
-
-Continuously generates realistic supply chain events:
-- Weather disruptions (cyclones, floods)
-- Logistics strikes
-- Delayed shipments
-- Festival demand spikes
-- Inventory anomalies
-- Supplier reliability degradation
-
-Design:
-- Runs as a background asyncio task
-- Deterministic seed for repeatable demos
-- Configurable event frequency
-- Publishes to the central EventBus
-- Scenario-aware: can be paused/accelerated
 """
+from __future__ import annotations
 
 import asyncio
 import random
@@ -29,28 +15,29 @@ _rng = random.Random(42)
 
 # FMCG-focused supply chain context (mirrors the seeded dataset)
 SUPPLIER_NAMES = [
-    "Bharat FMCG Industries", "Sunrise Consumer Products",
-    "GreenLeaf Agro Processing", "PureFarm Naturals", "NorthStar Essentials",
-    # Tier-2 suppliers also included for realistic SSE messages
-    "PackRight Solutions", "Gujarat Oleochemicals", "TN Packaging Corp",
-    "Spice Valley Agro", "East Bengal Packaging", "Punjab Grain Traders",
-    "Gujarat Container Pvt Ltd", "Kerala Coconut Estates",
-    "Rajasthan Print Pack", "Assam Tea Gardens",
+    "Vikas Home Care Ltd", "Dakshin Foods Corporation",
+    "Ganga Agri Products", "Saurashtra Naturals Pvt Ltd",
+    "Arya Consumer Brands", "Malabar Ayur Essentials", "Narmada Dairy & Beverages",
+    "Konkan Flexi Pack", "Vapi Oleochem Industries", "Coimbatore Carton Works",
+    "Telangana Spice Growers", "Howrah Paper & Board", "Amritsar Grain Exchange",
+    "Baroda Container Corp", "Kannur Coconut Collective",
+    "Sonipat Laminate Pack", "Jorhat Tea & Coffee Estate",
 ]
 
 CITIES = [
     "Mumbai", "Chennai", "Kolkata", "Ahmedabad", "New Delhi",
-    "Surat", "Coimbatore", "Hyderabad", "Ludhiana", "Jaipur",
-    "Kochi", "Bangalore", "Guwahati", "Nagpur", "Pune",
+    "Kochi", "Indore", "Pune", "Bangalore", "Coimbatore",
+    "Howrah", "Vadodara", "Kannur", "Sonipat", "Jorhat",
 ]
 
 SKU_NAMES = [
-    "Premium Detergent 1kg", "Dishwash Liquid 500ml", "Fabric Softener 1L",
-    "Antibacterial Hand Wash 250ml", "Instant Noodles 70g Pack",
-    "Breakfast Oats 500g", "Tomato Ketchup 500g", "Basmati Rice 5kg",
-    "Mustard Oil 1L", "Whole Wheat Atta 10kg", "Turmeric Powder 500g",
-    "Coconut Oil 500ml", "Herbal Shampoo 200ml", "Body Lotion 300ml",
-    "Cream Biscuit 100g", "Premium Tea 500g", "Instant Coffee 100g",
+    "Liquid Detergent 1L", "Dishwash Bar 200g", "Floor Cleaner 500ml",
+    "Idli-Dosa Batter 1kg", "Sambar Masala 200g", "Coconut Chutney Powder 150g",
+    "Gobindobhog Rice 5kg", "Cold-Pressed Mustard Oil 1L", "Whole Wheat Atta 10kg",
+    "Virgin Coconut Oil 500ml", "Amla Hair Oil 200ml", "Neem Face Wash 100ml",
+    "Masala Chai 250g", "Cream Biscuit 12-pack", "Roasted Cashew 200g",
+    "Kumkumadi Face Serum 30ml", "Dashamoola Body Oil 200ml",
+    "Flavoured Lassi 6-pack", "Paneer Block 200g", "Mango Drink 1L",
 ]
 
 REGIONS = ["North", "South", "East", "West", "Central", "Northeast"]
@@ -268,13 +255,13 @@ class SyntheticEngine:
 
         if _rng.random() < 0.6:
             return SupplyChainEvent(
-                event_type=random.choice(scenario_context.get("event_types", ["disruption_alert"])),
-                severity=random.choice(scenario_context.get("severities", ["high"])),
-                message=random.choice(scenario_context.get("messages", [event.message])),
+                event_type=_rng.choice(scenario_context.get("event_types", ["disruption_alert"])),
+                severity=_rng.choice(scenario_context.get("severities", ["high"])),
+                message=_rng.choice(scenario_context.get("messages", [event.message])),
                 data={
                     "scenario": self._scenario_active,
                     "region": scenario_context.get("region", ""),
-                    "supplier": random.choice(scenario_context.get("suppliers", SUPPLIER_NAMES[:3])),
+                    "supplier": _rng.choice(scenario_context.get("suppliers", SUPPLIER_NAMES[:3])),
                 },
             )
         return event
@@ -286,60 +273,60 @@ SCENARIO_CONFIGS = {
         "region": "South",
         "event_types": ["disruption_alert", "supplier_risk", "delivery_update"],
         "severities": ["critical", "high", "high"],
-        "suppliers": ["Sunrise Consumer Products", "TN Packaging Corp", "Kerala Coconut Estates"],
+        "suppliers": ["Dakshin Foods Corporation", "Coimbatore Carton Works", "Telangana Spice Growers"],
         "messages": [
-            "Cyclone Michaung: Chennai port operations suspended — Sunrise Consumer affected",
+            "Cyclone Michaung: Chennai port operations suspended — Dakshin Foods affected",
             "South coastal logistics corridor disrupted — 48hr delay expected",
-            "Sunrise Consumer Products: warehouse flooding reported in Chennai",
+            "Dakshin Foods Corporation: warehouse flooding reported in Guindy, Chennai",
             "Emergency rerouting: South India FMCG shipments via Bangalore hub",
-            "Instant Noodles & Breakfast Oats supply impacted — 6-day delay",
-            "Insurance claim initiated for Chennai warehouse damage",
-            "Alternate route activated: Kochi → Bangalore → Hyderabad hub",
+            "Idli-Dosa Batter & Sambar Masala supply impacted — 7-day delay",
+            "Insurance claim initiated for Chennai warehouse water damage",
+            "Alternate route activated: Bangalore Processed Foods stepping in",
         ],
     },
     "strike_north": {
         "region": "North",
         "event_types": ["disruption_alert", "delivery_update", "action_generated"],
         "severities": ["critical", "high", "medium"],
-        "suppliers": ["NorthStar Essentials", "Rajasthan Print Pack", "Punjab Grain Traders"],
+        "suppliers": ["Arya Consumer Brands", "Sonipat Laminate Pack", "Amritsar Grain Exchange"],
         "messages": [
-            "NH-44 strike: NorthStar Essentials dispatch completely blocked",
-            "Transport union indefinite strike declared on Delhi corridor",
-            "Cream Biscuit & Tea deliveries halted — 8-day delay expected",
-            "Emergency rail freight arranged via Northern Railway",
-            "Punjab Grain Traders: road access disrupted by strike",
-            "Action: Activate alternate supplier Capital FMCG Corp",
-            "NorthStar: safety stock at 4-day cover — critical reorder needed",
+            "NH-44 strike: Arya Consumer Brands dispatch completely blocked",
+            "Transport union indefinite strike declared on Delhi–Chandigarh corridor",
+            "Cream Biscuit & Masala Chai deliveries halted — 8-day delay expected",
+            "Emergency rail freight arranged via Northern Railway Parcel Express",
+            "Amritsar Grain Exchange: road access disrupted by truckers' strike",
+            "Action: Activate alternate supplier Lucknow FMCG Works",
+            "Arya Consumer: safety stock at 3-day cover — critical reorder needed",
         ],
     },
     "flood_east": {
         "region": "East",
         "event_types": ["disruption_alert", "inventory_update", "supplier_risk"],
         "severities": ["critical", "high", "high"],
-        "suppliers": ["GreenLeaf Agro Processing", "East Bengal Packaging"],
+        "suppliers": ["Ganga Agri Products", "Howrah Paper & Board"],
         "messages": [
-            "Severe flooding: Kolkata warehouse district — GreenLeaf operations halted",
-            "Eastern rail network suspended due to waterlogging",
-            "Basmati Rice & Atta supply chain disrupted — 72-hour hold",
-            "East Bengal Packaging: production halted, no outbound shipments",
-            "Emergency inventory redistribution from North region",
-            "GreenLeaf Agro: critical stock at 3-day cover for Mustard Oil",
+            "Severe flooding: Kolkata warehouse district — Ganga Agri operations halted",
+            "Eastern rail network suspended due to waterlogging in Hooghly",
+            "Gobindobhog Rice & Atta supply chain disrupted — 72-hour hold",
+            "Howrah Paper & Board: corrugation unit flooded, packaging supply halted",
+            "Emergency inventory redistribution from Cuttack Agro Traders",
+            "Ganga Agri: critical stock at 3-day cover for Cold-Pressed Mustard Oil",
         ],
     },
     "diwali_surge": {
         "region": "All India",
         "event_types": ["demand_spike", "inventory_update", "action_generated"],
         "severities": ["medium", "high", "medium"],
-        "suppliers": ["Bharat FMCG Industries", "Sunrise Consumer Products", "GreenLeaf Agro Processing",
-                      "PureFarm Naturals", "NorthStar Essentials"],
+        "suppliers": ["Vikas Home Care Ltd", "Dakshin Foods Corporation", "Ganga Agri Products",
+                      "Saurashtra Naturals Pvt Ltd", "Arya Consumer Brands"],
         "messages": [
-            "Diwali demand surge: FMCG orders up 180% vs baseline",
-            "Premium Detergent 1kg: demand exceeding 3x forecast — critical reorder",
+            "Diwali demand surge: FMCG orders up 160% vs baseline",
+            "Liquid Detergent 1L: demand exceeding 2.6x forecast — critical reorder",
             "Festival stock pre-positioning: safety stock breach across 6 SKUs",
-            "Cream Biscuit 100g: emergency reorder triggered by NorthStar",
+            "Cream Biscuit 12-pack: emergency reorder triggered by Arya Consumer",
             "Pan-India demand spike: all FMCG categories affected",
             "Warehouse capacity at 94% — overflow routing activated in West region",
-            "Festival procurement window closing in 5 days — urgent action required",
+            "Festival procurement window closing in 8 days — urgent action required",
         ],
     },
 }

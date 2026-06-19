@@ -22,7 +22,7 @@ Why AI here:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -58,7 +58,7 @@ class IntelligentActionCard:
     alternate_supplier_rationale: str = ""
 
     # Metadata
-    generated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     ai_generated: bool = True
 
 
@@ -70,7 +70,7 @@ class ProcurementBrief:
     total_exposure_inr: float
     top_risks: list[str]
     immediate_actions: list[str]
-    generated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 # ============ PROMPT TEMPLATES ============

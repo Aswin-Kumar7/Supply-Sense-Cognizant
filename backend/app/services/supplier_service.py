@@ -1,6 +1,7 @@
 """
 Supplier service - business logic for supplier operations.
 """
+from __future__ import annotations
 
 from uuid import UUID
 from datetime import date, timedelta
