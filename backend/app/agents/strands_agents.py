@@ -38,6 +38,23 @@ from app.services.procurement_agent import procurement_agent
 
 settings = get_settings()
 
+def _run_in_new_loop(coro):
+    """Run an async coroutine in a fresh event loop.
+
+    Strands calls tool functions synchronously from a thread created by
+    asyncio.to_thread(). Those threads have no running event loop, so
+    _run_in_new_loop() can raise
+    'RuntimeError: This event loop is already running' if the thread
+    happens to reuse an existing loop. Creating a new loop per call is
+    safe and explicit.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
 # ── Per-session tool call history (for multi-turn context) ─────────────────
 # Maps session_id → deque of {"tool": str, "input": str, "output": str}
 _SESSION_TOOL_HISTORY: dict[str, deque] = {}
@@ -289,7 +306,7 @@ class RiskAssessmentAgent:
             @tool
             def get_supplier_risk_score(supplier_id: str) -> str:
                 """Get comprehensive risk score and factor breakdown for a supplier."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_supplier_risk_score_impl(supplier_id, db)
                 )
                 return json.dumps(result)
@@ -297,7 +314,7 @@ class RiskAssessmentAgent:
             @tool
             def get_cascade_impact(supplier_id: str, impact_score: float) -> str:
                 """Compute cascade propagation impact across supplier dependencies."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_cascade_impact_impl(supplier_id, impact_score, db)
                 )
                 return json.dumps(result)
@@ -305,7 +322,7 @@ class RiskAssessmentAgent:
             @tool
             def get_delivery_history(supplier_id: str) -> str:
                 """Query database for 90-day delivery performance statistics."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_delivery_history_impl(supplier_id, db)
                 )
                 return json.dumps(result)
@@ -456,17 +473,21 @@ async def _simulate_mitigation_impl(
     from app.services.risk_intelligence import RiskIntelligenceService
 
     svc = RiskIntelligenceService(db)
-    exposure = await svc._compute_supplier_exposure(
-        (await db.execute(
-            select(Supplier).where(Supplier.id == supplier_id)
-        )).scalar_one()
-    )
     supplier = (await db.execute(
         select(Supplier).where(Supplier.id == supplier_id)
     )).scalar_one_or_none()
+    exposure = await svc._compute_supplier_exposure(supplier) if supplier else None
+    if not exposure:
+        return {"error": "Supplier not found"}
+
+    risk_data = await svc.compute_supplier_risk(supplier_id)
+    risk_score = float(risk_data.get("overall_score", 1.0))
 
     sim = financial_engine.simulate_mitigation(
-        exposure, supplier.reliability_score if supplier else 0.8, supplier.lead_time_days if supplier else 7
+        exposure,
+        supplier.reliability_score if supplier else 0.8,
+        supplier.lead_time_days if supplier else 7,
+        risk_score=risk_score,
     )
     chosen = next((o for o in sim.options if o.action_type == action_type), sim.options[0] if sim.options else None)
     return {
@@ -508,7 +529,7 @@ class PrescriptiveActionAgent:
                 sla_penalty_per_day: float,
             ) -> str:
                 """Calculate Total Financial Exposure for a disrupted supplier."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _calculate_tfe_impl(supplier_id, days_to_stockout, daily_revenue, sla_penalty_per_day, db)
                 )
                 return json.dumps(result)
@@ -516,7 +537,7 @@ class PrescriptiveActionAgent:
             @tool
             def get_alternate_suppliers(category: str, exclude_city: str) -> str:
                 """Find alternate suppliers in the same category excluding the disrupted city."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_alternate_suppliers_impl(category, exclude_city, db)
                 )
                 return json.dumps(result)
@@ -524,7 +545,7 @@ class PrescriptiveActionAgent:
             @tool
             def simulate_mitigation(supplier_id: str, action_type: str) -> str:
                 """Calculate TFE before and after applying a mitigation action."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _simulate_mitigation_impl(supplier_id, action_type, db)
                 )
                 return json.dumps(result)
@@ -695,7 +716,7 @@ class ConversationalAdvisorAgent:
                     params = json.loads(filter_params_json)
                 except json.JSONDecodeError:
                     params = {}
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _query_suppliers_impl(params, db)
                 )
                 out = json.dumps(result)
@@ -705,7 +726,7 @@ class ConversationalAdvisorAgent:
             @tool
             def get_financial_summary() -> str:
                 """Return aggregated Total Financial Exposure (TFE) across all at-risk suppliers in Indian Rupees."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_financial_summary_impl(db)
                 )
                 payload = {
@@ -725,7 +746,7 @@ class ConversationalAdvisorAgent:
                     ids = json.loads(supplier_ids_json)
                 except json.JSONDecodeError:
                     ids = []
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _run_scenario_impl(ids, disruption_type, db)
                 )
                 out = json.dumps(result)
@@ -966,7 +987,7 @@ class SignalIntelligenceAgent:
                     event = json.loads(event_json)
                 except json.JSONDecodeError:
                     event = {"description": event_json}
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _classify_event_impl(event)
                 )
                 out = json.dumps(result)
@@ -976,7 +997,7 @@ class SignalIntelligenceAgent:
             @tool
             def find_affected_suppliers(region: str, event_type: str) -> str:
                 """Find suppliers potentially affected by a disruption event based on geographic proximity to the event region."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _find_affected_suppliers_impl(region, event_type, db)
                 )
                 out = json.dumps(result)

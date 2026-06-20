@@ -190,6 +190,7 @@ class FinancialExposureEngine:
         supplier_exposure: SupplierExposure,
         supplier_reliability: float,
         lead_time_days: int,
+        risk_score: float = 1.0,
     ) -> MitigationSimulation:
         """
         Generate mitigation options with financial impact projections.
@@ -256,7 +257,7 @@ class FinancialExposureEngine:
             savings_inr=savings,
             mitigation_cost_inr=round(best.cost_inr, 2),
             net_saving_inr=net_saving,
-            risk_before=1.0,
+            risk_before=round(min(1.0, max(0.0, risk_score)), 3),
             risk_after=round(mitigated_exposure / max(current_exposure, 1), 3),
             options=options,
         )

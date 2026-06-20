@@ -97,7 +97,7 @@ class StockoutForecastingEngine:
         risk_level = self._compute_risk_level(days_to_stockout, lead_time_days)
 
         # Revenue at risk: units that won't be sold × unit cost × margin multiplier
-        # Using 3x cost as revenue proxy (typical retail markup)
+        # Using 1.5x cost as revenue proxy (lost sales + partial brand damage)
         days_of_lost_sales = max(0, lead_time_days - days_to_stockout)
         revenue_at_risk = days_of_lost_sales * adjusted_demand * unit_cost_inr * 1.5
 

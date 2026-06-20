@@ -19,7 +19,7 @@ from app.services.risk_engine import risk_engine, RISK_ZONE_SCORES
 
 def _compute_festival_proximity(supplier, festivals: list[dict]) -> float:
     """Match supplier region/category against upcoming festivals; return 0.0–1.0."""
-    today = date.today()
+    today = date.today()  # used to skip any past festivals that slipped through the query window
     supplier_region = (supplier.region or "").lower()
     supplier_category = (supplier.category or "").lower()
     best = 0.0
@@ -30,11 +30,10 @@ def _compute_festival_proximity(supplier, festivals: list[dict]) -> float:
         categories = [c.strip().lower() for c in f["affected_categories"].split(",") if c.strip()]
         if categories and supplier_category not in categories:
             continue
-        days_until = (f["start_date"] - today).days
-        if days_until < 0:
+        if (f["start_date"] - today).days < 0:
             continue
-        # Closer = higher score; 0 days → 1.0, 30 days → ~0.07
-        proximity = 1.0 / (1.0 + days_until / 3.0)
+        # Normalize by demand impact: multiplier 1.0 → 0.0, 3.5 → 1.0 (matches risk_intelligence.py)
+        proximity = min(1.0, max(0.0, (f["demand_multiplier"] - 1.0) / 2.5))
         best = max(best, proximity)
     return round(best, 3)
 

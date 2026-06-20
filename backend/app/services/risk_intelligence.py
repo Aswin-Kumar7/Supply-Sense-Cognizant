@@ -472,8 +472,16 @@ class RiskIntelligenceService:
         freshness_component = round(freshness_score * 20, 1)
 
         # Component 4: Guardrail Pass Rate (10 pts max)
-        # Approximated from metrics; defaults to 80% pass rate
-        guardrail_component = 8.0
+        # Computed from real Bedrock call success rate tracked in metrics_store
+        try:
+            from app.core.metrics import metrics_store
+            snap = metrics_store.snapshot()
+            bedrock_real = snap["bedrock"]["real_calls"]
+            bedrock_total = snap["bedrock"]["total_calls"]
+            pass_rate = bedrock_real / max(1, bedrock_total)
+        except Exception:
+            pass_rate = 0.8  # conservative default when metrics unavailable
+        guardrail_component = round(pass_rate * 10.0, 1)
 
         trust_score = min(100.0, delivery_component + ai_component + freshness_component + guardrail_component)
 
@@ -578,8 +586,10 @@ class RiskIntelligenceService:
             return {"error": "Supplier not found"}
 
         exposure = await self._compute_supplier_exposure(supplier)
+        breakdown = await self._compute_single_supplier_risk(supplier)
         simulation = financial_engine.simulate_mitigation(
-            exposure, supplier.reliability_score, supplier.lead_time_days
+            exposure, supplier.reliability_score, supplier.lead_time_days,
+            risk_score=breakdown.overall_score,
         )
 
         return {
