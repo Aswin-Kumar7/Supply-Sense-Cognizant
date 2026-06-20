@@ -1,13 +1,19 @@
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, Cell,
+} from 'recharts'
 import {
   useDisruptions, useStockoutForecast,
   useActionCards, useProcurementCards, useWeightedRiskAnalysis,
+  useExecutiveBrief,
 } from '../hooks/useQueries'
+import { useSSE } from '../hooks/useSSE'
 import type { SupplierRiskAnalysis, IntelligentActionCard, ActionCard } from '../types'
 import {
-  AlertTriangle, Package, Activity, Wind, Truck, ClipboardList,
-  ChevronRight, ShieldCheck, Users, Clock, TrendingDown
+  AlertTriangle, TrendingDown, ArrowRight, Shield,
+  Package, Activity, Zap, ChevronRight,
 } from 'lucide-react'
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
@@ -16,10 +22,6 @@ function formatINR(n: number) {
   if (n >= 100_000)    return `₹${(n / 100_000).toFixed(1)}L`
   if (n >= 1_000)      return `₹${(n / 1_000).toFixed(0)}K`
   return `₹${n.toFixed(0)}`
-}
-
-function Sk({ w = '100%', h = 18 }: { w?: string | number; h?: number }) {
-  return <div className="skeleton" style={{ width: w, height: h, borderRadius: 6 }} />
 }
 
 function getTopFactor(factors: SupplierRiskAnalysis['factors']): string {
@@ -31,9 +33,9 @@ const FACTOR_LABEL: Record<string, string> = {
   disruption_severity:     'Active disruption affecting supply',
   inventory_pressure:      'Stock levels critically low',
   delivery_reliability:    'Delivery delays reported',
-  logistics_vulnerability: 'High logistics risk in region',
+  logistics_vulnerability: 'Logistics risk elevated',
   dependency_exposure:     'Heavy dependency on this supplier',
-  festival_proximity:      'Demand spike — festival season ahead',
+  festival_proximity:      'Demand spike — festival season',
 }
 
 function getReason(risk: SupplierRiskAnalysis, card: IntelligentActionCard): string {
@@ -42,518 +44,975 @@ function getReason(risk: SupplierRiskAnalysis, card: IntelligentActionCard): str
   return FACTOR_LABEL[getTopFactor(risk.factors)] ?? card.title ?? 'Elevated supply risk'
 }
 
-const SEV: Record<string, { color: string; bg: string; border: string; strip: string; label: string }> = {
-  critical: { color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', strip: '#DC2626', label: 'Critical' },
-  high:     { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', strip: '#D97706', label: 'High'     },
-  medium:   { color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', strip: '#2563EB', label: 'Medium'   },
-  low:      { color: '#059669', bg: '#F0FDF4', border: '#BBF7D0', strip: '#94A3B8', label: 'Low'      },
+const SEV: Record<string, { color: string; bg: string; border: string; label: string }> = {
+  critical: { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.12)', label: 'Critical' },
+  high:     { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.12)', label: 'High'     },
+  medium:   { color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.12)', label: 'Medium'   },
+  low:      { color: '#10B981', bg: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.12)', label: 'Low'      },
 }
 
-const TYPE_ICON: Record<string, React.ReactNode> = {
-  cyclone: <Wind size={14} />, strike: <Truck size={14} />, logistics: <Package size={14} />,
-  inventory: <Activity size={14} />, quality: <Activity size={14} />, regulatory: <ClipboardList size={14} />,
+const CSS = `
+  @keyframes dash-fade-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
+  @keyframes dash-pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.3 } }
+  @keyframes dash-shimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+  .dash-skeleton {
+    background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+    background-size: 200% 100%;
+    animation: dash-shimmer 1.6s ease-in-out infinite;
+    border-radius: 6px;
+  }
+  .dash-hover:hover { background: rgba(248, 250, 252, 0.6) !important; }
+  .dash-item-hover {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid transparent;
+  }
+  .dash-item-hover:hover {
+    background: #FFFFFF !important;
+    border-color: #E2E8F0 !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03) !important;
+    transform: translateX(4px);
+  }
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line { stroke: #F1F5F9 !important; }
+
+  @keyframes ticker-slide {
+    0% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(-33.3333%, 0, 0); }
+  }
+  .ticker-container {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    width: 100%;
+    position: relative;
+    mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+  }
+  .ticker-track {
+    display: inline-flex;
+    white-space: nowrap;
+    animation: ticker-slide 32s linear infinite;
+  }
+  .ticker-track:hover {
+    animation-play-state: paused;
+  }
+`
+
+function Skeleton({ w = '100%', h = 20 }: { w?: string | number; h?: number }) {
+  return <div className="dash-skeleton" style={{ width: w, height: h }} />
 }
 
+function Num({ children, size = '2rem', color = '#0F172A' }: { children: React.ReactNode; size?: string; color?: string }) {
+  return (
+    <span style={{
+      fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 800, fontSize: size, color,
+      letterSpacing: '-0.03em', lineHeight: 1, fontVariantNumeric: 'tabular-nums',
+    }}>{children}</span>
+  )
+}
 
-
-/* ── Alert Marquee ───────────────────────────────────────────────────── */
-function AlertMarquee({ disruptions }: { disruptions: any[] }) {
-  const navigate = useNavigate()
-  const trackRef = useRef<HTMLDivElement>(null)
-  const isHovered = useRef(false)
-  const [isDragging, setIsDragging] = useState(false)
-  const startX = useRef(0)
-  const scrollLeft = useRef(0)
-
-  useEffect(() => {
-    let animationId: number;
-    const scroll = () => {
-      if (trackRef.current && !isHovered.current && !isDragging) {
-        trackRef.current.scrollLeft += 0.5
-        if (trackRef.current.scrollLeft >= trackRef.current.scrollWidth - trackRef.current.clientWidth - 2) {
-          trackRef.current.scrollLeft = 0;
+function Card({ children, style, hover }: { children: React.ReactNode; style?: React.CSSProperties; hover?: boolean }) {
+  return (
+    <div
+      style={{
+        background: 'linear-gradient(180deg, #FFFFFF 0%, #FAFBFC 100%)',
+        border: '1px solid #E2E8F0',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.02), 0 4px 12px rgba(15, 23, 42, 0.03)',
+        transition: 'all 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+        ...style,
+      }}
+      onMouseEnter={e => {
+        if (hover) {
+          e.currentTarget.style.transform = 'translateY(-2px)'
+          e.currentTarget.style.boxShadow = '0 8px 24px rgba(15, 23, 42, 0.06)'
+          e.currentTarget.style.borderColor = '#CBD5E1'
         }
-      }
-      animationId = requestAnimationFrame(scroll)
-    }
-    animationId = requestAnimationFrame(scroll)
-    return () => cancelAnimationFrame(animationId)
-  }, [isDragging])
+      }}
+      onMouseLeave={e => {
+        if (hover) {
+          e.currentTarget.style.transform = 'translateY(0)'
+          e.currentTarget.style.boxShadow = '0 1px 3px rgba(15, 23, 42, 0.02), 0 4px 12px rgba(15, 23, 42, 0.03)'
+          e.currentTarget.style.borderColor = '#E2E8F0'
+        }
+      }}
+    >
+      {children}
+    </div>
+  )
+}
 
+function CardHeader({ title, sub, right }: { title: string; sub?: string; right?: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid #F1F5F9' }}>
+      <div>
+        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{title}</div>
+        {sub && <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  )
+}
+
+function ViewAllBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748B', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>
+      View all <ChevronRight size={12} />
+    </button>
+  )
+}
+
+/* ── Page Header ─────────────────────────────────────────────────────── */
+function DashboardHeader({ exposure, riskCount, totalSuppliers, loading }: { exposure: number; riskCount: number; totalSuppliers: number; loading: boolean }) {
+  const date = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+      borderBottom: '1px solid #E2E8F0',
+      paddingBottom: '20px',
+      marginBottom: '8px',
+      animation: 'dash-fade-in 0.25s ease-out',
+      flexWrap: 'wrap',
+      gap: '16px'
+    }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <span style={{
+            fontSize: '0.6875rem',
+            fontWeight: 700,
+            color: '#4F46E5',
+            background: 'rgba(79, 70, 229, 0.05)',
+            border: '1px solid rgba(79, 70, 229, 0.12)',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            Supply Chain Command
+          </span>
+          <span style={{ fontSize: '0.75rem', color: '#CBD5E1' }}>•</span>
+          <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>{date}</span>
+        </div>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.03em', margin: 0, lineHeight: 1.1 }}>
+          Operational Overview
+        </h1>
+        <p style={{ fontSize: '0.875rem', color: '#64748B', fontWeight: 400, marginTop: '6px', marginBottom: 0, lineHeight: 1.5 }}>
+          {loading ? 'Analyzing supply network pathways...' :
+           riskCount === 0 ? `Monitoring ${totalSuppliers} active supply paths. All nodes stable.` :
+           `Monitoring ${totalSuppliers} active paths. ${riskCount} supplier${riskCount > 1 ? 's' : ''} require attention — ${formatINR(exposure)} at risk.`
+          }
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: '16px', flexShrink: 0 }}>
+        <div style={{ textAlign: 'right', paddingLeft: '16px', borderLeft: '1px solid #E2E8F0' }}>
+          <div style={{ fontSize: '0.6875rem', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Active Nodes</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', marginTop: '2px', fontFamily: "'Inter', sans-serif" }}>
+            {loading ? '—' : totalSuppliers}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', paddingLeft: '16px', borderLeft: '1px solid #E2E8F0' }}>
+          <div style={{ fontSize: '0.6875rem', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Risk Ratio</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0F172A', marginTop: '2px', fontFamily: "'Inter', sans-serif" }}>
+            {loading ? '—' : `${((riskCount / Math.max(1, totalSuppliers)) * 100).toFixed(0)}%`}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Alert Banner ────────────────────────────────────────────────────── */
+function AlertBanner({ disruptions }: { disruptions: any[] }) {
+  const navigate = useNavigate()
   const active = disruptions.filter(d => d.is_active && d.severity !== 'low')
   if (active.length === 0) return null
 
-  const content = active.map((item, i) => {
-    const sev = SEV[item.severity] ?? SEV.low
-    return (
-      <div key={i} onClick={() => { if (!isDragging) navigate('/disruptions') }} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.625rem', margin: '0 2rem', cursor: 'pointer', flexShrink: 0 }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: sev.color, animation: 'livePulse 1.5s ease-in-out infinite' }} />
-        <span style={{ fontSize: '0.75rem', fontWeight: 800, color: sev.color, textTransform: 'uppercase' }}>{sev.label}</span>
-        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--ink-1)' }}>{item.title}</span>
-        <span style={{ fontSize: '0.8125rem', color: 'var(--ink-3)' }}>{item.region ? `· ${item.region}` : ''}</span>
-      </div>
-    )
-  })
-
   return (
-    <div className="card" style={{ overflow: 'hidden', padding: '0.875rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', borderRadius: '0.75rem', cursor: isDragging ? 'grabbing' : 'grab' }}
-      onMouseEnter={() => isHovered.current = true}
-      onMouseLeave={() => { isHovered.current = false; setIsDragging(false) }}
-      onMouseDown={e => {
-        setIsDragging(true)
-        startX.current = e.pageX - (trackRef.current?.offsetLeft || 0)
-        scrollLeft.current = trackRef.current?.scrollLeft || 0
-      }}
-      onMouseUp={() => setIsDragging(false)}
-      onMouseMove={e => {
-        if (!isDragging || !trackRef.current) return
-        e.preventDefault()
-        const x = e.pageX - trackRef.current.offsetLeft
-        const walk = (x - startX.current) * 2
-        trackRef.current.scrollLeft = scrollLeft.current - walk
-      }}
-    >
-      <div style={{ fontSize: '0.8125rem', fontWeight: 800, color: 'var(--ink-1)', textTransform: 'uppercase', letterSpacing: '0.05em', borderRight: '1px solid var(--border)', paddingRight: '1rem', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <Wind size={16} color="var(--ink-3)" /> Live Alerts
+    <Card style={{ 
+      padding: '6px 12px', 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: '12px',
+      background: 'rgba(255, 255, 255, 0.8)',
+      backdropFilter: 'blur(8px)',
+      border: '1px solid rgba(226, 232, 240, 0.8)',
+    }}>
+      {/* Pinned left title label */}
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: '6px', 
+        flexShrink: 0, 
+        paddingRight: '12px', 
+        borderRight: '1px solid #E2E8F0',
+        zIndex: 5
+      }}>
+        <span style={{ 
+          width: 6, 
+          height: 6, 
+          borderRadius: '50%', 
+          background: '#EF4444', 
+          animation: 'dash-pulse 2s ease-in-out infinite', 
+          boxShadow: '0 0 6px #EF4444' 
+        }} />
+        <span style={{ 
+          fontSize: '0.6875rem', 
+          fontWeight: 750, 
+          color: '#EF4444', 
+          textTransform: 'uppercase', 
+          letterSpacing: '0.08em' 
+        }}>
+          Live Alerts
+        </span>
       </div>
-      <div ref={trackRef} className="hide-scrollbar" style={{ flex: 1, overflowX: 'auto', whiteSpace: 'nowrap', display: 'flex', msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
-        {content}
-        {content}
-        {content}
-        {content}
-      </div>
-      <style>{`
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        @keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.75); } }
-        .table-row-hover {
-          background: var(--bg-card);
-        }
-        .table-row-hover td {
-          transition: background 150ms ease;
-        }
-        .table-row-hover:hover td {
-          background: var(--bg-hover);
-        }
-        .btn-table-action {
-          background: var(--bg-card);
-          color: var(--ink-2);
-          border: 1px solid var(--border-strong);
-          cursor: pointer;
-          transition: all 150ms ease;
-          outline: none;
-        }
-        .table-row-hover:hover .btn-table-action {
-          background: var(--ink-1);
-          color: #fff;
-          border-color: var(--ink-1);
-        }
-      `}</style>
-    </div>
-  )
-}
 
-/* ── KPI Card ────────────────────────────────────────────────────────── */
-function KpiCard({ value, label, sub, icon, onClick, loading, children }: {
-  value: string | number; label: string; sub?: string
-  icon: React.ReactNode; onClick?: () => void; loading?: boolean; children?: React.ReactNode
-}) {
-  return (
-    <div onClick={onClick} className="card"
-      style={{ padding: '1.25rem', cursor: onClick ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}
-      onMouseEnter={e => { if (onClick) { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.boxShadow = 'var(--shadow-md)' } }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--ink-3)' }}>{label}</span>
-        <span style={{ color: 'var(--ink-3)', background: 'var(--bg-hover)', padding: '0.375rem', borderRadius: '0.5rem' }}>{icon}</span>
-      </div>
-      {loading ? <Sk w="55%" h={28} /> : (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-          <span style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--ink-1)', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{value}</span>
-        </div>
-      )}
-      <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '0.75rem', color: 'var(--ink-4)', fontWeight: 500 }}>{sub}</span>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-/* ── Act Today Row ───────────────────────────────────────────────────── */
-function ActTodayRow({ risk, card }: { risk: SupplierRiskAnalysis; card: IntelligentActionCard }) {
-  const navigate = useNavigate()
-  const sev = SEV[risk.risk_level] ?? SEV.low
-  const isCrit = risk.risk_level === 'critical'
-
-  return (
-    <tr
-      onClick={() => navigate(`/risks/${risk.supplier_id}/mitigation`)}
-      style={{ cursor: 'pointer' }}
-      className="table-row-hover"
-    >
-      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <div style={{ width: 32, height: 32, borderRadius: '6px', background: sev.bg, color: sev.color, border: `1px solid ${sev.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.875rem' }}>
-              {risk.supplier_name.charAt(0)}
-            </div>
-            {isCrit && <div style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: '#DC2626', borderRadius: '50%', border: '1.5px solid var(--bg-card)', animation: 'livePulse 1.5s infinite' }} />}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{risk.supplier_name}</div>
-            <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', textTransform: 'capitalize' }}>{card.category} · {card.region}</div>
-          </div>
-        </div>
-      </td>
-      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', alignSelf: 'flex-start', fontSize: '0.625rem', fontWeight: 800, padding: '1px 5px', background: sev.bg, color: sev.color, borderRadius: '4px', border: `1px solid ${sev.border}`, textTransform: 'uppercase' }}>
-            {TYPE_ICON[card.action_type] ?? <AlertTriangle size={10} />}
-            {sev.label}
-          </span>
-          <span style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={getReason(risk, card)}>
-            {getReason(risk, card)}
-          </span>
-        </div>
-      </td>
-      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: card.days_to_stockout <= 3 ? '#DC2626' : card.days_to_stockout <= 7 ? '#D97706' : 'var(--ink-2)' }}>
-            {card.days_to_stockout} {card.days_to_stockout === 1 ? 'day' : 'days'}
-          </span>
-          <div style={{ width: '100%', height: 4, background: 'var(--bg-hover)', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.min(100, Math.max(5, 100 - (card.days_to_stockout / 14) * 100))}%`, background: sev.color, height: '100%' }} />
-          </div>
-        </div>
-      </td>
-      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'middle', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--ink-1)', fontFamily: 'JetBrains Mono, monospace' }}>
-          {formatINR(card.financial_exposure_inr)}
-        </div>
-      </td>
-      <td style={{ padding: '0.75rem 1rem', verticalAlign: 'middle', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
-        <button className="btn-table-action" style={{ padding: '0.375rem 0.625rem', fontSize: '0.75rem', fontWeight: 700, borderRadius: '4px' }}>
-          Review
-        </button>
-      </td>
-    </tr>
-  )
-}
-
-/* ── Supplier List Panel ─────────────────────────────────────────────── */
-function SupplierListRight({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard> }) {
-  const navigate = useNavigate()
-  return (
-    <div className="card-flush" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem', borderBottom: '1px solid var(--border)' }}>
-        <span style={{ fontSize: '1.0625rem', fontWeight: 800, color: 'var(--ink-1)' }}>Suppliers at Risk</span>
-        <button onClick={() => navigate('/risks')} style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>View all <ChevronRight size={14} /></button>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', maxHeight: '400px' }}>
-        {risks.length === 0 ? (
-          <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>All suppliers stable</div>
-        ) : risks.map(r => {
-          const card = cardMap.get(r.supplier_id)
-          const sev  = SEV[r.risk_level] ?? SEV.low
-          const factors = Object.entries(r.factors || {}).sort((a, b) => b[1].weighted - a[1].weighted).slice(0, 2)
-          return (
-            <div key={r.supplier_id}
-              onClick={() => navigate(`/risks/${r.supplier_id}`)}
-              style={{ display: 'flex', alignItems: 'center', padding: '0.875rem 1.25rem', borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 150ms ease' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
-              <div style={{ position: 'relative', marginRight: '1rem', flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: '50%', background: sev.bg, color: sev.color, border: `1px solid ${sev.border}`, fontWeight: 800, fontSize: '0.9375rem', boxShadow: `0 2px 6px ${sev.color}20` }}>
-                  {r.supplier_name.charAt(0)}
-                </div>
-                <div style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: sev.color, border: '2px solid var(--bg-card)' }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '0.8125rem', fontWeight: 800, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '2px' }}>{r.supplier_name}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.375rem', marginTop: '2px' }}>
-                  <span style={{ fontSize: '0.625rem', fontWeight: 800, color: sev.color, background: sev.bg, padding: '1px 5px', borderRadius: 4, border: `1px solid ${sev.border}`, textTransform: 'uppercase' }}>{sev.label}</span>
-                  <span style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-2)', background: 'var(--bg-hover)', padding: '1px 5px', borderRadius: 4, border: '1px solid var(--border)' }}>Score: {Math.round(r.overall_score)}</span>
-                  <span style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', background: 'var(--bg-hover)', padding: '1px 5px', borderRadius: 4, border: '1px solid var(--border)' }}>{Math.round(r.confidence * 100)}% Conf.</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '4px', flexWrap: 'wrap' }}>
-                  {factors.map(([key]) => {
-                    const cleanKey = key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                    return (
-                      <span key={key} style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--ink-3)', background: 'var(--bg-hover)', padding: '0px 4px', borderRadius: 3, border: '1px dashed var(--border)' }}>
-                        {cleanKey.replace(' Exposure', '').replace(' Pressure', '').replace(' Vulnerability', '').replace(' Reliability', '')}
-                      </span>
-                    )
-                  })}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: '1rem' }}>
-                <div style={{ fontSize: '0.875rem', fontWeight: 800, color: 'var(--ink-1)', fontFamily: 'JetBrains Mono, monospace' }}>{card ? formatINR(card.financial_exposure_inr) : '—'}</div>
-                {card && (
-                  <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 600, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '3px', justifyContent: 'flex-end' }}>
-                    <Clock size={10} /> {card.days_to_stockout}d buffer
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-/* ── Daily Savings Chart ─────────────────────────────────────────────── */
-function DailySavingsChart({ actionCards }: { actionCards: ActionCard[] }) {
-  const [timeframe, setTimeframe] = useState<'days'|'weeks'|'months'|'years'>('days')
-
-  const { chartData, totalSaved } = useMemo(() => {
-    const today = new Date()
-    const map = new Map<string, number>()
-    let steps = 14
-    
-    if (timeframe === 'days') {
-      steps = 14
-      for (let i = steps - 1; i >= 0; i--) {
-        const d = new Date(today); d.setDate(d.getDate() - i)
-        map.set(d.toISOString().slice(0, 10), 0)
-      }
-    } else if (timeframe === 'weeks') {
-      steps = 12
-      for (let i = steps - 1; i >= 0; i--) {
-        const d = new Date(today); d.setDate(d.getDate() - i * 7)
-        const weekNum = Math.ceil((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000 / 7)
-        map.set(`W${weekNum} ${d.getFullYear().toString().slice(2)}`, 0)
-      }
-    } else if (timeframe === 'months') {
-      steps = 12
-      for (let i = steps - 1; i >= 0; i--) {
-        const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
-        map.set(`${d.toLocaleString('default', { month: 'short' })} ${d.getFullYear().toString().slice(2)}`, 0)
-      }
-    } else if (timeframe === 'years') {
-      steps = 5
-      for (let i = steps - 1; i >= 0; i--) {
-        map.set(`${today.getFullYear() - i}`, 0)
-      }
-    }
-
-    for (const card of actionCards) {
-      if (!card.is_resolved || !card.resolved_at || card.estimated_impact_inr <= 0) continue
-      const d = new Date(card.resolved_at)
-      let key = ''
-      if (timeframe === 'days') {
-        key = d.toISOString().slice(0, 10)
-      } else if (timeframe === 'weeks') {
-        const weekNum = Math.ceil((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000 / 7)
-        key = `W${weekNum} ${d.getFullYear().toString().slice(2)}`
-      } else if (timeframe === 'months') {
-        key = `${d.toLocaleString('default', { month: 'short' })} ${d.getFullYear().toString().slice(2)}`
-      } else if (timeframe === 'years') {
-        key = `${d.getFullYear()}`
-      }
-      if (map.has(key)) map.set(key, map.get(key)! + card.estimated_impact_inr)
-    }
-
-    const data = [...map.entries()].map(([k, v]) => ({
-      label: k.includes('-') ? new Date(k + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : k,
-      value: v
-    }))
-    return { chartData: data, totalSaved: data.reduce((s, d) => s + d.value, 0) }
-  }, [actionCards, timeframe])
-
-  const maxVal = Math.max(...chartData.map(d => d.value), 1)
-  const hasSavings = totalSaved > 0
-
-  const W = 500, H = 220, PT = 20, PB = 30, PL = 60, PR = 20
-  const chartW = W - PL - PR, chartH = H - PT - PB
-
-  const pts = chartData.map((d, i) => ({
-    x: PL + (i / Math.max(1, chartData.length - 1)) * chartW,
-    y: PT + chartH - (d.value / maxVal) * chartH
-  }))
-
-  let dPath = pts.length > 0 ? `M ${pts[0].x} ${pts[0].y}` : ''
-  for (let i = 0; i < pts.length - 1; i++) {
-    const cx = (pts[i].x + pts[i+1].x) / 2
-    dPath += ` C ${cx} ${pts[i].y}, ${cx} ${pts[i+1].y}, ${pts[i+1].x} ${pts[i+1].y}`
-  }
-  const fillPath = pts.length > 0 ? dPath + ` L ${pts[pts.length-1].x} ${PT+chartH} L ${pts[0].x} ${PT+chartH} Z` : ''
-
-  const yTicks = [0, 0.5, 1].map(p => ({
-    y: PT + chartH - p * chartH, label: p > 0 ? formatINR(maxVal * p) : '₹0', pct: p,
-  }))
-
-  return (
-    <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: '1.0625rem', fontWeight: 800, color: 'var(--ink-1)' }}>Money Saved</div>
-          <div style={{ fontSize: '0.8125rem', color: 'var(--ink-4)', marginTop: '2px' }}>Value of resolved actions</div>
-        </div>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--ink-1)', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{formatINR(totalSaved)}</div>
-          </div>
-          <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-hover)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border)' }}>
-            {(['days', 'weeks', 'months', 'years'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTimeframe(t)}
+      {/* Scrolling ticker track */}
+      <div className="ticker-container">
+        <div className="ticker-track">
+          {/* We repeat active items list 3 times for a perfect seamless CSS infinite loop */}
+          {[...active, ...active, ...active].map((item, i) => {
+            const sev = SEV[item.severity] ?? SEV.low
+            return (
+              <span
+                key={i}
+                onClick={() => navigate('/disruptions')}
                 style={{
-                  padding: '0.25rem 0.5rem',
-                  borderRadius: '4px',
-                  border: 'none',
-                  background: timeframe === t ? 'var(--bg-card)' : 'transparent',
-                  color: timeframe === t ? 'var(--ink-1)' : 'var(--ink-3)',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: timeframe === t ? 'var(--shadow-sm)' : 'none',
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '6px',
+                  margin: '0 12px', 
+                  cursor: 'pointer', 
+                  flexShrink: 0,
+                  padding: '4px 10px', 
+                  borderRadius: '6px', 
+                  background: '#FFFFFF',
+                  border: '1px solid #E2E8F0',
+                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.02)',
                   transition: 'all 150ms ease',
-                  textTransform: 'capitalize'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = sev.color
+                  e.currentTarget.style.background = sev.bg
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = '#E2E8F0'
+                  e.currentTarget.style.background = '#FFFFFF'
                 }}
               >
-                {t}
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: sev.color }} />
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>{item.title}</span>
+                {item.region && <span style={{ fontSize: '0.6875rem', color: '#94A3B8', fontWeight: 500 }}>· {item.region}</span>}
+              </span>
+            )
+          })}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/* ── Consolidated Mitigation & Savings ───────────────────────────────── */
+function MitigationSavingsOverview({ actionCards }: { actionCards: ActionCard[] }) {
+  const [view, setView] = useState<'cumulative' | 'weekly'>('cumulative')
+  const [period, setPeriod] = useState<'7d' | '14d' | '30d'>('14d')
+
+  // Cumulative savings logic
+  const potentialSavings = useMemo(() => {
+    return actionCards
+      .filter(c => !c.is_resolved && c.estimated_impact_inr > 0)
+      .reduce((sum, c) => sum + c.estimated_impact_inr, 0)
+  }, [actionCards])
+
+  const cumulativeData = useMemo(() => {
+    const days = period === '7d' ? 7 : period === '14d' ? 14 : 30
+    const today = new Date()
+    const result: { date: string; label: string; saved: number; potential: number }[] = []
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today); d.setDate(d.getDate() - i)
+      result.push({ 
+        date: d.toISOString().slice(0, 10), 
+        label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), 
+        saved: 0,
+        potential: 0
+      })
+    }
+    for (const card of actionCards) {
+      if (!card.is_resolved || !card.resolved_at || card.estimated_impact_inr <= 0) continue
+      const key = new Date(card.resolved_at).toISOString().slice(0, 10)
+      const entry = result.find(r => r.date === key)
+      if (entry) entry.saved += card.estimated_impact_inr
+    }
+    
+    let cumSaved = 0
+    let cumPotential = 0
+    const dailyPotentialIncrement = potentialSavings / days
+    
+    result.forEach((r) => {
+      cumSaved += r.saved
+      r.saved = cumSaved
+      cumPotential += dailyPotentialIncrement
+      r.potential = cumSaved + cumPotential
+    })
+    return result
+  }, [actionCards, period, potentialSavings])
+
+  const totalSaved = cumulativeData.length > 0 ? cumulativeData[cumulativeData.length - 1].saved : 0
+  const maxPotential = cumulativeData.length > 0 ? cumulativeData[cumulativeData.length - 1].potential : 0
+
+  // Weekly resolved/pending logic
+  const weeklyData = useMemo(() => {
+    const map = new Map<string, { resolved: number; pending: number }>()
+    const today = new Date()
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today); d.setDate(d.getDate() - i)
+      map.set(d.toLocaleDateString('en-IN', { weekday: 'short' }), { resolved: 0, pending: 0 })
+    }
+    for (const card of actionCards) {
+      if (card.estimated_impact_inr <= 0) continue
+      const label = new Date(card.created_at).toLocaleDateString('en-IN', { weekday: 'short' })
+      const entry = map.get(label)
+      if (entry) { 
+        if (card.is_resolved) entry.resolved += card.estimated_impact_inr
+        else entry.pending += card.estimated_impact_inr 
+      }
+    }
+    return [...map.entries()].map(([day, v]) => ({ day, ...v }))
+  }, [actionCards])
+
+  const ChartTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px 12px', boxShadow: '0 4px 16px rgba(15,23,42,0.08)' }}>
+        <div style={{ fontSize: '0.625rem', color: '#64748B', marginBottom: '4px' }}>{label}</div>
+        {payload.map((p: any) => (
+          <div key={p.name || p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+            <div style={{ width: 6, height: 6, borderRadius: p.name ? '50%' : '2px', background: p.color }} />
+            <span style={{ fontSize: '0.6875rem', color: '#64748B', marginRight: '4px' }}>{p.name || (p.dataKey === 'resolved' ? 'Resolved' : 'Pending')}:</span>
+            <span style={{ fontSize: '0.75rem', color: '#0F172A', fontWeight: 700 }}>{formatINR(p.value)}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.3s ease-out' }}>
+      <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #F1F5F9' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>Mitigation & Savings</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
+              {view === 'cumulative' ? 'Cumulative realized savings vs potential unmitigated risk exposure' : 'Daily analysis of resolved vs pending actions this week'}
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {/* View Switcher: Cumulative vs Weekly */}
+            <div style={{ display: 'flex', gap: '1px', background: '#F1F5F9', padding: '2px', borderRadius: '6px' }}>
+              <button 
+                onClick={() => setView('cumulative')} 
+                style={{
+                  padding: '4px 10px', borderRadius: '5px', border: 'none',
+                  background: view === 'cumulative' ? '#FFFFFF' : 'transparent',
+                  color: view === 'cumulative' ? '#0F172A' : '#64748B',
+                  fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer',
+                  boxShadow: view === 'cumulative' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                  transition: 'all 150ms ease',
+                }}
+              >
+                Cumulative Trend
               </button>
-            ))}
+              <button 
+                onClick={() => setView('weekly')} 
+                style={{
+                  padding: '4px 10px', borderRadius: '5px', border: 'none',
+                  background: view === 'weekly' ? '#FFFFFF' : 'transparent',
+                  color: view === 'weekly' ? '#0F172A' : '#64748B',
+                  fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer',
+                  boxShadow: view === 'weekly' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                  transition: 'all 150ms ease',
+                }}
+              >
+                Weekly Influx
+              </button>
+            </div>
+
+            {/* Timeframe Switcher (only for Cumulative) */}
+            {view === 'cumulative' && (
+              <div style={{ display: 'flex', gap: '1px', background: '#F1F5F9', padding: '2px', borderRadius: '6px' }}>
+                {(['7d', '14d', '30d'] as const).map(p => (
+                  <button key={p} onClick={() => setPeriod(p)} style={{
+                    padding: '4px 8px', borderRadius: '5px', border: 'none',
+                    background: period === p ? '#FFFFFF' : 'transparent',
+                    color: period === p ? '#0F172A' : '#94A3B8',
+                    fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer',
+                    boxShadow: period === p ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                    transition: 'all 150ms ease',
+                  }}>{p}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Legend / Metrics block */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <div>
+            <div style={{ fontSize: '0.6875rem', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>
+              {view === 'cumulative' ? 'Total Saved' : 'Weekly Savings Rate'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <Num size="1.625rem">{formatINR(totalSaved)}</Num>
+              {view === 'cumulative' && maxPotential > 0 && (
+                <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>
+                  of {formatINR(maxPotential)} potential
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '14px', marginBottom: '4px' }}>
+            {view === 'cumulative' ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4F46E5' }} />
+                  <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 500 }}>Realized Savings</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#A5B4FC', border: '1px dashed #4F46E5' }} />
+                  <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 500 }}>Unmitigated Exposure</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '2px', background: '#0F172A' }} />
+                  <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 500 }}>Resolved</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '2px', background: '#CBD5E1' }} />
+                  <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 500 }}>Pending</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      <div style={{ flex: 1, position: 'relative', minHeight: 180, marginTop: '1rem' }}>
-        {!hasSavings ? (
-           <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>No data for this period</div>
+      <div style={{ height: 200, padding: '16px 8px 12px' }}>
+        {view === 'cumulative' ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={cumulativeData} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
+              <defs>
+                <linearGradient id="savGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#4F46E5" stopOpacity={0.08} />
+                  <stop offset="100%" stopColor="#4F46E5" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="0" vertical={false} stroke="#F1F5F9" />
+              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#CBD5E1' }} dy={6} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#CBD5E1' }} tickFormatter={v => formatINR(v)} />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#E2E8F0', strokeDasharray: '3 3' }} />
+              <Area name="Unmitigated Exposure" type="monotone" dataKey="potential" stroke="#A5B4FC" strokeDasharray="3 3" strokeWidth={1.5} fill="transparent" dot={false} />
+              <Area name="Realized Savings" type="monotone" dataKey="saved" stroke="#4F46E5" strokeWidth={2.2} fill="url(#savGrad)" dot={false} activeDot={{ r: 4, fill: '#4F46E5', strokeWidth: 2, stroke: '#FFF' }} />
+            </AreaChart>
+          </ResponsiveContainer>
         ) : (
-          <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ overflow: 'visible', display: 'block' }}>
-            <defs>
-              <linearGradient id="lineFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.2" />
-                <stop offset="100%" stopColor="#3B82F6" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            {yTicks.map(t => (
-              <g key={t.y}>
-                <line x1={PL} y1={t.y} x2={W - PR} y2={t.y} stroke="var(--border)" strokeWidth={1} strokeDasharray="4 4" />
-                <text x={PL - 8} y={t.y + 4} textAnchor="end" style={{ fontSize: '10px', fill: 'var(--ink-4)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{t.label}</text>
-              </g>
-            ))}
-            <path d={fillPath} fill="url(#lineFill)" />
-            <path d={dPath} fill="none" stroke="#3B82F6" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
-            {chartData.map((d, i) => {
-              if (chartData.length > 8 && i % 2 !== 0 && i !== chartData.length - 1) return null
-              return (
-                <text key={i} x={pts[i].x} y={H - 8} textAnchor="middle" style={{ fontSize: '9px', fill: 'var(--ink-4)', fontWeight: 600 }}>
-                  {d.label}
-                </text>
-              )
-            })}
-          </svg>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={weeklyData} barGap={4} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+              <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#CBD5E1' }} dy={4} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#CBD5E1' }} tickFormatter={v => formatINR(v)} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(241,245,249,0.2)' }} />
+              <Bar name="Resolved" dataKey="resolved" fill="#0F172A" radius={[3, 3, 0, 0]} barSize={12} background={{ fill: 'rgba(15, 23, 42, 0.02)', radius: 3 }} />
+              <Bar name="Pending" dataKey="pending" fill="#CBD5E1" radius={[3, 3, 0, 0]} barSize={12} background={{ fill: 'rgba(15, 23, 42, 0.02)', radius: 3 }} />
+            </BarChart>
+          </ResponsiveContainer>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 
-/* ── Exposure Donut Chart ────────────────────────────────────────────── */
-function ExposureDonutChart({ activeRisks, cardMap }: { activeRisks: SupplierRiskAnalysis[], cardMap: Map<string, IntelligentActionCard> }) {
-  const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6']
-  
-  const data = useMemo(() => {
-    const list = activeRisks.map(r => ({
-      name: r.supplier_name,
-      value: cardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0
-    })).filter(x => x.value > 0).sort((a, b) => b.value - a.value)
-    
-    const top = list.slice(0, 4)
-    const otherVal = list.slice(4).reduce((s, x) => s + x.value, 0)
-    if (otherVal > 0) top.push({ name: 'Others', value: otherVal })
-    return top
-  }, [activeRisks, cardMap])
+/* ── KPI Cards Helper ────────────────────────────────────────────────── */
+const mapKpiTheme = (lbl: string) => {
+  if (lbl.includes('Suppliers')) return { icon: AlertTriangle }
+  if (lbl.includes('exposure')) return { icon: TrendingDown }
+  if (lbl.includes('stockouts')) return { icon: Package }
+  return { icon: Activity }
+}
 
-  const total = data.reduce((s, d) => s + d.value, 0)
-  let offset = 0
+/* ── KPI Cards ───────────────────────────────────────────────────────── */
+function KpiCard({ label, value, sub, progress, onClick, loading, delay = 0 }: {
+  label: string; value: string | number; sub: string; progress: number
+  onClick?: () => void; loading?: boolean; delay?: number
+}) {
+  const theme = mapKpiTheme(label)
+  const Icon = theme.icon
 
-  const categorySummary = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const r of activeRisks) {
-      const card = cardMap.get(r.supplier_id)
-      if (!card) continue
-      const cat = card.category || 'Other'
-      map.set(cat, (map.get(cat) || 0) + card.financial_exposure_inr)
-    }
-    const sorted = [...map.entries()].sort((a, b) => b[1] - a[1])
-    return sorted[0] ? { name: sorted[0][0], value: sorted[0][1] } : null
-  }, [activeRisks, cardMap])
+  // Determine distinct colors per KPI card to make them visually distinct
+  let color = '#4F46E5' // Default indigo
+  if (label.toLowerCase().includes('supplier')) color = '#EF4444' // Soft Red for risk
+  else if (label.toLowerCase().includes('financial') || label.toLowerCase().includes('exposure')) color = '#F59E0B' // Soft Amber for exposure
+  else if (label.toLowerCase().includes('stockout')) color = '#EC4899' // Soft Pink/Rose for critical stockouts
+  else if (label.toLowerCase().includes('disruption')) color = '#3B82F6' // Soft Blue for active disruptions
 
   return (
-    <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+    <Card hover={!!onClick} style={{
+      cursor: onClick ? 'pointer' : 'default',
+      animation: `dash-fade-in 0.3s ease-out ${delay}ms both`,
+      padding: '20px 24px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} onClick={onClick}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, marginBottom: '6px' }}>{label}</div>
+          {loading ? <Skeleton w="55%" h={28} /> : <Num size="1.875rem">{value}</Num>}
+          <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '6px', fontWeight: 400 }}>{sub}</div>
+        </div>
+        <Icon size={18} strokeWidth={1.5} style={{ color: color, flexShrink: 0, marginLeft: '12px', marginTop: '2px' }} />
+      </div>
+      {/* Dynamic progress bar detail */}
+      <div style={{ height: '4px', background: '#F1F5F9', borderRadius: '2px', marginTop: '14px', overflow: 'hidden' }}>
+        <div style={{ 
+          width: `${Math.min(100, Math.max(5, progress))}%`, 
+          height: '100%', 
+          background: color, 
+          borderRadius: '2px',
+          transition: 'width 600ms cubic-bezier(0.16, 1, 0.3, 1)' 
+        }} />
+      </div>
+    </Card>
+  )
+}
+
+/* ── Supplier Risk Distribution Chart ───────────────────────────────── */
+function SupplierRiskDistribution({ risks, loading }: { risks: SupplierRiskAnalysis[]; loading: boolean }) {
+  const distribution = useMemo(() => {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 }
+    risks.forEach(r => {
+      if (r.risk_level === 'critical') counts.critical++
+      else if (r.risk_level === 'high') counts.high++
+      else if (r.risk_level === 'medium') counts.medium++
+      else if (r.risk_level === 'low') counts.low++
+    })
+    return [
+      { name: 'Critical', value: counts.critical, color: '#EF4444' },
+      { name: 'High', value: counts.high, color: '#F59E0B' },
+      { name: 'Medium', value: counts.medium, color: '#3B82F6' },
+      { name: 'Low', value: counts.low, color: '#10B981' }
+    ]
+  }, [risks])
+
+  const total = useMemo(() => distribution.reduce((sum, item) => sum + item.value, 0), [distribution])
+
+  const ChartTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null
+    const data = payload[0].payload
+    return (
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '8px 12px', boxShadow: '0 4px 16px rgba(15,23,42,0.08)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: data.color }} />
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#0F172A' }}>{data.name}:</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0F172A' }}>{data.value} supplier{data.value !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+    )
+  }
+
+  const SEV_STYLE: Record<string, { bg: string; border: string; text: string }> = {
+    Critical: { bg: 'rgba(239, 68, 68, 0.04)', border: '1px solid rgba(239, 68, 68, 0.12)', text: '#EF4444' },
+    High:     { bg: 'rgba(245, 158, 11, 0.04)', border: '1px solid rgba(245, 158, 11, 0.12)', text: '#F59E0B' },
+    Medium:   { bg: 'rgba(59, 130, 246, 0.04)', border: '1px solid rgba(59, 130, 246, 0.12)', text: '#3B82F6' },
+    Low:      { bg: 'rgba(16, 185, 129, 0.04)', border: '1px solid rgba(16, 185, 129, 0.12)', text: '#10B981' },
+  }
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.35s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardHeader title="Supplier Risk Tiers" sub="Distribution of suppliers across risk levels" />
+      <div style={{ padding: '8px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', flexShrink: 0 }}>
         <div>
-          <div style={{ fontSize: '1.0625rem', fontWeight: 800, color: 'var(--ink-1)' }}>Suppliers Distribution</div>
-          <div style={{ fontSize: '0.8125rem', color: 'var(--ink-4)', marginTop: '2px' }}>Money at risk by supplier</div>
+          <div style={{ fontSize: '0.6875rem', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Assessed</div>
+          <Num size="1.5rem">{loading ? '—' : total}</Num>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {distribution.map(d => {
+            const style = SEV_STYLE[d.name] || { bg: '#F8FAFC', border: '1px solid #E2E8F0', text: '#64748B' }
+            return (
+              <div key={d.name} style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '5px', 
+                background: style.bg, 
+                border: style.border, 
+                padding: '3px 8px', 
+                borderRadius: '20px' 
+              }}>
+                <div style={{ width: 5, height: 5, borderRadius: '50%', background: d.color }} />
+                <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#334155' }}>{d.name}:</span>
+                <span style={{ fontSize: '0.6875rem', fontWeight: 750, color: style.text }}>{d.value}</span>
+              </div>
+            )
+          })}
         </div>
       </div>
       
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '2.5rem', marginTop: '0.5rem' }}>
-        <div style={{ width: 140, height: 140, position: 'relative', filter: 'drop-shadow(0 8px 12px rgba(0,0,0,0.08))', flexShrink: 0 }}>
-          {total > 0 ? (
-            <svg viewBox="0 0 42 42" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%', overflow: 'visible' }}>
-              <circle cx="21" cy="21" r="15.915" fill="#ffffff" stroke="var(--bg-hover)" strokeWidth="6" />
-              {data.map((d, i) => {
-                const pct = (d.value / total) * 100
-                const dasharray = `${pct} ${100 - pct}`
-                const dashoffset = -offset
-                offset += pct
-                return (
-                  <circle key={d.name} cx="21" cy="21" r="15.915" fill="transparent"
-                    stroke={colors[i % colors.length]} strokeWidth="6"
-                    strokeDasharray={dasharray} strokeDashoffset={dashoffset}
-                    style={{ transition: 'stroke-dasharray 1s cubic-bezier(0.4, 0, 0.2, 1)' }}
-                    strokeLinecap={pct < 100 ? "round" : "butt"}
-                  />
-                )
-              })}
-            </svg>
-          ) : (
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%', border: '6px solid var(--bg-hover)', background: '#fff' }} />
-          )}
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle, rgba(0,0,0,0.02) 0%, transparent 60%)', borderRadius: '50%' }}>
-            <span style={{ fontSize: '0.625rem', color: 'var(--ink-4)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Total Risk</span>
-            <span style={{ fontSize: '1.125rem', fontWeight: 900, color: 'var(--ink-1)', fontFamily: 'JetBrains Mono, monospace', marginTop: '1px', letterSpacing: '-0.02em' }}>{formatINR(total)}</span>
-          </div>
-        </div>
-        
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          {data.length === 0 && <div style={{ fontSize: '0.875rem', color: 'var(--ink-4)' }}>No suppliers at risk</div>}
-          {data.map((d, i) => (
-            <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.375rem 0', borderBottom: i < data.length - 1 ? '1px dashed var(--border)' : 'none' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-                <span style={{ width: 10, height: 10, borderRadius: '3px', background: colors[i % colors.length], boxShadow: `0 2px 4px ${colors[i % colors.length]}30`, flexShrink: 0 }} />
-                <span style={{ color: 'var(--ink-1)', fontWeight: 700, fontSize: '0.8125rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.name}>{d.name}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textAlign: 'right', flexShrink: 0 }}>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 800, color: 'var(--ink-2)', fontFamily: 'JetBrains Mono, monospace' }}>{formatINR(d.value)}</span>
-                <span style={{ fontWeight: 800, color: 'var(--ink-4)', width: '32px', fontSize: '0.6875rem', background: 'var(--bg-hover)', padding: '1px 3px', borderRadius: '3px', textAlign: 'center' }}>{((d.value / total) * 100).toFixed(0)}%</span>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div style={{ flex: 1, minHeight: 180, padding: '16px 24px 16px' }}>
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '24px', height: '100%', justifyContent: 'center' }}><Skeleton h={24} /><Skeleton h={24} /><Skeleton h={24} /></div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={distribution} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B', fontWeight: 500 }} dy={4} />
+              <YAxis width={20} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#CBD5E1' }} allowDecimals={false} />
+              <Tooltip cursor={{ fill: 'rgba(241,245,249,0.2)' }} content={<ChartTooltip />} />
+              <Bar dataKey="value" barSize={32} radius={[4, 4, 0, 0]} background={{ fill: 'rgba(15, 23, 42, 0.02)', radius: 4 }}>
+                {distribution.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
+    </Card>
+  )
+}
 
-      {categorySummary && total > 0 && (
-        <div style={{ marginTop: '0.25rem', padding: '0.5rem 0.75rem', background: 'var(--bg-hover)', borderRadius: '0.5rem', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', minWidth: 0 }}>
-            <AlertTriangle size={12} color="#D97706" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '0.75rem', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              Highest exposure category: <strong style={{ color: 'var(--ink-1)' }}>{categorySummary.name}</strong>
-            </span>
+/* ── Activity Feed Unified Icon Map (Marker Icons & Colors) ──────────── */
+const getTimelineBadge = (type: string, severity: string) => {
+  let icon = <Activity size={10} style={{ color: '#475569' }} />
+  let bg = 'rgba(71, 85, 105, 0.04)'
+  let border = 'rgba(71, 85, 105, 0.1)'
+  
+  if (severity === 'critical') {
+    bg = 'rgba(239, 68, 68, 0.05)'
+    border = 'rgba(239, 68, 68, 0.15)'
+  } else if (severity === 'high') {
+    bg = 'rgba(245, 158, 11, 0.05)'
+    border = 'rgba(245, 158, 11, 0.15)'
+  } else if (severity === 'medium') {
+    bg = 'rgba(59, 130, 246, 0.05)'
+    border = 'rgba(59, 130, 246, 0.15)'
+  } else if (severity === 'low') {
+    bg = 'rgba(16, 185, 129, 0.05)'
+    border = 'rgba(16, 185, 129, 0.15)'
+  }
+  
+  const cSlate = severity === 'critical' ? '#EF4444' : severity === 'high' ? '#F59E0B' : severity === 'medium' ? '#3B82F6' : severity === 'low' ? '#10B981' : '#475569'
+
+  if (type === 'disruption_alert' || type === 'stockout_warning') {
+    icon = <AlertTriangle size={10} style={{ color: cSlate }} />
+  } else if (type === 'action_generated' || type === 'demand_spike' || type === 'risk_update') {
+    icon = <Zap size={10} style={{ color: cSlate }} />
+  } else if (type === 'inventory_update' || type === 'delivery_update') {
+    icon = <Package size={10} style={{ color: cSlate }} />
+  } else {
+    icon = <Activity size={10} style={{ color: cSlate }} />
+  }
+  
+  return { icon, bg, border }
+}
+
+/* ── Activity Timeline ───────────────────────────────────────────────── */
+function ActivityTimeline() {
+  const navigate = useNavigate()
+  const { events } = useSSE({ maxEvents: 6 })
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.35s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardHeader title="Activity" right={<ViewAllBtn onClick={() => navigate('/activity')} />} />
+      <div style={{ padding: '16px 24px', flex: 1 }}>
+        {events.length === 0 ? (
+          <div style={{ padding: '28px 0', textAlign: 'center' }}>
+            <Activity size={22} style={{ color: '#E2E8F0', marginBottom: '6px' }} />
+            <div style={{ fontSize: '0.8125rem', color: '#CBD5E1' }}>No recent activity</div>
           </div>
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--ink-1)', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>
-            {formatINR(categorySummary.value)} ({((categorySummary.value / total) * 100).toFixed(0)}%)
-          </span>
-        </div>
-      )}
-    </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {events.map((ev, i) => {
+              const badge = getTimelineBadge(ev.event_type, ev.severity)
+              const ago = Math.round((Date.now() - new Date(ev.timestamp).getTime()) / 60000)
+              const agoLabel = ago < 1 ? 'just now' : ago < 60 ? `${ago}m ago` : `${Math.round(ago / 60)}h ago`
+              return (
+                <div 
+                  key={ev.id || i} 
+                  style={{ 
+                    display: 'flex', 
+                    gap: '14px', 
+                    paddingBottom: i < events.length - 1 ? '16px' : '0', 
+                    paddingTop: i > 0 ? '16px' : '0', 
+                    borderBottom: i < events.length - 1 ? '1px dashed #F1F5F9' : 'none', 
+                    position: 'relative' 
+                  }}
+                >
+                  {/* Vertical timeline line */}
+                  {i < events.length - 1 && (
+                    <div style={{
+                      position: 'absolute',
+                      left: '11px',
+                      top: '26px',
+                      bottom: '-16px',
+                      width: '1px',
+                      background: '#E2E8F0',
+                      zIndex: 1,
+                    }} />
+                  )}
+                  {/* Left timeline badge */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', width: '24px' }}>
+                    <div style={{
+                      width: '24px', height: '24px', borderRadius: '50%',
+                      background: badge.bg, border: `1px solid ${badge.border}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      zIndex: 2, flexShrink: 0,
+                      marginTop: '2px'
+                    }}>
+                      {badge.icon}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.8125rem', color: '#334155', fontWeight: 600, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {ev.message}
+                    </div>
+                    <div style={{ fontSize: '0.6875rem', color: '#94A3B8', marginTop: '2px' }}>{agoLabel}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+/* ── Exposure Ranking ────────────────────────────────────────────────── */
+function ExposureRanking({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard> }) {
+  const navigate = useNavigate()
+
+  const ranked = useMemo(() => {
+    return risks
+      .map(r => ({ risk: r, card: cardMap.get(r.supplier_id) }))
+      .filter(({ card }) => card && card.financial_exposure_inr > 0)
+      .sort((a, b) => b.card!.financial_exposure_inr - a.card!.financial_exposure_inr)
+      .slice(0, 5)
+  }, [risks, cardMap])
+
+  const maxExposure = ranked[0]?.card?.financial_exposure_inr ?? 1
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.35s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardHeader title="Top exposure" sub="Ranked by financial impact" right={<ViewAllBtn onClick={() => navigate('/risks')} />} />
+      <div style={{ padding: '8px 24px 16px', flex: 1 }}>
+        {ranked.length === 0 ? (
+          <div style={{ padding: '28px 0', textAlign: 'center' }}>
+            <Shield size={22} style={{ color: '#E2E8F0', marginBottom: '6px' }} />
+            <div style={{ fontSize: '0.8125rem', color: '#CBD5E1' }}>No financial exposure</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {ranked.map(({ risk, card }, i) => {
+              const sev = SEV[risk.risk_level] ?? SEV.low
+              const pct = (card!.financial_exposure_inr / maxExposure) * 100
+              return (
+                <div
+                  key={risk.supplier_id}
+                  onClick={() => navigate(`/risks/${risk.supplier_id}`)}
+                  className="dash-item-hover"
+                  style={{ cursor: 'pointer', padding: '8px 10px', borderRadius: '8px', transition: 'all 200ms ease' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <span style={{ fontSize: '0.75rem', color: '#CBD5E1', fontWeight: 600, fontVariantNumeric: 'tabular-nums', width: '14px', textAlign: 'right' }}>{i + 1}</span>
+                      <div style={{
+                        width: 26, height: 26, borderRadius: '6px',
+                        background: '#FFFFFF', color: '#334155',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontWeight: 700, fontSize: '0.75rem', flexShrink: 0,
+                        border: '1px solid #E2E8F0',
+                        boxShadow: '0 1px 2px rgba(15, 23, 42, 0.05)',
+                      }}>
+                        {risk.supplier_name.charAt(0)}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {risk.supplier_name}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2.5px' }}>
+                          <span style={{
+                            fontSize: '0.625rem', fontWeight: 600,
+                            color: sev.color, background: sev.bg, border: sev.border,
+                            padding: '2px 6px', borderRadius: '10px',
+                            display: 'inline-flex', alignItems: 'center', gap: '3px'
+                          }}>
+                            {sev.label}
+                          </span>
+                          <span style={{ fontSize: '0.6875rem', color: '#94A3B8', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                            · {card!.days_to_stockout}d left
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Num size="0.875rem">{formatINR(card!.financial_exposure_inr)}</Num>
+                  </div>
+                  <div style={{ height: 2, background: '#F1F5F9', borderRadius: '2px', overflow: 'hidden', marginLeft: '22px' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: sev.color, borderRadius: '2px', transition: 'width 500ms ease' }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+/* ── Pending Actions ─────────────────────────────────────────────────── */
+function PendingActions({ risks, cardMap, loading }: {
+  risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard>; loading: boolean
+}) {
+  const navigate = useNavigate()
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.35s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardHeader
+        title="Pending actions"
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {risks.length > 0 && <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#64748B', background: '#F1F5F9', padding: '2px 6px', borderRadius: '3px' }}>{risks.length}</span>}
+            <ViewAllBtn onClick={() => navigate('/actions')} />
+          </div>
+        }
+      />
+      <div style={{ padding: '8px 24px 16px', flex: 1 }}>
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '8px 0' }}><Skeleton h={52} /><Skeleton h={52} /><Skeleton h={52} /></div>
+        ) : risks.length === 0 ? (
+          <div style={{ padding: '28px 0', textAlign: 'center' }}>
+            <Shield size={22} style={{ color: '#E2E8F0', marginBottom: '6px' }} />
+            <div style={{ fontSize: '0.8125rem', color: '#0F172A', fontWeight: 600 }}>All clear</div>
+            <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '2px' }}>No pending actions</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {risks.slice(0, 4).map(r => {
+              const card = cardMap.get(r.supplier_id)
+              if (!card) return null
+              return (
+                <div
+                  key={r.supplier_id}
+                  className="dash-item-hover"
+                  onClick={() => navigate(`/risks/${r.supplier_id}/mitigation`)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
+                    transition: 'all 200ms ease',
+                  }}
+                >
+                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#CBD5E1', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A' }}>{r.supplier_name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {getReason(r, card)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0, marginRight: '8px' }}>
+                    <Num size="0.8125rem">{formatINR(card.financial_exposure_inr)}</Num>
+                    <div style={{ fontSize: '0.6875rem', color: '#94A3B8', marginTop: '1px' }}>{card.days_to_stockout}d left</div>
+                  </div>
+                  <ArrowRight size={14} style={{ color: '#CBD5E1', flexShrink: 0 }} />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+/* ── AI Insights ─────────────────────────────────────────────────────── */
+function AIInsights() {
+  const { data: brief, isLoading } = useExecutiveBrief()
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.4s ease-out' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '16px 24px', borderBottom: '1px solid #F1F5F9' }}>
+        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>AI Insights</span>
+        <span style={{ fontSize: '0.625rem', fontWeight: 500, color: '#94A3B8', border: '1px solid #E2E8F0', padding: '2px 6px', borderRadius: '20px', marginLeft: 'auto', background: '#F8FAFC' }}>Powered by Bedrock</span>
+      </div>
+      <div style={{ padding: '0' }}>
+        {isLoading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '24px' }}><Skeleton h={14} /><Skeleton w="80%" h={14} /><Skeleton w="60%" h={14} /></div>
+        ) : !brief ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: '#CBD5E1', fontSize: '0.8125rem' }}>
+            Insights will appear when data is available
+          </div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+            gap: '24px',
+            padding: '24px'
+          }}>
+            {/* Column 1: Summary Callout */}
+            <div style={{
+              background: 'rgba(79, 70, 229, 0.02)',
+              border: '1px solid rgba(79, 70, 229, 0.08)',
+              borderRadius: '8px',
+              padding: '20px',
+              backgroundImage: 'radial-gradient(rgba(79, 70, 229, 0.04) 1px, transparent 1px)',
+              backgroundSize: '12px 12px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#4F46E5', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Executive Summary</div>
+              <p style={{ fontSize: '0.875rem', color: '#334155', lineHeight: 1.6, fontWeight: 500, margin: 0 }}>
+                {brief.summary}
+              </p>
+            </div>
+
+            {/* Column 2: Key Risks */}
+            {brief.top_risks?.length > 0 && (
+              <div>
+                <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Key Risks</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {brief.top_risks.slice(0, 3).map((risk, i) => (
+                    <div key={i} className="dash-item-hover" style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.8125rem', color: '#475569', lineHeight: 1.4, padding: '8px 10px', borderRadius: '6px' }}>
+                      <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#EF4444', flexShrink: 0, marginTop: '7px' }} />
+                      <span style={{ fontWeight: 500 }}>{risk}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Column 3: Recommended Actions */}
+            {brief.immediate_actions?.length > 0 && (
+              <div>
+                <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '12px' }}>Recommended Actions</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {brief.immediate_actions.slice(0, 3).map((action, i) => (
+                    <div key={i} className="dash-item-hover" style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.8125rem', color: '#475569', lineHeight: 1.4, padding: '8px 10px', borderRadius: '6px' }}>
+                      <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#F59E0B', flexShrink: 0, marginTop: '7px' }} />
+                      <span style={{ fontWeight: 500 }}>{action}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
   )
 }
 
@@ -561,11 +1020,11 @@ function ExposureDonutChart({ activeRisks, cardMap }: { activeRisks: SupplierRis
 export function Dashboard() {
   const navigate = useNavigate()
 
-  const { data: risks, isLoading: loadingRisks }   = useWeightedRiskAnalysis()
+  const { data: risks, isLoading: loadingRisks } = useWeightedRiskAnalysis()
   const { data: disruptions, isLoading: loadingD } = useDisruptions()
-  const { data: stockout }                         = useStockoutForecast()
-  const { data: actionData }                       = useActionCards()
-  const { data: procCards }                        = useProcurementCards()
+  const { data: stockout } = useStockoutForecast()
+  const { data: actionData } = useActionCards()
+  const { data: procCards } = useProcurementCards()
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
   const allCards = actionData?.action_cards ?? []
@@ -609,122 +1068,70 @@ export function Dashboard() {
     })
   }, [activeRiskList, cardMap])
 
-  const criticalCount      = activeRiskList.filter(r => r.risk_level === 'critical').length
-  const highCount          = activeRiskList.filter(r => r.risk_level === 'high').length
+  const criticalCount = activeRiskList.filter(r => r.risk_level === 'critical').length
+  const highCount = activeRiskList.filter(r => r.risk_level === 'high').length
   const disruptions_active = (disruptions?.disruptions ?? []).filter((d: any) => d.is_active && d.severity !== 'low').length
 
-  // syncRisks is handled centrally in DashboardLayout
+  // Calculate totals for realized savings
+  const totalSaved = useMemo(() => {
+    return allCards
+      .filter(card => card.is_resolved && card.resolved_at && card.estimated_impact_inr > 0)
+      .reduce((sum, card) => sum + card.estimated_impact_inr, 0)
+  }, [allCards])
 
+  // Progress metrics for KPI cards
+  const progressSuppliers = useMemo(() => {
+    return riskList.length > 0 ? (activeRiskList.length / riskList.length) * 100 : 0
+  }, [activeRiskList, riskList])
+
+  const progressExposure = useMemo(() => {
+    const totalRisk = activeExposure + totalSaved
+    return totalRisk > 0 ? (totalSaved / totalRisk) * 100 : 0
+  }, [activeExposure, totalSaved])
+
+  const progressStockouts = useMemo(() => {
+    const total = stockout?.total_skus ?? 100
+    const crit = stockout?.critical_count ?? 0
+    return total > 0 ? (crit / total) * 100 : 0
+  }, [stockout])
+
+  const progressDisruptions = useMemo(() => {
+    const list = disruptions?.disruptions ?? []
+    return list.length > 0 ? (disruptions_active / list.length) * 100 : 0
+  }, [disruptions, disruptions_active])
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
+      <style>{CSS}</style>
 
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-        <div>
-          <div className="section-label" style={{ marginBottom: '0.2rem' }}>
-            {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          </div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--ink-1)', letterSpacing: '-0.03em', lineHeight: 1 }}>Dashboard</h1>
-        </div>
+      <DashboardHeader exposure={activeExposure} riskCount={activeRiskList.length} totalSuppliers={riskList.length} loading={loadingRisks} />
+
+      {!loadingD && <AlertBanner disruptions={disruptions?.disruptions ?? []} />}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+        <KpiCard label="Suppliers at risk" value={loadingRisks ? '—' : activeRiskList.length}
+          sub={criticalCount > 0 ? `${criticalCount} critical, ${highCount} high` : highCount > 0 ? `${highCount} high risk` : 'All stable'}
+          progress={progressSuppliers} onClick={() => navigate('/risks')} loading={loadingRisks} delay={0} />
+        <KpiCard label="Financial exposure" value={loadingRisks ? '—' : formatINR(activeExposure)}
+          sub="Total at risk" progress={progressExposure} onClick={() => navigate('/risks')} loading={loadingRisks} delay={40} />
+        <KpiCard label="Critical stockouts" value={(stockout?.critical_count ?? 0) > 0 ? stockout!.critical_count : '0'}
+          sub="SKUs below safe stock" progress={progressStockouts} onClick={() => navigate('/risks')} delay={80} />
+        <KpiCard label="Active disruptions" value={loadingD ? '—' : disruptions_active}
+          sub="Medium+ severity" progress={progressDisruptions} onClick={() => navigate('/disruptions')} loading={loadingD} delay={120} />
       </div>
 
-      {/* ── Marquee News ─────────────────────────────────────────────── */}
-      {!loadingD && <AlertMarquee disruptions={disruptions?.disruptions ?? []} />}
-      {loadingD && <Sk h={60} />}
+      <MitigationSavingsOverview actionCards={allCards} />
 
-      {/* ── 4 KPI cards ─────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.25rem' }}>
-        <KpiCard label="Total Suppliers at Risk" icon={<Users size={16} />}
-          value={loadingRisks ? '—' : activeRiskList.length}
-          sub={criticalCount > 0 ? `${criticalCount} critical · ${highCount} high` : highCount > 0 ? `${highCount} high` : 'All stable'}
-          onClick={() => navigate('/risks')} loading={loadingRisks}>
-            {activeRiskList.length > 0 && (
-              <div style={{ display: 'flex', height: 4, width: 40, borderRadius: 2, overflow: 'hidden', background: 'var(--bg-hover)' }}>
-                <div style={{ width: `${(criticalCount/activeRiskList.length)*100}%`, background: '#DC2626' }} />
-                <div style={{ width: `${(highCount/activeRiskList.length)*100}%`, background: '#D97706' }} />
-              </div>
-            )}
-        </KpiCard>
-        <KpiCard label="Total Financial Exposure" icon={<TrendingDown size={16} />}
-          value={loadingRisks ? '—' : formatINR(activeExposure)} sub="At risk"
-          onClick={() => navigate('/risks')} loading={loadingRisks}>
-             <div style={{ padding: '2px 6px', background: '#FEF2F2', color: '#DC2626', borderRadius: 4, fontSize: '0.625rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '2px' }}>
-                <TrendingDown size={10} /> {loadingRisks ? '—' : 'High'}
-             </div>
-        </KpiCard>
-        <KpiCard label="Critical Stockouts" icon={<Package size={16} />}
-          value={stockout?.critical_count ?? '—'} sub="SKUs critical"
-          onClick={() => navigate('/risks')}>
-             <div style={{ padding: '2px 6px', background: '#FFFBEB', color: '#D97706', borderRadius: 4, fontSize: '0.625rem', fontWeight: 800 }}>
-                Requires Action
-             </div>
-        </KpiCard>
-        <KpiCard label="Active Disruptions" icon={<Activity size={16} />}
-          value={loadingD ? '—' : disruptions_active} sub="Active alerts"
-          onClick={() => navigate('/disruptions')} loading={loadingD}>
-             <span style={{ width: 6, height: 6, borderRadius: '50%', background: disruptions_active > 0 ? '#DC2626' : '#059669', animation: disruptions_active > 0 ? 'livePulse 1.5s ease-in-out infinite' : 'none' }} />
-        </KpiCard>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <SupplierRiskDistribution risks={riskList} loading={loadingRisks} />
+        <ActivityTimeline />
       </div>
 
-      {/* ── Row 2: Act Today & Daily Savings ───────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
-        <div className="card-flush" style={{ display: 'flex', flexDirection: 'column', maxHeight: '480px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-              <span style={{ fontSize: '1.0625rem', fontWeight: 800, color: 'var(--ink-1)' }}>Pending Actions</span>
-              {sortedActive.length > 0 && (
-                <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '2px 8px', background: 'var(--bg-hover)', color: 'var(--ink-3)', border: '1px solid var(--border)', borderRadius: '99px' }}>
-                  {sortedActive.length}
-                </span>
-              )}
-            </div>
-            <button onClick={() => navigate('/actions')}
-              style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '2px' }}>
-              View all <ChevronRight size={14} />
-            </button>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {loadingRisks ? (
-              <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}><Sk h={60} /><Sk h={60} /><Sk h={60} /></div>
-            ) : sortedActive.length === 0 ? (
-              <div style={{ padding: '3rem', textAlign: 'center' }}>
-                <ShieldCheck size={36} color="var(--ink-4)" style={{ margin: '0 auto 1rem' }} />
-                <div style={{ fontSize: '1.0625rem', fontWeight: 800, color: 'var(--ink-1)' }}>Nothing to act on</div>
-                <div style={{ fontSize: '0.875rem', color: 'var(--ink-4)', marginTop: '0.25rem' }}>All suppliers look healthy</div>
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '500px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-hover)' }}>
-                      <th style={{ width: '32%', padding: '0.625rem 1rem', fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
-                      <th style={{ width: '25%', padding: '0.625rem 1rem', fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk & Reason</th>
-                      <th style={{ width: '20%', padding: '0.625rem 1rem', fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Stock Buffer</th>
-                      <th style={{ width: '15%', padding: '0.625rem 1rem', fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Exposure</th>
-                      <th style={{ width: '8%', padding: '0.625rem 1rem', fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedActive.map(r => {
-                      const card = cardMap.get(r.supplier_id)
-                      if (!card) return null
-                      return <ActTodayRow key={r.supplier_id} risk={r} card={card} />
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <DailySavingsChart actionCards={allCards} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <ExposureRanking risks={sortedActive} cardMap={cardMap} />
+        <PendingActions risks={sortedActive} cardMap={cardMap} loading={loadingRisks} />
       </div>
 
-      {/* ── Row 3: Exposure Donut & Suppliers at Risk ───────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginTop: '0.5rem' }}>
-        <ExposureDonutChart activeRisks={sortedActive} cardMap={cardMap} />
-        <SupplierListRight risks={sortedActive} cardMap={cardMap} />
-      </div>
+      <AIInsights />
     </div>
   )
 }

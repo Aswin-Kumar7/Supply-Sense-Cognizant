@@ -13,27 +13,23 @@ import {
   Menu,
   ClipboardList,
   History,
+  ChevronsLeft,
 } from 'lucide-react'
 import type { IntelligentActionCard } from '../../types'
 
-/* ── Badge pill ─────────────────────────────────────────────────────── */
-function NavBadge({ count, collapsed }: { count: number, collapsed: boolean }) {
+function NavBadge({ count, collapsed }: { count: number; collapsed: boolean }) {
   if (count === 0 || collapsed) return null
   return (
     <span style={{
       marginLeft: 'auto',
-      minWidth: '18px',
-      height: '18px',
-      padding: '0 5px',
-      borderRadius: '4px',
-      background: '#000',
-      color: '#fff',
-      fontSize: '0.625rem',
-      fontWeight: 700,
-      fontFamily: 'JetBrains Mono, monospace',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
+      minWidth: '18px', height: '16px', padding: '0 5px',
+      borderRadius: '10px',
+      background: 'rgba(239, 68, 68, 0.08)',
+      color: '#EF4444',
+      border: '1px solid rgba(239, 68, 68, 0.15)',
+      fontSize: '0.625rem', fontWeight: 600,
+      fontVariantNumeric: 'tabular-nums',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
       lineHeight: 1,
     }}>
       {count > 99 ? '99+' : count}
@@ -41,33 +37,25 @@ function NavBadge({ count, collapsed }: { count: number, collapsed: boolean }) {
   )
 }
 
-/* ── Section separator ──────────────────────────────────────────────── */
-function SidebarSection({ label, collapsed }: { label: string, collapsed: boolean }) {
+function SidebarSection({ label, collapsed }: { label: string; collapsed: boolean }) {
   if (collapsed) return null
   return (
     <div style={{
-      padding: '1.25rem 0.75rem 0.5rem',
-      fontSize: '0.625rem',
-      fontWeight: 700,
-      color: 'var(--ink-4)',
+      padding: '18px 16px 5px',
+      fontSize: '0.625rem', fontWeight: 700,
+      color: '#94A3B8',
       textTransform: 'uppercase',
-      letterSpacing: '0.08em',
+      letterSpacing: '0.1em',
     }}>
       {label}
     </div>
   )
 }
 
-/* ── Nav item ───────────────────────────────────────────────────────── */
 function SidebarLink({
   to, icon: Icon, label, badge, end, collapsed
 }: {
-  to: string
-  icon: any
-  label: string
-  badge?: number
-  end?: boolean
-  collapsed: boolean
+  to: string; icon: any; label: string; badge?: number; end?: boolean; collapsed: boolean
 }) {
   return (
     <NavLink
@@ -77,25 +65,26 @@ function SidebarLink({
       style={({ isActive }) => ({
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: collapsed ? '0' : '0.75rem',
-        padding: '0.625rem',
-        borderRadius: '8px',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: collapsed ? '0' : '8px',
+        padding: collapsed ? '7px' : isActive ? '7px 10px 7px 7px' : '7px 10px',
         fontSize: '0.8125rem',
-        fontWeight: isActive ? 600 : 500,
-        color: isActive ? '#fff' : 'var(--ink-3)',
-        background: isActive ? '#000' : 'transparent',
+        fontWeight: isActive ? 600 : 400,
+        color: isActive ? '#0F172A' : '#64748B',
+        background: isActive ? '#F1F5F9' : 'transparent',
+        borderLeft: isActive ? '3px solid #0F172A' : '3px solid transparent',
+        borderRadius: isActive ? '0 6px 6px 0' : '6px',
         textDecoration: 'none',
-        transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'all 120ms ease',
         cursor: 'pointer',
         lineHeight: 1,
-        width: collapsed ? '44px' : '100%',
-        margin: collapsed ? '0 auto' : '0',
+        width: collapsed ? '36px' : 'auto',
+        margin: collapsed ? '1px auto' : '1px 8px',
       })}
     >
       {({ isActive }) => (
         <>
-          <Icon size={20} strokeWidth={isActive ? 2.5 : 2} style={{ flexShrink: 0 }} />
+          <Icon size={16} strokeWidth={isActive ? 1.75 : 1.25} style={{ flexShrink: 0, color: isActive ? '#0F172A' : '#94A3B8' }} />
           {!collapsed && (
             <>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
@@ -108,20 +97,17 @@ function SidebarLink({
   )
 }
 
-/* ── Sidebar ────────────────────────────────────────────────────────── */
-export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCollapsed: (c: boolean) => void }) {
+export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean; setCollapsed: (c: boolean) => void }) {
   const { data: disruptions } = useDisruptions()
   const { data: actionData } = useActionCards()
   const { data: risks } = useWeightedRiskAnalysis()
   const { data: procCards } = useProcurementCards()
 
-  // Build procCard map — same as Dashboard and PendingActionsPage
   const procCardMap = useMemo(
     () => new Map((procCards as IntelligentActionCard[] ?? []).map(c => [c.supplier_id, c])),
     [procCards]
   )
 
-  // Resolved supplier IDs — ALL action cards for that supplier must be resolved
   const resolvedSupplierIds = useMemo(() => {
     const bySupplier = new Map<string, { resolved: number; total: number }>()
     for (const c of actionData?.action_cards ?? []) {
@@ -138,7 +124,6 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
     )
   }, [actionData])
 
-  // Active supplier count — identical filter to PendingActionsPage / Dashboard
   const activeSupplierCount = useMemo(() => {
     const riskList = (risks as any[] | undefined) ?? []
     return riskList.filter(r => {
@@ -150,7 +135,6 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
     }).length
   }, [risks, resolvedSupplierIds, procCardMap])
 
-  // riskBadge and pendingActions are now the same number from the same source
   const riskBadge = activeSupplierCount
   const pendingActions = activeSupplierCount
 
@@ -175,80 +159,102 @@ export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCo
       window.removeEventListener('ss_read_disruptions_changed', handleStorage)
     }
   }, [])
+
   const activeDisruptions = (disruptions?.disruptions ?? [])
     .filter((d: any) => d.is_active && d.severity !== 'low' && !readIds.has(d.id)).length
 
-
-
   return (
     <aside style={{
-      width: collapsed ? '72px' : '260px',
-      minWidth: collapsed ? '72px' : '260px',
-      background: '#fff',
-      borderRight: '1px solid var(--border)',
+      width: collapsed ? '56px' : '220px',
+      minWidth: collapsed ? '56px' : '220px',
+      background: '#FFFFFF',
+      borderRight: '1px solid #E2E8F0',
       display: 'flex',
       flexDirection: 'column',
-      padding: collapsed ? '1.5rem 0' : '1.5rem 1rem',
-      transition: 'width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+      padding: '6px 0',
+      transition: 'width 200ms ease, min-width 200ms ease',
       overflowY: 'auto',
       overflowX: 'hidden',
     }}>
-      {/* Sidebar Toggle Button */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: collapsed ? 'center' : 'flex-start', 
-        padding: collapsed ? '0 0 1rem' : '0 0.75rem 0.75rem',
-        marginBottom: '0.25rem'
+      <style>{`
+        .sb-link a:hover { 
+          background: #F8FAFC !important; 
+          color: #0F172A !important;
+        }
+        .sb-link a.active:hover {
+          background: #F1F5F9 !important;
+        }
+        .sb-toggle:hover { background: #F8FAFC !important; color: #0F172A !important; }
+      `}</style>
+
+      <div style={{
+        display: 'flex',
+        justifyContent: collapsed ? 'center' : 'flex-end',
+        padding: collapsed ? '2px 0 6px' : '2px 10px 6px',
       }}>
-        <button 
+        <button
+          className="sb-toggle"
           onClick={() => setCollapsed(!collapsed)}
-          style={{ 
-            background: 'none', border: 'none', cursor: 'pointer', color: '#000', 
-            padding: '8px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: '#94A3B8', padding: '5px', borderRadius: '5px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 120ms ease, color 120ms ease',
           }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'none'}
         >
-          <Menu size={20} />
+          {collapsed ? <Menu size={16} /> : <ChevronsLeft size={16} />}
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: collapsed ? '1.25rem' : '0.125rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', flex: 1 }}>
         <SidebarSection label="Home" collapsed={collapsed} />
-        <SidebarLink to="/" icon={LayoutDashboard} label="Dashboard" end collapsed={collapsed} />
+        <div className="sb-link"><SidebarLink to="/" icon={LayoutDashboard} label="Dashboard" end collapsed={collapsed} /></div>
 
         <SidebarSection label="Supply Chain" collapsed={collapsed} />
-        <SidebarLink to="/risks" icon={ShieldAlert} label="Risks" badge={riskBadge} collapsed={collapsed} />
-        <SidebarLink to="/companies" icon={Building2} label="Suppliers" collapsed={collapsed} />
-        <SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Tier 2 Dependencies" collapsed={collapsed} />
-        <SidebarLink to="/disruptions" icon={Activity} label="Disruptions" badge={activeDisruptions} collapsed={collapsed} />
-        <SidebarLink to="/actions" icon={ClipboardList} label="Pending Actions" badge={pendingActions} collapsed={collapsed} />
-        <SidebarLink to="/activity" icon={History} label="Activity Log" collapsed={collapsed} />
+        <div className="sb-link"><SidebarLink to="/risks" icon={ShieldAlert} label="Risks" badge={riskBadge} collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/companies" icon={Building2} label="Suppliers" collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Tier 2 Dependencies" collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/disruptions" icon={Activity} label="Disruptions" badge={activeDisruptions} collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/actions" icon={ClipboardList} label="Pending Actions" badge={pendingActions} collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/activity" icon={History} label="Activity Log" collapsed={collapsed} /></div>
 
-        {!collapsed && <div style={{ margin: '1.5rem 0.5rem 0', height: '1px', background: 'var(--border)' }} />}
+        {!collapsed && <div style={{ margin: '10px 14px', height: '1px', background: '#E2E8F0' }} />}
 
         <SidebarSection label="App" collapsed={collapsed} />
-        <SidebarLink to="/settings" icon={Settings} label="Settings" collapsed={collapsed} />
-        <SidebarLink to="/help" icon={HelpCircle} label="Help" collapsed={collapsed} />
+        <div className="sb-link"><SidebarLink to="/settings" icon={Settings} label="Settings" collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/help" icon={HelpCircle} label="Help" collapsed={collapsed} /></div>
       </div>
 
-      {/* Footer Status */}
       {!collapsed && (
-        <div style={{ marginTop: 'auto', paddingTop: '1.5rem' }}>
-          <div style={{ 
-            padding: '1rem', background: 'var(--bg-hover)', borderRadius: '8px', border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', gap: '0.75rem'
-          }}>
+        <div style={{ padding: '10px 16px', borderTop: '1px solid #E2E8F0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div style={{ 
-              width: '8px', height: '8px', borderRadius: '50%', background: '#16a34a', 
-              boxShadow: '0 0 0 3px rgba(22,163,74,0.1)'
+              width: 6, height: 6, borderRadius: '50%', 
+              background: '#10B981',
+              boxShadow: '0 0 4px #10B981',
+              animation: 'dash-pulse 2s ease-in-out infinite'
             }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#000' }}>System Live</span>
-              <span style={{ fontSize: '0.625rem', color: 'var(--ink-4)', fontWeight: 500 }}>V1.4.2 Connected</span>
-            </div>
-            <Activity size={14} color="var(--ink-4)" style={{ marginLeft: 'auto' }} />
+            <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 500 }}>
+              System Live
+            </span>
+            <span style={{
+              fontSize: '0.5625rem', color: '#CBD5E1',
+              fontVariantNumeric: 'tabular-nums', marginLeft: 'auto',
+            }}>
+              v1.4.2
+            </span>
           </div>
+        </div>
+      )}
+
+      {collapsed && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0' }}>
+          <div style={{ 
+            width: 6, height: 6, borderRadius: '50%', 
+            background: '#10B981',
+            boxShadow: '0 0 4px #10B981',
+            animation: 'dash-pulse 2s ease-in-out infinite'
+          }} />
         </div>
       )}
     </aside>

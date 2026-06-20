@@ -26,11 +26,15 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     """
     # Database
     db_status = "ok"
+    db_error = None
     try:
         # If the DB host is unreachable, this can otherwise hang the request.
         await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=2)
-    except Exception:
+    except Exception as e:
+        from app.core.logging import logger
+        logger.error(f"Database health check query failed: {e}", exc_info=True)
         db_status = "error"
+        db_error = str(e)
 
     # Bedrock — check if AWS creds are configured (no actual call)
     bedrock_status = "ok"
@@ -81,6 +85,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         "status": overall,
         "service": "supplysense-api",
         "database": db_status,
+        "db_error": db_error,
         "bedrock": bedrock_status,
         "strands_agents": strands_status,
         "synthetic_engine": synthetic_status,

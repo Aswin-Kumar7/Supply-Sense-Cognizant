@@ -11,7 +11,9 @@ venv/
 build/
 *.pyo
 *.pyd
+.agents
 .pytest_cache/
+skills-lock.json
 .mypy_cache/
 .ruff_cache/
 htmlcov/

@@ -76,7 +76,7 @@ async def _save_to_db(key: str, result: object) -> None:
             session.add(AnalysisCache(
                 cache_key=key,
                 result_json=result_json,
-                generated_at=datetime.now(timezone.utc),
+                generated_at=datetime.now(timezone.utc).replace(tzinfo=None),
             ))
             await session.commit()
         logger.info(f"procurement cache: persisted '{key}' to DB")

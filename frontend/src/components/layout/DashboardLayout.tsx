@@ -32,9 +32,9 @@ export function DashboardLayout() {
 
   return (
     <GlobalSyncContext.Provider value={sync}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-app)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: '#FFFFFF' }}>
         <TopBar />
-        
+
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
           <main
@@ -43,7 +43,10 @@ export function DashboardLayout() {
               flex: 1,
               overflowY: 'auto',
               overflowX: 'hidden',
-              padding: '2rem',
+              padding: '32px 40px',
+              background: '#FAFAFC',
+              backgroundImage: 'radial-gradient(rgba(15, 23, 42, 0.03) 1.5px, transparent 1.5px)',
+              backgroundSize: '24px 24px',
             }}
           >
             <FallbackApprovalBanner />

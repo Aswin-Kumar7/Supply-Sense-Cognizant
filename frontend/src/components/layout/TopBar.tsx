@@ -2,10 +2,9 @@ import { useState, useEffect, memo } from 'react'
 import { useSync } from '../../hooks/useGlobalSync'
 import { useSSE } from '../../hooks/useSSE'
 import { useHealth } from '../../hooks/useQueries'
-import { RefreshCcw, ShieldCheck, Zap, Clock, User } from 'lucide-react'
+import { RefreshCcw, Zap, User } from 'lucide-react'
 import type { HealthStatus } from '../../types'
 
-/* ── Live clock ─────────────────────────────────────────────────────── */
 const LiveClock = memo(function LiveClock() {
   const [time, setTime] = useState(new Date())
   useEffect(() => {
@@ -13,181 +12,168 @@ const LiveClock = memo(function LiveClock() {
     return () => clearInterval(id)
   }, [])
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#000', fontWeight: 600 }}>
-      <Clock size={14} color="var(--ink-4)" />
-      <span style={{ fontSize: '0.8125rem', fontFamily: 'JetBrains Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>
-        {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-      </span>
-    </div>
+    <span style={{
+      fontSize: '0.75rem',
+      fontFamily: "'Inter', system-ui, sans-serif",
+      fontVariantNumeric: 'tabular-nums',
+      color: '#64748B',
+    }}>
+      {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+    </span>
   )
 })
 
-/* ── Health indicator ──────────────────────────────────────────────── */
 function HealthStatusPill({ health }: { health: HealthStatus | undefined }) {
   const [open, setOpen] = useState(false)
   const ok = health?.status === 'healthy'
-  
+
   return (
     <div style={{ position: 'relative' }}>
-      <div 
-        onMouseEnter={() => setOpen(true)}
+      <div
         onMouseLeave={() => setOpen(false)}
-        style={{ 
-          display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '6px 12px', 
-          background: '#fff', border: '1px solid var(--border)', borderRadius: '6px', cursor: 'pointer'
+        style={{
+          display: 'flex', alignItems: 'center', gap: '5px',
+          padding: '4px 8px',
+          background: ok ? 'rgba(16, 185, 129, 0.05)' : 'rgba(245, 158, 11, 0.05)',
+          border: ok ? '1px solid rgba(16, 185, 129, 0.15)' : '1px solid rgba(245, 158, 11, 0.15)',
+          borderRadius: '4px', cursor: 'pointer',
+          transition: 'background 150ms ease, border-color 150ms ease',
         }}
+        onMouseEnter={() => setOpen(true)}
       >
-        <ShieldCheck size={14} color={ok ? '#16a34a' : '#d97706'} />
-        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
-          API {ok ? 'Healthy' : 'Degraded'}
+        <div style={{ 
+          width: 5, 
+          height: 5, 
+          borderRadius: '50%', 
+          background: ok ? '#10B981' : '#F59E0B',
+          boxShadow: ok ? '0 0 4px rgba(16, 185, 129, 0.4)' : '0 0 4px rgba(245, 158, 11, 0.4)'
+        }} />
+        <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: ok ? '#059669' : '#D97706' }}>
+          API
         </span>
       </div>
-      
+
       {open && health && (
-        <div style={{ 
-          position: 'absolute', top: '110%', right: 0, width: '200px', background: '#fff', 
-          border: '1px solid #000', borderRadius: '4px', boxShadow: 'var(--shadow-lg)', zIndex: 100, padding: '1rem'
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: '180px',
+          background: '#FFFFFF', border: '1px solid #E2E8F0',
+          borderRadius: '8px', boxShadow: '0 4px 20px rgba(15, 23, 42, 0.08)',
+          zIndex: 100, padding: '10px 12px',
         }}>
-          <div style={{ fontSize: '0.625rem', fontWeight: 800, color: 'var(--ink-4)', textTransform: 'uppercase', marginBottom: '0.75rem' }}>Subsystems</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {[
-              { label: 'DB', val: health.database },
-              { label: 'AI', val: health.bedrock },
-              { label: 'AGENTS', val: health.strands_agents }
-            ].map(s => (
-              <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                <span style={{ color: 'var(--ink-3)', fontWeight: 500 }}>{s.label}</span>
-                <span style={{ color: s.val === 'ok' ? '#16a34a' : '#d97706', fontWeight: 700 }}>{s.val.toUpperCase()}</span>
-              </div>
-            ))}
+          <div style={{ fontSize: '0.625rem', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            Subsystems
           </div>
+          {[
+            { label: 'Database', val: health.database },
+            { label: 'AI / Bedrock', val: health.bedrock },
+            { label: 'Agents', val: health.strands_agents },
+          ].map(s => (
+            <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', padding: '4px 0' }}>
+              <span style={{ color: '#64748B' }}>{s.label}</span>
+              <span style={{ color: s.val === 'ok' ? '#059669' : '#D97706', fontWeight: 600, fontSize: '0.6875rem' }}>{s.val}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-/* ── Refresh button ───────────────────────────────────────────────── */
-function RefreshButton() {
-  const { canRefresh, isRefreshing, forceRefresh, cooldownRemaining, lastSyncedLabel } = useSync()
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-      <div style={{ textAlign: 'right' }}>
-        <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase' }}>Last Sync</div>
-        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#000', fontFamily: 'JetBrains Mono' }}>{lastSyncedLabel}</div>
-      </div>
-      <button
-        onClick={forceRefresh}
-        disabled={!canRefresh}
-        style={{
-          display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '8px 16px',
-          background: '#fff', border: '1px solid #000', borderRadius: '6px',
-          color: '#000', fontSize: '0.75rem', fontWeight: 700, cursor: canRefresh ? 'pointer' : 'not-allowed',
-          opacity: canRefresh ? 1 : 0.5, transition: 'all 200ms'
-        }}
-        onMouseEnter={e => { if (canRefresh) { e.currentTarget.style.background = '#000'; e.currentTarget.style.color = '#fff' } }}
-        onMouseLeave={e => { if (canRefresh) { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#000' } }}
-      >
-        <RefreshCcw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-        {isRefreshing ? 'Syncing' : cooldownRemaining > 0 ? `${cooldownRemaining}s` : 'Refresh Engine'}
-      </button>
-    </div>
-  )
-}
-
-/* ── SSE Status ───────────────────────────────────────────────────── */
 function SSEStatus() {
   const { connectionStatus } = useSSE({ maxEvents: 1 })
   const isLive = connectionStatus === 'connected'
-  
+
   return (
-    <div style={{ 
-      display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '6px 12px', 
-      background: isLive ? '#f0fdf4' : 'var(--bg-hover)', border: `1px solid ${isLive ? '#dcfce7' : 'var(--border)'}`, borderRadius: '6px'
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '5px',
+      padding: '4px 8px',
+      background: isLive ? 'rgba(16, 185, 129, 0.05)' : 'rgba(148, 163, 184, 0.05)',
+      border: isLive ? '1px solid rgba(16, 185, 129, 0.15)' : '1px solid rgba(148, 163, 184, 0.15)',
+      borderRadius: '4px',
     }}>
-      <Zap size={14} color={isLive ? '#16a34a' : 'var(--ink-4)'} fill={isLive ? '#16a34a' : 'none'} />
-      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isLive ? '#16a34a' : 'var(--ink-4)', textTransform: 'uppercase' }}>
+      <Zap size={10} style={{ color: isLive ? '#10B981' : '#94A3B8' }} fill={isLive ? '#10B981' : 'none'} />
+      <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: isLive ? '#059669' : '#64748B' }}>
         {isLive ? 'Live' : 'Offline'}
       </span>
     </div>
   )
 }
 
-/* ── Logo ─────────────────────────────────────────────────────────── */
-function Logo() {
+function RefreshButton() {
+  const { canRefresh, isRefreshing, forceRefresh, cooldownRemaining, lastSyncedLabel } = useSync()
+
   return (
-    <div style={{ position: 'relative', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {/* Background Frame */}
-      <div style={{ position: 'absolute', inset: 0, background: '#000', borderRadius: '8px' }} />
-      
-      {/* S-Route Logo */}
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ zIndex: 1 }}>
-        {/* The S Curve */}
-        <path 
-          d="M18 6C12 6 6 6 6 10C6 14 18 10 18 14C18 18 12 18 6 18" 
-          stroke="#fff" 
-          strokeWidth="2.5" 
-          strokeLinecap="round" 
-          strokeLinejoin="round"
-        />
-        
-        {/* Origin Node */}
-        <circle cx="18" cy="6" r="2.25" fill="#fff" />
-        
-        {/* Destination Node */}
-        <circle cx="6" cy="18" r="2.25" fill="#fff" />
-      </svg>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <span style={{ fontSize: '0.6875rem', color: '#94A3B8', fontVariantNumeric: 'tabular-nums' }}>
+        {lastSyncedLabel}
+      </span>
+      <button
+        onClick={forceRefresh}
+        disabled={!canRefresh}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '5px',
+          padding: '5px 10px',
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: '6px',
+          color: '#334155',
+          fontSize: '0.75rem', fontWeight: 500,
+          cursor: canRefresh ? 'pointer' : 'not-allowed',
+          opacity: canRefresh ? 1 : 0.4,
+          transition: 'all 120ms ease',
+        }}
+        onMouseEnter={e => { if (canRefresh) { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.borderColor = '#CBD5E1'; } }}
+        onMouseLeave={e => { if (canRefresh) { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#E2E8F0'; } }}
+      >
+        <RefreshCcw size={12} style={{ animation: isRefreshing ? 'topbar-spin 0.7s linear infinite' : 'none', color: '#334155' }} />
+        {isRefreshing ? 'Syncing' : cooldownRemaining > 0 ? `${cooldownRemaining}s` : 'Refresh'}
+      </button>
+      <style>{`@keyframes topbar-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
 
-/* ── TopBar ─────────────────────────────────────────────────────────── */
 export function TopBar() {
   const { data: health } = useHealth()
 
   return (
     <header style={{
-      height: '72px',
-      background: '#fff',
-      borderBottom: '1px solid var(--border)',
+      height: '52px',
+      background: 'rgba(255, 255, 255, 0.85)',
+      backdropFilter: 'blur(12px)',
+      borderBottom: '1px solid rgba(226, 232, 240, 0.8)',
       display: 'flex',
       alignItems: 'center',
-      padding: '0 2rem',
-      gap: '2rem',
+      padding: '0 20px',
+      gap: '12px',
       flexShrink: 0,
       zIndex: 50,
     }}>
-      {/* Brand Cluster */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-        <Logo />
-        <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#000', letterSpacing: '-0.04em' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexShrink: 0 }}>
+        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>
           SupplySense
+        </span>
+        <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: '#94A3B8' }}>
+          by Cognizant
         </span>
       </div>
 
       <div style={{ flex: 1 }} />
 
-      {/* System Control Cluster */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <SSEStatus />
-          <HealthStatusPill health={health} />
-        </div>
-        
-        <div style={{ width: '1px', height: '32px', background: 'var(--border)' }} />
-        
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <SSEStatus />
+        <HealthStatusPill health={health} />
+        <div style={{ width: '1px', height: '18px', background: '#E2E8F0', margin: '0 4px' }} />
         <RefreshButton />
-        
-        <div style={{ width: '1px', height: '32px', background: 'var(--border)' }} />
-        
+        <div style={{ width: '1px', height: '18px', background: '#E2E8F0', margin: '0 4px' }} />
         <LiveClock />
-        
+        <div style={{ width: '1px', height: '18px', background: '#E2E8F0', margin: '0 4px' }} />
         <div style={{
-          width: '36px', height: '36px', borderRadius: '50%', background: '#000',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff'
+          width: '28px', height: '28px', borderRadius: '50%',
+          background: '#F1F5F9',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <User size={18} />
+          <User size={13} style={{ color: '#64748B' }} />
         </div>
       </div>
     </header>
