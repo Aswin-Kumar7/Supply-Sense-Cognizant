@@ -4,6 +4,16 @@ export default {
   theme: {
     extend: {
       colors: {
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        card: { DEFAULT: 'var(--card)', foreground: 'var(--card-foreground)' },
+        popover: { DEFAULT: 'var(--popover)', foreground: 'var(--popover-foreground)' },
+        muted: { DEFAULT: 'var(--muted)', foreground: 'var(--muted-foreground)' },
+        accent: { DEFAULT: 'var(--accent)', foreground: 'var(--accent-foreground)' },
+        destructive: 'var(--destructive)',
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
         brand: {
           50:  '#F0F7FF',
           100: '#E0F0FE',
@@ -76,6 +86,15 @@ export default {
         'glow-blue':  '0 0 0 3px rgba(56,172,248,0.2)',
         'glow-red':   '0 0 0 3px rgba(220,38,38,0.12)',
         'inner-sm':   'inset 0 1px 2px rgba(15,23,42,0.03)',
+      },
+      borderColor: {
+        DEFAULT: 'var(--border)',
+      },
+      ringColor: {
+        DEFAULT: 'var(--ring)',
+      },
+      outlineColor: {
+        DEFAULT: 'var(--ring)',
       },
       borderRadius: {
         DEFAULT: '0.75rem',

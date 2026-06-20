@@ -30,6 +30,14 @@ export interface SupplierListResponse {
   total: number
 }
 
+export interface SupplierDependency {
+  id: string
+  supplier_id: string
+  depends_on_id: string
+  dependency_type: string
+  criticality: number
+}
+
 // ============ SKU Domain ============
 
 export interface SKURisk {

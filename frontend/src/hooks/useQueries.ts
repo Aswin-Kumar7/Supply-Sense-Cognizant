@@ -108,3 +108,11 @@ export function useHealth() {
     refetchInterval: 30_000,
   })
 }
+
+export function useSupplierDependencies() {
+  return useQuery({
+    queryKey: queryKeys.supplierDependencies,
+    queryFn: () => concurrencyLimitedFetch(() => api.getSupplierDependencies()),
+    staleTime: staleTimes.static,
+  })
+}

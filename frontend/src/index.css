@@ -69,6 +69,55 @@
   a { text-decoration: none; color: inherit; }
   button { font-family: inherit; }
   input, textarea, select { font-family: inherit; }
+
+  :root {
+    --background: #FFFFFF;
+    --foreground: #0F172A;
+    --card: #FFFFFF;
+    --card-foreground: #0F172A;
+    --popover: #FFFFFF;
+    --popover-foreground: #0F172A;
+    --muted: #F1F5F9;
+    --muted-foreground: #64748B;
+    --accent: #F1F5F9;
+    --accent-foreground: #0F172A;
+    --destructive: #EF4444;
+    --border: #E2E8F0;
+    --input: #E2E8F0;
+    --ring: #94A3B8;
+  }
+
+  .maplibregl-popup-content {
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+  .maplibregl-popup-tip {
+    display: none !important;
+  }
+
+  /* Map controls — override mapcn defaults for visibility */
+  .map-controls-styled > div {
+    border: 1px solid #CBD5E1 !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10) !important;
+    border-radius: 8px !important;
+    overflow: hidden;
+  }
+  .map-controls-styled button {
+    width: 34px !important;
+    height: 34px !important;
+    background: #FFFFFF !important;
+    color: #334155 !important;
+    transition: background 120ms ease !important;
+  }
+  .map-controls-styled button:hover {
+    background: #F1F5F9 !important;
+  }
+  .map-controls-styled button:not(:last-child) {
+    border-bottom: 1px solid #E2E8F0 !important;
+  }
 }
 
 /* ── Component classes ──────────────────────────────────────────────── */
@@ -123,7 +172,6 @@
   .badge-medium   { color: #075985; border-color: #BAE6FD; }
   .badge-low      { color: #166534; border-color: #BBF7D0; }
   .badge-neutral  { color: #475569; border-color: #E2E8F0; }
-
 
   /* Buttons */
   .btn {

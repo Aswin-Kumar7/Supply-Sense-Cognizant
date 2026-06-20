@@ -10,6 +10,7 @@ export const queryKeys = {
   executiveBrief: ['executiveBrief'] as const,
   actionCards: ['actionCards'] as const,
   health: ['health'] as const,
+  supplierDependencies: ['supplierDependencies'] as const,
 }
 
 export const staleTimes = {

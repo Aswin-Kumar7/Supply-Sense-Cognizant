@@ -14,6 +14,7 @@ import type {
   AlternateSuppliersResponse,
   ChatResponse,
   HealthStatus,
+  SupplierDependency,
 } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -115,6 +116,10 @@ export const api = {
   // supplier that doesn't already have an unresolved card. Idempotent.
   syncRisks: () =>
     request<{ synced: number; already_covered: number }>('/actions/sync-risks', { method: 'POST' }),
+
+  // Supplier Dependencies
+  getSupplierDependencies: () =>
+    request<SupplierDependency[]>('/suppliers/dependencies/all'),
 
   // Health
   getHealth: () => request<HealthStatus>('/health'),
