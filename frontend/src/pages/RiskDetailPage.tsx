@@ -7,7 +7,7 @@ import { useWeightedRiskAnalysis, useProcurementCards, useActionCards } from '..
 import {
   LineChart, CloudLightning, ShieldAlert, CalendarDays, Box,
   CheckCircle2, Cpu,
-  Network, ChevronRight, XCircle, Timer, Banknote, Layers,
+  Network, XCircle, Timer, Banknote, Layers,
   TrendingDown
 } from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
@@ -84,7 +84,8 @@ function SignalDataTable({ risk }: { risk: SupplierRiskAnalysis }) {
     const f = factors[key]
     const score = f ? f.value : null
     const fired = score !== null ? score > 0.4 : false
-    return { key, meta, score, fired }
+    const explanation = f ? f.explanation : ''
+    return { key, meta, score, fired, explanation }
   }).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
   return (
@@ -92,32 +93,39 @@ function SignalDataTable({ risk }: { risk: SupplierRiskAnalysis }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
         <thead style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
           <tr>
-            <th style={{ padding: '8px 12px', fontWeight: 600, color: '#4B5563', width: '40%' }}>Signal</th>
-            <th style={{ padding: '8px 12px', fontWeight: 600, color: '#4B5563', width: '20%' }}>Status</th>
-            <th style={{ padding: '8px 12px', fontWeight: 600, color: '#4B5563', width: '40%' }}>Severity</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600, color: '#4B5563', width: '45%' }}>Signal</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600, color: '#4B5563', width: '20%' }}>Status</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600, color: '#4B5563', width: '35%' }}>Severity</th>
           </tr>
         </thead>
         <tbody>
           {signals.map((s, i) => (
-            <tr key={s.key} style={{ borderBottom: i === signals.length - 1 ? 'none' : '1px solid #F3F4F6', background: s.fired ? '#FAFAFA' : '#FFF' }}>
-              <td style={{ padding: '8px 12px', color: '#111827', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: '#9CA3AF' }}>{s.meta.icon}</span>
-                {s.meta.label}
+            <tr key={s.key} className="signal-row" style={{ borderBottom: i === signals.length - 1 ? 'none' : '1px solid #F3F4F6', background: s.fired ? '#FAFAFA' : '#FFF' }}>
+              <td style={{ padding: '12px 12px', verticalAlign: 'top' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#111827', fontWeight: 600 }}>
+                  <span style={{ color: '#9CA3AF', display: 'flex', alignItems: 'center' }}>{s.meta.icon}</span>
+                  {s.meta.label}
+                </div>
+                {s.explanation && (
+                  <div style={{ fontSize: '11px', color: '#64748B', marginTop: '4px', paddingLeft: '22px', lineHeight: 1.4, fontWeight: 400 }}>
+                    {s.explanation}
+                  </div>
+                )}
               </td>
-              <td style={{ padding: '8px 12px' }}>
+              <td style={{ padding: '12px 12px', verticalAlign: 'top' }}>
                 {s.fired ? (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontWeight: 600, padding: '2px 8px', background: '#FEF2F2', borderRadius: '8px' }}>
                     <XCircle size={12} /> Critical
                   </span>
                 ) : (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#6B7280' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#6B7280', padding: '2px 0' }}>
                     Nominal
                   </span>
                 )}
               </td>
-              <td style={{ padding: '8px 12px' }}>
+              <td style={{ padding: '12px 12px', verticalAlign: 'top' }}>
                 {s.score !== null ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                     <div style={{ flex: 1, height: '4px', background: '#E5E7EB', borderRadius: '2px', overflow: 'hidden' }}>
                       <div style={{ width: `${s.score * 100}%`, height: '100%', background: s.fired ? '#DC2626' : '#9CA3AF' }} />
                     </div>
@@ -210,216 +218,277 @@ export default function RiskDetailPage() {
 
   if (isResolved && resolvedCard) {
     return (
-      <div style={{ padding: '32px', maxWidth: '800px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
-        <button onClick={() => navigate('/risks')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px', padding: 0, marginBottom: '24px' }}>
-          ← Back to Registry
+      <div style={{ padding: '40px 24px', maxWidth: '640px', margin: '0 auto', fontFamily: "'Inter', sans-serif" }}>
+        <button onClick={() => navigate('/risks')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, marginBottom: '24px', fontWeight: 600 }}>
+          ← Back to Risks Registry
         </button>
-        <div style={{ border: '1px solid #E5E7EB', background: '#FFF', borderRadius: '16px', padding: '32px', textAlign: 'center' }}>
-          <CheckCircle2 size={32} color="#10B981" style={{ margin: '0 auto 16px' }} />
-          <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 8px' }}>Risk Incident Resolved</h2>
-          <p style={{ fontSize: '13px', color: '#6B7280', margin: '0 0 24px' }}>All action items for {risk?.supplier_name || 'this supplier'} have been completed.</p>
-          <button onClick={() => navigate(`/activity/${resolvedCard.id}`)} style={{ background: '#111827', color: '#FFF', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
+        <div style={{ border: '1px solid #E2E8F0', background: '#FFFFFF', borderRadius: '16px', padding: '40px 32px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 8px 24px rgba(15,23,42,0.03)' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', border: '1px solid #A7F3D0' }}>
+            <CheckCircle2 size={24} color="#059669" />
+          </div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px', color: '#0F172A', letterSpacing: '-0.02em' }}>Risk Incident Resolved</h2>
+          <p style={{ fontSize: '0.875rem', color: '#64748B', margin: '0 0 28px', lineHeight: 1.5 }}>All preventive and corrective action items for <strong style={{ color: '#0F172A' }}>{risk?.supplier_name || 'this supplier'}</strong> have been completed successfully.</p>
+          <button 
+            onClick={() => navigate(`/activity/${resolvedCard.id}`)} 
+            style={{ padding: '10px 20px', fontSize: '0.875rem', background: '#0F172A', color: '#FFFFFF', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+          >
             View Incident Report
           </button>
         </div>
       </div>
     )
   }
-
   const rColor = risk ? RISK_COLORS[risk.risk_level] || RISK_COLORS.medium : RISK_COLORS.medium
 
   return (
     <div style={{ 
-      display: 'flex', flexDirection: 'column', height: '100%', 
-      background: '#FAFAFA', color: '#111827', 
-      fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-      overflowY: 'auto'
+      display: 'flex', flexDirection: 'column', minHeight: '100%', 
+      background: '#F8FAFC', color: '#0F172A', 
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      overflowY: 'auto',
+      animation: 'risk-detail-fade-in 0.3s ease-out'
     }}>
+      <style>{`
+        @keyframes risk-detail-fade-in {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .premium-card {
+          background: #FFFFFF;
+          border: 1px solid #E2E8F0;
+          border-radius: 16px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 8px 24px rgba(15, 23, 42, 0.03);
+          transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .premium-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02), 0 16px 32px rgba(15, 23, 42, 0.06);
+          border-color: #CBD5E1;
+        }
+        .nav-link {
+          color: #64748B;
+          transition: color 150ms ease;
+          text-decoration: none;
+          font-weight: 500;
+        }
+        .nav-link:hover {
+          color: #0F172A;
+        }
+        .action-button {
+          background: #0F172A;
+          color: #FFFFFF;
+          border: none;
+          border-radius: 8px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .action-button:hover {
+          background: #334155;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+        }
+        .action-button:active {
+          transform: translateY(0);
+        }
+        .signal-row {
+          transition: background-color 150ms ease;
+        }
+        .signal-row:hover {
+          background-color: #F8FAFC !important;
+        }
+      `}</style>
       
       {/* ── Top Navigation Bar ────────────────────────────────────────── */}
       <div style={{ 
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-        padding: '12px 24px', background: '#FFF', borderBottom: '1px solid #E5E7EB',
-        position: 'sticky', top: 0, zIndex: 10
+        padding: '14px 24px', background: '#FFF', borderBottom: '1px solid #E2E8F0',
+        position: 'sticky', top: 0, zIndex: 10,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button onClick={() => navigate('/risks')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: '13px', padding: 0, display: 'flex', alignItems: 'center' }}>
-            Risks
-          </button>
-          <ChevronRight size={14} color="#D1D5DB" />
-          <span style={{ fontSize: '14px', fontWeight: 600 }}>{risk?.supplier_name ?? <Skeleton w={120} h={16} />}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
+          <span 
+            onClick={() => navigate('/')} 
+            className="nav-link"
+            style={{ cursor: 'pointer' }}
+          >
+            Dashboard
+          </span>
+          <span>/</span>
+          <span 
+            onClick={() => navigate('/risks')} 
+            className="nav-link"
+            style={{ cursor: 'pointer' }}
+          >
+            Risk Analysis
+          </span>
+          <span>/</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0F172A' }}>{risk?.supplier_name ?? <Skeleton w={120} h={16} />}</span>
           {risk && (
             <span style={{ 
-              fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em',
-              padding: '2px 8px', borderRadius: '8px', background: rColor.bg, color: rColor.text, border: `1px solid ${rColor.border}`
+              fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+              padding: '2px 8px', borderRadius: '20px', background: rColor.bg, color: rColor.text, border: `1px solid ${rColor.border}`,
+              marginLeft: '8px'
             }}>
               {risk.risk_level} Risk
             </span>
           )}
         </div>
+        <button 
+          onClick={() => navigate('/risks')}
+          style={{
+            background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px',
+            padding: '4px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#64748B',
+            cursor: 'pointer', transition: 'all 150ms ease'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#CBD5E1'; e.currentTarget.style.color = '#0F172A' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.color = '#64748B' }}
+        >
+          Back to Registry
+        </button>
       </div>
 
-      <div style={{ padding: '20px 24px', maxWidth: '1400px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
         
         {/* ── Executive Dashboard Strip ─────────────────────────────────── */}
         <div style={{ 
-          display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px',
-          background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px 20px',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px',
+          background: '#FFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 4px 12px rgba(15,23,42,0.015)'
         }}>
           {/* Main Score & Trend */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderRight: '1px solid #E5E7EB', paddingRight: '20px' }}>
-            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', fontWeight: 600 }}>Risk Score</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderRight: '1px solid #F1F5F9', paddingRight: '20px' }}>
+            <div style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748B', fontWeight: 700 }}>Risk Score</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ fontSize: '24px', fontWeight: 700, fontFamily: 'monospace', color: rColor.text, lineHeight: 1 }}>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, fontFamily: "'Inter', monospace", color: rColor.text, lineHeight: 1, letterSpacing: '-0.03em' }}>
                 {risk ? `${(risk.overall_score * 100).toFixed(0)}%` : '--'}
               </div>
               {risk && <SparklineMini supplierId={risk.supplier_id} currentScore={risk.overall_score} color={rColor.text} />}
             </div>
           </div>
           
-          <MetricItem label="Financial Exposure" value={card ? formatINR(card.financial_exposure_inr) : '--'} icon={<Banknote size={14} />} alert={true} />
-          <MetricItem label="Days of Stock Left" value={card ? `${card.days_to_stockout}d` : '--'} icon={<Timer size={14} />} alert={card && card.days_to_stockout < 5} />
-          <MetricItem label="Products at Risk" value={card ? String(card.affected_skus) : '--'} icon={<Box size={14} />} />
-          <MetricItem label="Act Within" value={card ? card.escalation_window : '--'} icon={<TrendingDown size={14} />} />
+          <div style={{ borderRight: '1px solid #F1F5F9', paddingRight: '20px' }}>
+            <MetricItem label="Financial Exposure" value={card ? formatINR(card.financial_exposure_inr) : '--'} icon={<Banknote size={14} />} alert={true} />
+          </div>
+          <div style={{ borderRight: '1px solid #F1F5F9', paddingRight: '20px' }}>
+            <MetricItem label="Days of Stock Left" value={card ? `${card.days_to_stockout}d` : '--'} icon={<Timer size={14} />} alert={card && card.days_to_stockout < 5} />
+          </div>
+          <div style={{ borderRight: '1px solid #F1F5F9', paddingRight: '20px' }}>
+            <MetricItem label="Products at Risk" value={card ? String(card.affected_skus) : '--'} icon={<Box size={14} />} />
+          </div>
+          <div>
+            <MetricItem label="Act Within" value={card ? card.escalation_window : '--'} icon={<TrendingDown size={14} />} />
+          </div>
         </div>
 
         {/* ── Main Layout: 2 Columns ────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr', gap: '20px', alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '24px', alignItems: 'start' }}>
           
-          {/* Left Col: AI Insight & Data Tables */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Left Col: AI Insight & Cascade Network */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
             {/* AI Strategic Assessment */}
             {card && (() => {
-              // Detect fallback: the template always starts with "Supplier risk score indicates"
               const isFallback = card.reasoning?.startsWith('Supplier risk score indicates')
               return (
-              <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                <div style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Cpu size={16} color="#2563EB" />
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>Strategic Assessment</span>
-                  {isFallback ? (
-                    <span style={{ marginLeft: 'auto', fontSize: '10px', fontWeight: 600, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '99px' }}>
-                      ~ Rule-based estimate · AI unavailable
-                    </span>
-                  ) : (
-                    <span style={{ marginLeft: 'auto', fontSize: '10px', fontWeight: 600, color: '#1D4ED8', background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: '99px' }}>
-                      AI-generated
-                    </span>
-                  )}
-                </div>
-                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <div>
-                    <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 8px', color: '#111827' }}>{card.recommended_action}</h3>
-                    <p style={{ fontSize: '13px', color: '#4B5563', lineHeight: 1.5, margin: 0 }}>{card.reasoning}</p>
+                <div className="premium-card" style={{ overflow: 'hidden' }}>
+                  <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Cpu size={16} color="#4F46E5" />
+                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>Strategic Assessment</span>
+                    {isFallback ? (
+                      <span style={{ marginLeft: 'auto', fontSize: '0.625rem', fontWeight: 700, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '20px' }}>
+                        Rule-based Estimate
+                      </span>
+                    ) : (
+                      <span style={{ marginLeft: 'auto', fontSize: '0.625rem', fontWeight: 700, color: '#4F46E5', background: '#EEF2FF', border: '1px solid #C7D2FE', padding: '2px 8px', borderRadius: '20px' }}>
+                        AI Analysis Fired
+                      </span>
+                    )}
                   </div>
+                  <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: '0 0 8px', color: '#0F172A', letterSpacing: '-0.02em' }}>{card.recommended_action}</h3>
+                      <p style={{ fontSize: '0.875rem', color: '#475569', lineHeight: 1.6, margin: 0 }}>{card.reasoning}</p>
+                    </div>
 
-                  {/* Severity + Cost — two clear panels */}
-                  {(() => {
-                    const days = card.days_to_stockout ?? 999
-                    const severity = days <= 3 ? 'critical' : days <= 7 ? 'high' : 'medium'
-                    const severityConfig = {
-                      critical: { label: 'CRITICAL', sub: 'Stock runs out in under 3 days', bg: '#FEF2F2', border: '#FCA5A5', text: '#991B1B', badge: '#DC2626' },
-                      high:     { label: 'HIGH',     sub: `Stock runs out in ${days} days — act before it\'s gone`, bg: '#FFF7ED', border: '#FDBA74', text: '#9A3412', badge: '#EA580C' },
-                      medium:   { label: 'MEDIUM',   sub: `${days} days of stock remaining — monitor closely`, bg: '#FFFBEB', border: '#FDE68A', text: '#92400E', badge: '#D97706' },
-                    }[severity]
-                    const dailyLoss = Math.round((card.financial_exposure_inr ?? 0) * 0.15)
-                    return (
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        {/* Severity panel */}
-                        <div style={{ flex: 1, background: severityConfig.bg, border: `1px solid ${severityConfig.border}`, padding: '12px', borderRadius: '12px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                            <ShieldAlert size={14} color={severityConfig.badge} />
-                            <span style={{ fontSize: '11px', fontWeight: 800, color: severityConfig.badge, letterSpacing: '0.06em' }}>
-                              {severityConfig.label} SEVERITY
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '12px', color: severityConfig.text, lineHeight: 1.5, fontWeight: 500 }}>
-                            {severityConfig.sub}
-                          </div>
-                          <div style={{ fontSize: '11px', color: severityConfig.text, opacity: 0.75, marginTop: '4px' }}>
-                            Act within: <strong>{card.escalation_window || 'immediately'}</strong>
-                          </div>
-                        </div>
-                        {/* Cost of waiting panel */}
-                        <div style={{ flex: 1, background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '12px', borderRadius: '12px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                            <Timer size={14} color="#64748B" />
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                              Cost of Waiting
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A', fontFamily: 'monospace', lineHeight: 1 }}>
-                            ~{formatINR(dailyLoss)}<span style={{ fontSize: '11px', fontWeight: 500, color: '#64748B' }}> / day</span>
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#64748B', marginTop: '4px', lineHeight: 1.4 }}>
-                            estimated loss from SLA penalties + lost sales each day you don't act
-                          </div>
-                          {isFallback && (
-                            <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
-                              ~ estimate · 15% of total exposure
+                    {/* Severity + Cost — two clear panels */}
+                    {(() => {
+                      const days = card.days_to_stockout ?? 999
+                      const severity = days <= 3 ? 'critical' : days <= 7 ? 'high' : 'medium'
+                      const severityConfig = {
+                        critical: { label: 'CRITICAL', sub: 'Stock runs out in under 3 days', bg: '#FEF2F2', border: '#FCA5A5', text: '#991B1B', badge: '#DC2626' },
+                        high:     { label: 'HIGH',     sub: `Stock runs out in ${days} days — urgent intervention required`, bg: '#FFF7ED', border: '#FDBA74', text: '#9A3412', badge: '#EA580C' },
+                        medium:   { label: 'MEDIUM',   sub: `${days} days of stock remaining — monitor parameters`, bg: '#FFFBEB', border: '#FDE68A', text: '#92400E', badge: '#D97706' },
+                      }[severity]
+                      const dailyLoss = Math.round((card.financial_exposure_inr ?? 0) * 0.15)
+                      return (
+                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                          {/* Severity panel */}
+                          <div style={{ flex: 1, minWidth: '200px', background: severityConfig.bg, border: `1px solid ${severityConfig.border}`, padding: '16px', borderRadius: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                              <ShieldAlert size={14} color={severityConfig.badge} />
+                              <span style={{ fontSize: '0.6875rem', fontWeight: 800, color: severityConfig.badge, letterSpacing: '0.06em' }}>
+                                {severityConfig.label} SEVERITY
+                              </span>
                             </div>
-                          )}
+                            <div style={{ fontSize: '0.8125rem', color: severityConfig.text, lineHeight: 1.5, fontWeight: 600 }}>
+                              {severityConfig.sub}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: severityConfig.text, opacity: 0.8, marginTop: '8px' }}>
+                              Window limit: <strong>{card.escalation_window || 'immediate action'}</strong>
+                            </div>
+                          </div>
+                          {/* Cost of waiting panel */}
+                          <div style={{ flex: 1, minWidth: '200px', background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '16px', borderRadius: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                              <Timer size={14} color="#475569" />
+                              <span style={{ fontSize: '0.6875rem', fontWeight: 800, color: '#475569', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                                Cost of Waiting
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A', fontFamily: "'Inter', monospace", lineHeight: 1, letterSpacing: '-0.02em' }}>
+                              ~{formatINR(dailyLoss)}<span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748B' }}> / day</span>
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '8px', lineHeight: 1.4 }}>
+                              Estimated disruption leakage from SLA penalties + unfulfilled customer demand.
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })()}
+                      )
+                    })()}
 
-                  <button
-                    onClick={() => navigate(`/risks/${id}/mitigation`)}
-                    style={{
-                      width: '100%', padding: '10px 16px', background: '#000', color: '#fff',
-                      border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600,
-                      cursor: 'pointer', fontFamily: 'inherit', marginTop: '8px'
-                    }}
-                  >
-                    Explore Solutions →
-                  </button>
+                    <button
+                      onClick={() => navigate(`/risks/${id}/mitigation`)}
+                      className="action-button"
+                      style={{
+                        width: '100%', padding: '12px 20px', fontSize: '0.875rem', marginTop: '4px'
+                      }}
+                    >
+                      Explore Mitigation Solutions →
+                    </button>
+                  </div>
                 </div>
-              </div>
               )
             })()}
 
-            {/* Risk Telemetry */}
-            <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0, color: '#111827' }}>Live Risk Signals</h3>
-                <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Strands Analytics</span>
-              </div>
-              {risk ? <SignalDataTable risk={risk} /> : <Skeleton h={150} />}
+            {/* Cascade Network */}
+            <div className="premium-card" style={{ padding: '20px' }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, margin: '0 0 16px', color: '#0F172A' }}>Cascade Network Impact</h3>
+              <CascadeTree supplierId={id!} />
             </div>
 
           </div>
 
-          {/* Right Col: Deep Dives */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Right Col: Live Risk Signals */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
-            {/* Cascade Network */}
-            <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 16px', color: '#111827' }}>Cascade Network Impact</h3>
-              <CascadeTree supplierId={id!} />
-            </div>
-
-            {/* Contributing Factors */}
-            <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 16px', color: '#111827' }}>What's Driving the Risk</h3>
-              {risk ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {Object.entries(risk.factors ?? {})
-                    .sort(([,a], [,b]) => b.weighted - a.weighted)
-                    .slice(0, 4)
-                    .map(([name, f]) => (
-                    <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#374151', textTransform: 'capitalize' }}>{name.replace(/_/g, ' ')}</span>
-                        <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600, color: '#111827' }}>{(f.value * 100).toFixed(0)}%</span>
-                      </div>
-                      <span style={{ fontSize: '11px', color: '#6B7280', lineHeight: 1.4 }}>{f.explanation}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : <Skeleton h={150} />}
+            {/* Risk Telemetry */}
+            <div className="premium-card" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '0.875rem', fontWeight: 700, margin: 0, color: '#0F172A' }}>Live Risk Signals</h3>
+                <span style={{ fontSize: '0.625rem', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Telemetry Matrix</span>
+              </div>
+              {risk ? <SignalDataTable risk={risk} /> : <Skeleton h={150} />}
             </div>
 
           </div>

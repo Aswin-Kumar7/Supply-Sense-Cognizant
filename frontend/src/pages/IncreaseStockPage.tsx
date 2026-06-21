@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, Package, CheckCircle2, ShoppingCart, Info, TrendingUp, AlertTriangle, ArrowLeft, List, Phone } from 'lucide-react'
+import { CheckCircle2, ShoppingCart, Info, TrendingUp, AlertTriangle, ArrowLeft, List, Phone } from 'lucide-react'
 import { useStockoutForecast, useSuppliers } from '../hooks/useQueries'
 import { queryKeys } from '../hooks/queryKeys'
 import { api } from '../services/api'
@@ -19,9 +19,10 @@ const BUFFER_DAYS   = [14, 21, 30, 45, 60]
 const FREIGHT_MODES = ['Standard road', 'Express courier', 'Air freight', 'Rail', 'Supplier-arranged']
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #D1D5DB',
-  borderRadius: 6, fontSize: '0.8125rem', fontFamily: 'inherit', outline: 'none',
-  boxSizing: 'border-box', color: '#111827', background: '#fff',
+  width: '100%', padding: '0.625rem 0.875rem', border: '1px solid #E2E8F0',
+  borderRadius: 8, fontSize: '0.8125rem', fontFamily: 'inherit', outline: 'none',
+  boxSizing: 'border-box', color: '#0F172A', background: '#FFFFFF',
+  transition: 'border-color 150ms ease, box-shadow 150ms ease',
 }
 
 function Field({ label, required, hint, children, col }: {
@@ -29,10 +30,10 @@ function Field({ label, required, hint, children, col }: {
 }) {
   return (
     <div style={col ? { gridColumn: col } : undefined}>
-      <label style={{ fontSize: '0.5625rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>
-        {label}{required && <span style={{ color: '#DC2626', marginLeft: 2 }}>*</span>}
+      <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: 6 }}>
+        {label}{required && <span style={{ color: '#EF4444', marginLeft: 2 }}>*</span>}
       </label>
-      {hint && <div style={{ fontSize: '0.5625rem', color: '#6B7280', marginBottom: 4, lineHeight: 1.4 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: '0.6875rem', color: '#64748B', marginBottom: 6, lineHeight: 1.4 }}>{hint}</div>}
       {children}
     </div>
   )
@@ -169,19 +170,121 @@ export default function IncreaseStockPage() {
 
   if (done) {
     return (
-      <div style={{ maxWidth: 520, margin: '3rem auto', padding: '0 1rem', textAlign: 'center' }}>
+      <div style={{ maxWidth: 560, margin: '4rem auto', padding: '2.5rem', textAlign: 'center', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', boxShadow: '0 4px 20px -2px rgba(15,23,42,0.05)', fontFamily: "'Inter', sans-serif" }}>
+        <style>{`
+          .btn-action-primary {
+            background: #059669;
+            color: #ffffff;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 120ms ease;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+          }
+          .btn-action-primary:hover {
+            background: #047857;
+            box-shadow: 0 4px 12px rgba(4, 120, 87, 0.15);
+          }
+          .btn-action-primary:active {
+            transform: scale(0.97);
+          }
+          .btn-action-primary:disabled {
+            background: #A7F3D0;
+            cursor: not-allowed;
+          }
+
+          .btn-secondary {
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #E2E8F0;
+            padding: 0.625rem 1.25rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.8125rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 120ms ease;
+          }
+          .btn-secondary:hover {
+            background: #F8FAFC;
+            border-color: #CBD5E1;
+            color: #0F172A;
+          }
+          .btn-secondary:active {
+            transform: scale(0.97);
+          }
+
+          .btn-dark {
+            background: #0F172A;
+            color: #ffffff;
+            border: none;
+            padding: 0.625rem 1.25rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.8125rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 120ms ease;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+          }
+          .btn-dark:hover {
+            background: #1E293B;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+          }
+          .btn-dark:active {
+            transform: scale(0.97);
+          }
+
+          .buffer-pill {
+            padding: 6px 14px;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 120ms ease;
+            font-family: inherit;
+          }
+          .buffer-pill-active {
+            background: #0F172A;
+            color: #ffffff;
+            border: 1px solid #0F172A;
+          }
+          .buffer-pill-inactive {
+            background: #ffffff;
+            color: #475569;
+            border: 1px solid #E2E8F0;
+          }
+          .buffer-pill-inactive:hover {
+            background: #F8FAFC;
+            border-color: #CBD5E1;
+            color: #0F172A;
+          }
+          .buffer-pill:active {
+            transform: scale(0.95);
+          }
+        `}</style>
         <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
           <CheckCircle2 size={32} color="#16a34a" />
         </div>
-        <div style={{ fontSize: '1.125rem', fontWeight: 700, color: '#000', marginBottom: '0.5rem' }}>Safety stock order logged</div>
-        <div style={{ fontSize: '0.8125rem', color: '#6B7280', marginBottom: '2rem', lineHeight: 1.6 }}>
+        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>Safety stock order logged</div>
+        <div style={{ fontSize: '0.875rem', color: '#64748B', marginBottom: '2rem', lineHeight: 1.6, fontWeight: 500 }}>
           Purchase order details saved. The supplier has been removed from the active risk queue.
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button onClick={() => navigate('/activity')} style={{ padding: '0.625rem 1.25rem', background: '#000', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={() => navigate('/activity')} className="btn-dark">
             <List size={14} /> View Activity Log
           </button>
-          <button onClick={() => navigate('/risks')} style={{ padding: '0.625rem 1.25rem', background: '#fff', color: '#000', border: '1px solid #D1D5DB', borderRadius: 8, fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={() => navigate('/risks')} className="btn-secondary">
             <ArrowLeft size={14} /> Back to Risks
           </button>
         </div>
@@ -190,66 +293,191 @@ export default function IncreaseStockPage() {
   }
 
   return (
-    <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div style={{ maxWidth: '1000px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '24px', fontFamily: "'Inter', sans-serif" }}>
+      <style>{`
+        .btn-action-primary {
+          background: #059669;
+          color: #ffffff;
+          border: none;
+          padding: 0.75rem 1.5rem;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 0.875rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          transition: all 120ms ease;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+        }
+        .btn-action-primary:hover {
+          background: #047857;
+          box-shadow: 0 4px 12px rgba(4, 120, 87, 0.15);
+        }
+        .btn-action-primary:active {
+          transform: scale(0.97);
+        }
+        .btn-action-primary:disabled {
+          background: #A7F3D0;
+          cursor: not-allowed;
+        }
 
-      <button onClick={() => {
-        if (isDirty && !window.confirm('You have unsaved changes. Leave anyway?')) return
-        navigate(-1)
-      }} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: '0.8125rem', fontFamily: 'inherit', padding: '4px 0', width: 'fit-content' }}>
-        <ChevronLeft size={14} /> Back to Recovery Options
-      </button>
+        .btn-secondary {
+          background: #ffffff;
+          color: #334155;
+          border: 1px solid #E2E8F0;
+          padding: 0.625rem 1.25rem;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 0.8125rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 120ms ease;
+        }
+        .btn-secondary:hover {
+          background: #F8FAFC;
+          border-color: #CBD5E1;
+          color: #0F172A;
+        }
+        .btn-secondary:active {
+          transform: scale(0.97);
+        }
 
-      {/* Header */}
-      <div style={{ background: '#000', borderRadius: 12, padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 10, background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Package size={22} color="#059669" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Pre-order Safety Stock</div>
-          <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#fff' }}>{supplier?.name ?? '—'}</div>
-          <div style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>
-            Order extra inventory now to build a buffer through the disruption period
+        .btn-dark {
+          background: #0F172A;
+          color: #ffffff;
+          border: none;
+          padding: 0.625rem 1.25rem;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 0.8125rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 120ms ease;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+        }
+        .btn-dark:hover {
+          background: #1E293B;
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+        }
+        .btn-dark:active {
+          transform: scale(0.97);
+        }
+
+        .buffer-pill {
+          padding: 6px 14px;
+          border-radius: 99px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 120ms ease;
+          font-family: inherit;
+        }
+        .buffer-pill-active {
+          background: #0F172A;
+          color: #ffffff;
+          border: 1px solid #0F172A;
+        }
+        .buffer-pill-inactive {
+          background: #ffffff;
+          color: #475569;
+          border: 1px solid #E2E8F0;
+        }
+        .buffer-pill-inactive:hover {
+          background: #F8FAFC;
+          border-color: #CBD5E1;
+          color: #0F172A;
+        }
+        .buffer-pill:active {
+          transform: scale(0.95);
+        }
+      `}</style>
+
+      {/* Enterprise Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: '16px', marginBottom: '8px' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <span 
+              onClick={() => {
+                if (isDirty && !window.confirm('You have unsaved changes. Leave anyway?')) return
+                navigate('/risks')
+              }}
+              style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'color 150ms ease' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+              onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+            >
+              Risks
+            </span>
+            <span style={{ color: '#94A3B8', fontSize: '0.75rem' }}>/</span>
+            <span 
+              onClick={() => {
+                if (isDirty && !window.confirm('You have unsaved changes. Leave anyway?')) return
+                navigate(-1)
+              }}
+              style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'color 150ms ease' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+              onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+            >
+              Recovery Options
+            </span>
+            <span style={{ color: '#94A3B8', fontSize: '0.75rem' }}>/</span>
+            <span style={{ color: '#0F172A', fontSize: '0.75rem', fontWeight: 700 }}>Pre-order Safety Stock</span>
           </div>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1.1, margin: 0 }}>
+            Pre-order Safety Stock
+          </h1>
+          <p style={{ fontSize: '0.875rem', color: '#64748B', marginTop: '6px', marginBottom: 0 }}>
+            Order extra inventory now to build a buffer through the disruption period for <strong>{supplier?.name ?? '—'}</strong>
+          </p>
         </div>
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: '0.45rem', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Est. order value</div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#86EFAC', fontFamily: 'monospace', lineHeight: 1 }}>{formatINR(totalOrderValue)}</div>
-          <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>{effectiveBuffer}-day buffer</div>
+        <div style={{ 
+          padding: '8px 16px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', textAlign: 'right'
+        }}>
+          <div style={{ fontSize: '0.625rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Est. Order Value</div>
+          <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0F172A', fontFamily: 'monospace', lineHeight: 1 }}>{formatINR(totalOrderValue)}</div>
+          <div style={{ fontSize: '0.6875rem', color: '#64748B', marginTop: '4px', fontWeight: 500 }}>{effectiveBuffer}-day buffer</div>
         </div>
       </div>
 
-      {/* What this means */}
-      <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: '0.875rem 1rem', display: 'flex', gap: '0.75rem' }}>
-        <Info size={16} color="#059669" style={{ flexShrink: 0, marginTop: 1 }} />
+      {/* Info Block */}
+      <div style={{ background: '#F0FDF4', border: '1px solid rgba(22, 101, 52, 0.12)', borderRadius: '12px', padding: '16px 20px', display: 'flex', gap: '0.875rem' }}>
+        <Info size={16} color="#059669" style={{ flexShrink: 0, marginTop: 2 }} />
         <div>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534', marginBottom: 4 }}>What pre-ordering safety stock does</div>
-          <p style={{ fontSize: '0.8125rem', color: '#14532D', lineHeight: 1.6, margin: 0 }}>
+          <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#166534', marginBottom: 4 }}>What pre-ordering safety stock does</div>
+          <p style={{ fontSize: '0.8125rem', color: '#14532D', lineHeight: 1.6, margin: 0, fontWeight: 500 }}>
             You place an urgent purchase order for more inventory than normal — enough to cover the disruption plus a buffer. Even if <strong>{supplier?.name}</strong> delays or stops supply, you'll have stock to keep selling. This buys time; it doesn't resolve the root supplier issue.
           </p>
         </div>
       </div>
 
       {/* Buffer selector + order quantity table */}
-      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
-        <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #E5E7EB', background: '#F9FAFB', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <TrendingUp size={14} color="#2563EB" />
-            <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#111827' }}>Products to stock up on</span>
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <div style={{ padding: '1rem', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <TrendingUp size={16} color="#4F46E5" />
+            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>Products to stock up on</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.6875rem', color: '#374151', fontWeight: 500 }}>Buffer target:</span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {BUFFER_DAYS.map(d => (
-                <button
-                  key={d}
-                  onClick={() => { setBufferDays(d); setCustomBuffer('') }}
-                  style={{ padding: '3px 10px', borderRadius: 99, border: `1px solid ${effectiveBuffer === d && customBuffer === '' ? '#2563EB' : '#D1D5DB'}`, background: effectiveBuffer === d && customBuffer === '' ? '#2563EB' : '#fff', color: effectiveBuffer === d && customBuffer === '' ? '#fff' : '#374151', fontSize: '0.6875rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-                >
-                  {d}d
-                </button>
-              ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8125rem', color: '#475569', fontWeight: 600 }}>Buffer target:</span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {BUFFER_DAYS.map(d => {
+                const isSelected = effectiveBuffer === d && customBuffer === ''
+                return (
+                  <button
+                    key={d}
+                    onClick={() => { setBufferDays(d); setCustomBuffer('') }}
+                    className={isSelected ? "buffer-pill buffer-pill-active" : "buffer-pill buffer-pill-inactive"}
+                  >
+                    {d}d
+                  </button>
+                )
+              })}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input
                 type="number"
                 min={1}
@@ -257,36 +485,36 @@ export default function IncreaseStockPage() {
                 value={customBuffer}
                 onChange={e => setCustomBuffer(e.target.value)}
                 placeholder="Custom"
-                style={{ width: 72, padding: '3px 8px', borderRadius: 6, border: `1px solid ${customBuffer ? '#2563EB' : '#D1D5DB'}`, fontSize: '0.6875rem', fontFamily: 'inherit', outline: 'none', color: '#111827', background: '#fff', boxSizing: 'border-box' }}
+                style={{ width: 76, padding: '4px 8px', borderRadius: 6, border: `1px solid ${customBuffer ? '#0F172A' : '#E2E8F0'}`, fontSize: '0.75rem', fontFamily: 'inherit', outline: 'none', color: '#0F172A', background: '#FFFFFF', boxSizing: 'border-box' }}
               />
-              <span style={{ fontSize: '0.625rem', color: '#6B7280' }}>days</span>
+              <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>days</span>
             </div>
           </div>
         </div>
 
         {atRiskSKUs.length === 0 ? (
-          <div style={{ padding: '2rem', textAlign: 'center', color: '#6B7280', fontSize: '0.8125rem' }}>No specific products found in the stockout forecast for this supplier.</div>
+          <div style={{ padding: '3rem 2rem', textAlign: 'center', color: '#64748B', fontSize: '0.875rem', fontWeight: 500 }}>No products found in the stockout forecast for this supplier.</div>
         ) : (
           <>
-            <div style={{ padding: '0.375rem 1rem 0.25rem', display: 'grid', gridTemplateColumns: '2fr 70px 70px 90px 90px 90px', gap: '0 0.5rem' }}>
+            <div style={{ padding: '0.75rem 1rem 0.5rem', display: 'grid', gridTemplateColumns: '2.5fr 1fr 1fr 1.25fr 1.25fr 1.25fr', gap: '0 1rem', borderBottom: '1px solid #F1F5F9' }}>
               {['Product', 'In stock', 'Days left', `Order qty`, 'Unit cost (₹)', 'At risk'].map(h => (
-                <div key={h} style={{ fontSize: '0.4375rem', fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.04em', paddingBottom: '0.375rem', borderBottom: '1px solid #F3F4F6' }}>{h}</div>
+                <div key={h} style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</div>
               ))}
             </div>
             {atRiskSKUs.map(sku => {
               const qty = Math.ceil(sku.adjusted_demand * effectiveBuffer)
               return (
-                <div key={sku.sku_id} style={{ padding: '0.5rem 1rem', display: 'grid', gridTemplateColumns: '2fr 70px 70px 90px 90px 90px', gap: '0 0.5rem', alignItems: 'center', borderBottom: '1px solid #F9FAFB' }}>
+                <div key={sku.sku_id} style={{ padding: '0.875rem 1rem', display: 'grid', gridTemplateColumns: '2.5fr 1fr 1fr 1.25fr 1.25fr 1.25fr', gap: '0 1rem', alignItems: 'center', borderBottom: '1px solid #F1F5F9' }}>
                   <div>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#111827' }}>{sku.sku_name}</div>
-                    <div style={{ fontSize: '0.5rem', color: '#9CA3AF', marginTop: 1 }}>{sku.sku_code} · {Math.round(sku.adjusted_demand)}/day</div>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>{sku.sku_name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: 2, fontWeight: 500 }}>{sku.sku_code} · {Math.round(sku.adjusted_demand)}/day</div>
                   </div>
-                  <div style={{ fontSize: '0.8125rem', color: '#374151' }}>{sku.current_stock.toLocaleString()}</div>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: sku.days_to_stockout <= 3 ? '#DC2626' : sku.days_to_stockout <= 7 ? '#D97706' : '#059669' }}>{sku.days_to_stockout}d</div>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#2563EB' }}>{qty.toLocaleString()} units</div>
+                  <div style={{ fontSize: '0.875rem', color: '#334155', fontWeight: 500 }}>{sku.current_stock.toLocaleString()}</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: sku.days_to_stockout <= 3 ? '#EF4444' : sku.days_to_stockout <= 7 ? '#F59E0B' : '#10B981' }}>{sku.days_to_stockout}d</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#4F46E5' }}>{qty.toLocaleString()} units</div>
                   {/* Unit cost override */}
                   <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: '#6B7280' }}>₹</span>
+                    <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: '0.75rem', color: '#64748B', fontWeight: 650 }}>₹</span>
                     <input
                       type="number"
                       min={0}
@@ -294,28 +522,28 @@ export default function IncreaseStockPage() {
                       onChange={e => setUnitCosts(prev => ({ ...prev, [sku.sku_id]: e.target.value }))}
                       placeholder="—"
                       title="Override unit cost for accurate order value"
-                      style={{ width: '100%', padding: '3px 6px 3px 18px', borderRadius: 5, border: '1px solid #D1D5DB', fontSize: '0.75rem', fontFamily: 'inherit', outline: 'none', color: '#111827', background: '#fff', boxSizing: 'border-box' }}
+                      style={{ width: '100%', padding: '5px 8px 5px 20px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: '0.75rem', fontFamily: 'inherit', outline: 'none', color: '#0F172A', background: '#FFFFFF', boxSizing: 'border-box' }}
                     />
                   </div>
-                  <div style={{ fontSize: '0.8125rem', color: '#374151' }}>{formatINR(sku.revenue_at_risk_inr)}</div>
+                  <div style={{ fontSize: '0.875rem', color: '#0F172A', fontWeight: 700, fontFamily: 'monospace' }}>{formatINR(sku.revenue_at_risk_inr)}</div>
                 </div>
               )
             })}
-            <div style={{ padding: '0.625rem 1rem', background: '#F9FAFB', display: 'flex', justifyContent: 'flex-end', gap: '1.5rem' }}>
-              <span style={{ fontSize: '0.6875rem', color: '#6B7280' }}>Total units to order: <strong style={{ color: '#000' }}>{atRiskSKUs.reduce((s, sku) => s + Math.ceil(sku.adjusted_demand * effectiveBuffer), 0).toLocaleString()}</strong></span>
-              <span style={{ fontSize: '0.6875rem', color: '#6B7280' }}>Est. order value: <strong style={{ color: '#059669' }}>{formatINR(totalOrderValue)}</strong></span>
+            <div style={{ padding: '1rem', background: '#F8FAFC', display: 'flex', justifyContent: 'flex-end', gap: '2rem', borderTop: '1px solid #E2E8F0' }}>
+              <span style={{ fontSize: '0.8125rem', color: '#64748B', fontWeight: 500 }}>Total units to order: <strong style={{ color: '#0F172A', fontWeight: 700 }}>{atRiskSKUs.reduce((s, sku) => s + Math.ceil(sku.adjusted_demand * effectiveBuffer), 0).toLocaleString()}</strong></span>
+              <span style={{ fontSize: '0.8125rem', color: '#64748B', fontWeight: 500 }}>Est. order value: <strong style={{ color: '#10B981', fontWeight: 800 }}>{formatINR(totalOrderValue)}</strong></span>
             </div>
           </>
         )}
       </div>
 
       {/* Supplier contact */}
-      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
-        <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #E5E7EB', background: '#F9FAFB', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Phone size={14} color="#374151" />
-          <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#111827' }}>Supplier contact</span>
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <div style={{ padding: '1rem', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Phone size={16} color="#475569" />
+          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>Supplier Contact</span>
         </div>
-        <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div style={{ padding: '1.25rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
           <Field label="Contact person at supplier">
             <input value={contactPerson} onChange={e => setContactPerson(e.target.value)} placeholder="e.g. Anita Sharma, Key Account Manager" style={inputStyle} />
           </Field>
@@ -329,12 +557,12 @@ export default function IncreaseStockPage() {
       </div>
 
       {/* PO Form */}
-      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
-        <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #E5E7EB', background: '#F9FAFB', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <ShoppingCart size={14} color="#374151" />
-          <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#111827' }}>Purchase Order Details</span>
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <div style={{ padding: '1rem', borderBottom: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ShoppingCart size={16} color="#475569" />
+          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>Purchase Order Details</span>
         </div>
-        <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div style={{ padding: '1.25rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
           <Field label="Order from">
             <select value={orderFrom} onChange={e => setOrderFrom(e.target.value)} style={inputStyle}>
               <option value="">Select…</option>
@@ -365,9 +593,9 @@ export default function IncreaseStockPage() {
               type="date"
               value={deliveryDate}
               onChange={e => setDeliveryDate(e.target.value)}
-              style={{ ...inputStyle, borderColor: deliveryError ? '#DC2626' : deliveryDate ? '#059669' : '#D1D5DB' }}
+              style={{ ...inputStyle, borderColor: deliveryError ? '#EF4444' : deliveryDate ? '#10B981' : '#E2E8F0' }}
             />
-            {deliveryError && <div style={{ fontSize: '0.5625rem', color: '#DC2626', marginTop: 3 }}>{deliveryError}</div>}
+            {deliveryError && <div style={{ fontSize: '0.75rem', color: '#EF4444', marginTop: 4, fontWeight: 500 }}>{deliveryError}</div>}
           </Field>
           <Field label="Lead time confirmed with supplier" hint="Supplier's confirmed days to dispatch">
             <input value={leadTimeConfirmed} onChange={e => setLeadTimeConfirmed(e.target.value)} placeholder="e.g. 7 days from order date" style={inputStyle} />
@@ -397,18 +625,18 @@ export default function IncreaseStockPage() {
       </div>
 
       {submitError && (
-        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '0.625rem 1rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <AlertTriangle size={14} color="#DC2626" />
-          <span style={{ fontSize: '0.75rem', color: '#DC2626', fontWeight: 600 }}>{submitError}</span>
+        <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertTriangle size={16} color="#EF4444" />
+          <span style={{ fontSize: '0.8125rem', color: '#EF4444', fontWeight: 600 }}>{submitError}</span>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-        <button onClick={handleDone} disabled={saving} style={{ padding: '0.75rem 1.5rem', background: '#059669', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.9375rem', cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginTop: '8px' }}>
+        <button onClick={handleDone} disabled={saving} className="btn-action-primary">
           <CheckCircle2 size={18} />
           {saving ? 'Saving…' : 'Confirm & Mark as Done'}
         </button>
-        <span style={{ fontSize: '0.6875rem', color: '#9CA3AF' }}>This will remove the supplier from the active risk queue</span>
+        <span style={{ fontSize: '0.8125rem', color: '#64748B', fontWeight: 500 }}>This will remove the supplier from the active risk queue</span>
       </div>
     </div>
   )

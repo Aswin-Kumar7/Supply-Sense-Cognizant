@@ -8,7 +8,6 @@ import {
   Link as LinkIcon,
   Map,
   Printer,
-  ChevronLeft,
   Activity,
   ShieldCheck,
   CheckCircle2,
@@ -16,22 +15,29 @@ import {
   ChevronUp,
   ExternalLink,
   MessageSquare,
+  RefreshCw,
+  Zap,
+  Shuffle,
+  Scale,
+  FileText,
 } from 'lucide-react'
 import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
 import { useProcurementCards, useActionCards } from '../hooks/useQueries'
 import { useWeightedRiskAnalysis } from '../hooks/useRiskWeights'
-import { Badge } from '../components/ui/Badge'
+
+function Skeleton({ w = '100%', h = 16 }: { w?: string | number; h?: number }) {
+  return <div style={{ width: w, height: h, borderRadius: 8, background: '#E5E7EB', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }} />
+}
 
 import type { SupplierRiskAnalysis, IntelligentActionCard, MitigationSimulation, AlternateSupplierRecord } from '../types'
 
 function formatINR(n: number) {
-  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(1)}Cr`
-  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(1)}L`
+  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(2)}Cr`
+  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(2)}L`
   if (n >= 1_000)      return `₹${(n / 1_000).toFixed(0)}K`
   return `₹${n.toFixed(0)}`
 }
-
 
 const SIGNAL_META: Record<string, { label: string; icon: any }> = {
   delivery_reliability:    { label: 'Reliability',  icon: Truck },
@@ -42,6 +48,13 @@ const SIGNAL_META: Record<string, { label: string; icon: any }> = {
   logistics_vulnerability: { label: 'Logistics',    icon: Map },
 }
 
+const RISK_COLORS: Record<string, { bg: string, border: string, text: string }> = {
+  critical: { bg: '#FEF2F2', border: '#FCA5A5', text: '#DC2626' },
+  high:     { bg: '#FFFBEB', border: '#FDE68A', text: '#D97706' },
+  medium:   { bg: '#EFF6FF', border: '#BFDBFE', text: '#2563EB' },
+  low:      { bg: '#ECFDF5', border: '#A7F3D0', text: '#059669' },
+}
+
 /* ── Why This Score (collapsible) ───────────────────────────────────── */
 function WhyThisScore({ risk }: { risk: SupplierRiskAnalysis }) {
   const [open, setOpen] = useState(false)
@@ -49,25 +62,25 @@ function WhyThisScore({ risk }: { risk: SupplierRiskAnalysis }) {
   const activeSignals = Object.entries(SIGNAL_META).filter(([key]) => (factors[key]?.value ?? 0) > 0)
 
   return (
-    <div style={{ borderTop: '1px solid var(--border)', marginTop: '0.25rem' }}>
+    <div style={{ borderTop: '1px solid #E2E8F0', marginTop: '12px', paddingTop: '8px' }}>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
-          display: 'flex', alignItems: 'center', gap: '0.375rem',
-          width: '100%', padding: '0.5rem 0', background: 'none', border: 'none',
-          cursor: 'pointer', color: 'var(--ink-4)', fontSize: '0.5625rem',
-          fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+          display: 'flex', alignItems: 'center', gap: '6px',
+          width: '100%', padding: '8px 0', background: 'none', border: 'none',
+          cursor: 'pointer', color: '#64748B', fontSize: '0.6875rem',
+          fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
         }}
       >
-        {open ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         Why this score?
-        <span style={{ marginLeft: 'auto', fontSize: '0.5rem', fontWeight: 500 }}>
+        <span style={{ marginLeft: 'auto', fontSize: '0.6875rem', fontWeight: 500, color: '#94A3B8' }}>
           {activeSignals.length} active signal{activeSignals.length !== 1 ? 's' : ''}
         </span>
       </button>
 
       {open && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', paddingBottom: '0.625rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', paddingBottom: '12px', paddingTop: '4px', animation: 'fadeIn 0.2s ease-out' }}>
           {Object.entries(SIGNAL_META).map(([key, meta]) => {
             const val = factors[key]?.value ?? 0
             const explanation = factors[key]?.explanation ?? ''
@@ -78,19 +91,20 @@ function WhyThisScore({ risk }: { risk: SupplierRiskAnalysis }) {
                 key={key}
                 title={explanation}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '0.3rem',
-                  padding: '0.3rem 0.5rem',
-                  background: fired ? '#f0fdf4' : 'var(--bg-hover)',
-                  border: `1px solid ${fired ? '#86efac' : 'var(--border)'}`,
-                  borderRadius: '999px',
-                  opacity: fired ? 1 : 0.45,
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '6px 12px',
+                  background: fired ? '#F0FDF4' : '#F8FAFC',
+                  border: `1px solid ${fired ? '#86EFAC' : '#E2E8F0'}`,
+                  borderRadius: '20px',
+                  opacity: fired ? 1 : 0.6,
+                  transition: 'all 150ms ease',
                 }}
               >
-                <Icon size={10} style={{ color: fired ? '#15803d' : 'var(--ink-4)' }} />
-                <span style={{ fontSize: '0.5625rem', fontWeight: 600, color: fired ? '#15803d' : 'var(--ink-4)' }}>
+                <Icon size={12} style={{ color: fired ? '#16A34A' : '#64748B' }} />
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: fired ? '#15803D' : '#64748B' }}>
                   {meta.label}
                 </span>
-                <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: fired ? '#15803d' : 'var(--ink-4)' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: fired ? '#16A34A' : '#64748B' }}>
                   {(val * 100).toFixed(0)}%
                 </span>
               </div>
@@ -105,53 +119,56 @@ function WhyThisScore({ risk }: { risk: SupplierRiskAnalysis }) {
 /* ── Precise KPI Tile ───────────────────────────────────────────────── */
 function StatBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div style={{
-      background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem',
-      padding: '0.75rem 1rem', boxShadow: 'var(--shadow-sm)'
+    <div className="stat-card" style={{
+      background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px',
+      padding: '16px', boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
+      display: 'flex', flexDirection: 'column', gap: '4px'
     }}>
-      <div style={{ fontSize: '0.5625rem', color: '#71717A', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.375rem', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: '1.125rem', fontWeight: 700, color: color ?? '#000', lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.625rem', color: '#71717A', marginTop: '0.375rem', fontWeight: 500 }}>{sub}</div>}
+      <div style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: color ?? '#0F172A', lineHeight: 1.2, letterSpacing: '-0.02em' }}>{value}</div>
+      {sub && <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px', fontWeight: 500 }}>{sub}</div>}
     </div>
   )
 }
 
 const ACTION_LABELS: Record<string, string> = {
-  switch_supplier:  'Switch to an alternate supplier',
-  increase_stock:   'Pre-order additional safety stock',
-  expedite:         'Expedite current orders',
-  substitute_sku:   'Use substitute products',
+  switch_supplier:  'Switch to alternate supplier',
+  increase_stock:   'Pre-order safety stock buffer',
+  expedite:         'Expedite pending purchase orders',
+  substitute_sku:   'Activate substitute SKU inventory',
+}
+
+const ACTION_ICONS: Record<string, React.ReactNode> = {
+  switch_supplier:  <RefreshCw size={14} style={{ color: '#4F46E5' }} />,
+  increase_stock:   <Package size={14} style={{ color: '#10B981' }} />,
+  expedite:         <Zap size={14} style={{ color: '#F59E0B' }} />,
+  substitute_sku:   <Shuffle size={14} style={{ color: '#EC4899' }} />,
 }
 
 const ACTION_DETAILS: Record<string, {
   what: string
   effect: string
   tradeoff: string
-  icon: string
 }> = {
   switch_supplier: {
-    icon: '🔄',
-    what: 'Stop buying from the current risky supplier and move orders to one of your backup suppliers.',
-    effect: 'Cuts the most risk (60%) because the problem supplier is fully replaced. Your supply chain no longer depends on them.',
-    tradeoff: 'Takes the longest to kick in — new supplier needs lead time to deliver. Best for long-term stability.',
+    what: 'Stop buying from the current high-risk supplier and shift orders to backup suppliers.',
+    effect: 'Cuts maximum risk because the problem supplier is bypassed. Your supply chain no longer depends on them.',
+    tradeoff: 'Longer setup time — alternate supplier needs time to accept PO and ship.',
   },
   increase_stock: {
-    icon: '📦',
-    what: 'Order extra inventory right now so you build a buffer. Even if the supplier delays or fails, you have stock to cover sales.',
-    effect: 'Reduces risk by 40% by buying you more time. Works well when the disruption is expected to be short-term.',
-    tradeoff: 'Ties up cash in warehouse stock. Does not fix the supplier problem — just buys you breathing room.',
+    what: 'Pre-order extra quantities right now to build a physical safety buffer in local warehousing.',
+    effect: 'Reduces risk by 40% by buying you more time. Best for short-term disruption.',
+    tradeoff: 'Ties up working capital and warehouse space. Doesn\'t fix supplier reliability.',
   },
   expedite: {
-    icon: '⚡',
-    what: 'Pay to rush the delivery of orders already in progress. Push the supplier to deliver faster than the normal schedule.',
-    effect: 'Quickest fix — takes effect in 2 days. Reduces risk by 30% by closing the gap between now and stockout.',
-    tradeoff: 'Costs extra for priority delivery. Does not solve the root problem — supplier is still risky after this.',
+    what: 'Rush transit times or expedite processing on orders in progress.',
+    effect: 'Quickest execution path (2 days). Reduces risk by 30% immediately.',
+    tradeoff: 'Extra logistics premiums and rush fees apply. Core issue remains.',
   },
   substitute_sku: {
-    icon: '🔀',
-    what: 'Replace products from this supplier with similar items you already have in stock from other suppliers.',
-    effect: 'Fastest option — works within 1 day. Reduces risk by 25% by removing dependency on the affected products.',
-    tradeoff: 'Customers might notice a product change. Only works if you have genuinely comparable substitutes in stock.',
+    what: 'Switch to a compatible alternate part code or product code currently in stock.',
+    effect: 'Zero lead time alternative. Reduces risk by 25% instantly.',
+    tradeoff: 'Requires technical check and possible pricing adjustment.',
   },
 }
 
@@ -179,25 +196,18 @@ function MitigationOptions({
   const [externalNote, setExternalNote] = useState('')
   const [resolving, setResolving] = useState(false)
   const [resolved, setResolved] = useState(false)
-  // Fix 5/7: guard state updates after unmount
   const isMounted = useRef(true)
+
   useEffect(() => { return () => { isMounted.current = false } }, [])
 
   const bestIdx = sim.options.reduce(
     (best, opt, i) => opt.exposure_reduction_inr > sim.options[best].exposure_reduction_inr ? i : best, 0
   )
 
-  // Fix 4 + supplier-wide resolution:
-  // When the user marks a risk as done, resolve ALL unresolved action cards for that
-  // supplier at once — not just the currently displayed card. This ensures the supplier
-  // immediately disappears from the dashboard and risks page, because resolvedSupplierIds
-  // requires zero unresolved cards per supplier.
   const handleMarkDone = useCallback(async () => {
     if (!actionCard) { setResolved(true); onResolved(); return }
     setResolving(true)
     try {
-      // Use the explicitly clicked option, or fall back to the best option that was
-      // visually shown as pre-selected (black background) when nothing was clicked.
       const effectiveIdx = selected !== null ? selected : bestIdx
       const selectedOpt = sim.options[effectiveIdx]
       const actionLabel = ACTION_LABELS[selectedOpt.action_type] ?? selectedOpt.action_type
@@ -207,11 +217,9 @@ function MitigationOptions({
         externalNote.trim() || null,
       ].filter(Boolean)
       const auditNote = noteParts.length > 0 ? noteParts.join(' — ') : undefined
-      // Resolve ALL cards for this supplier so the supplier clears from the risk list
       await api.resolveAllSupplierCards(supplierId, auditNote)
       if (!isMounted.current) return
       setResolved(true)
-      // Invalidate every shared query so ALL pages reflect the change immediately
       queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
       queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
@@ -224,25 +232,24 @@ function MitigationOptions({
     } finally {
       if (isMounted.current) setResolving(false)
     }
-  }, [actionCard, supplierId, selected, sim.options, showExternal, externalNote, queryClient, onResolved])
+  }, [actionCard, supplierId, selected, sim.options, showExternal, externalNote, queryClient, onResolved, bestIdx])
 
   if (resolved) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2.5rem 1rem', textAlign: 'center', gap: '0.75rem' }}>
-        <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <CheckCircle2 size={26} color="#16a34a" />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 16px', textAlign: 'center', gap: '12px' }}>
+        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #A7F3D0' }}>
+          <CheckCircle2 size={24} color="#059669" />
         </div>
-        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000' }}>Action marked as done</div>
-        <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)' }}>This has been resolved and will no longer appear in pending actions.</div>
+        <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>Action Logged</div>
+        <div style={{ fontSize: '0.8125rem', color: '#64748B', maxWidth: '300px', lineHeight: 1.5 }}>Mitigation plan has been locked and the supplier profile will clear.</div>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.25rem' }}>
-        <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose a solution</span>
-
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+        <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Choose Mitigation Strategy</span>
       </div>
 
       {sim.options.map((opt, i) => {
@@ -253,139 +260,156 @@ function MitigationOptions({
 
         return (
           <div key={i} style={{
-            background: isSelected ? '#000' : isBest && selected === null ? '#000' : '#fff',
-            border: `1px solid ${isSelected ? '#000' : isBest && selected === null ? '#000' : 'var(--border)'}`,
-            borderRadius: '0.5rem', overflow: 'hidden',
-            boxShadow: isSelected || (isBest && selected === null) ? '0 4px 12px rgba(0,0,0,0.15)' : 'var(--shadow-sm)',
-            position: 'relative', transition: 'all 150ms ease',
-            opacity: selected !== null && !isSelected ? 0.45 : 1,
+            background: isSelected ? '#F8F9FF' : '#FFFFFF',
+            border: `1px solid ${isSelected ? '#4F46E5' : '#E2E8F0'}`,
+            borderRadius: '12px', overflow: 'hidden',
+            boxShadow: isSelected ? '0 4px 20px rgba(79, 70, 229, 0.08)' : '0 2px 8px rgba(0, 0, 0, 0.02)',
+            position: 'relative', transition: 'all 250ms cubic-bezier(0.16, 1, 0.3, 1)',
+            opacity: selected !== null && !isSelected ? 0.6 : 1,
           }}>
-            {/* Option header — clickable to select */}
+            {/* Click target wrapper */}
             <div
               onClick={() => {
                 setSelected(i)
                 setShowExternal(false)
                 onOptionSelect(sim.options[i])
               }}
-              style={{ padding: '0.875rem 1rem', cursor: 'pointer' }}
+              style={{ padding: '16px', cursor: 'pointer' }}
             >
               {/* Recommended badge */}
               {(isBest && selected === null) && (
                 <span style={{
-                  position: 'absolute', top: '0.625rem', right: '0.75rem',
-                  fontSize: '0.45rem', fontWeight: 800, padding: '2px 6px', borderRadius: '4px',
-                  background: '#059669', color: '#fff', letterSpacing: '0.05em',
+                  position: 'absolute', top: '16px', right: '16px',
+                  fontSize: '0.625rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px',
+                  background: '#10B981', color: '#FFFFFF', letterSpacing: '0.04em',
                 }}>RECOMMENDED</span>
               )}
 
               {/* Title row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <div style={{
                   width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
-                  border: `2px solid ${isSelected ? '#fff' : 'var(--border)'}`,
-                  background: isSelected ? '#fff' : 'transparent',
+                  border: `2px solid ${isSelected ? '#4F46E5' : '#CBD5E1'}`,
+                  background: 'transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {isSelected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#000' }} />}
+                  {isSelected && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4F46E5' }} />}
                 </div>
-                <span style={{ fontSize: '0.75rem' }}>{ACTION_DETAILS[opt.action_type]?.icon ?? '📋'}</span>
-                <h4 style={{ fontSize: '0.8125rem', fontWeight: 700, color: isSelected || (isBest && selected === null) ? '#fff' : '#000', lineHeight: 1.3, paddingRight: isBest && selected === null ? '5rem' : 0 }}>
+                <span style={{ display: 'flex', alignItems: 'center' }}>
+                  {ACTION_ICONS[opt.action_type] ?? <FileText size={14} style={{ color: '#64748B' }} />}
+                </span>
+                <h4 style={{ 
+                  fontSize: '0.875rem', fontWeight: 800, 
+                  color: '#0F172A', 
+                  lineHeight: 1.3, 
+                  margin: 0,
+                  paddingRight: isBest && selected === null ? '80px' : '0px' 
+                }}>
                   {label}
                 </h4>
               </div>
 
-              {/* Plain-English description */}
+              {/* Description */}
               {ACTION_DETAILS[opt.action_type] && (
-                <div style={{ paddingLeft: '1.5rem', marginBottom: '0.625rem' }}>
-                  <p style={{ fontSize: '0.6875rem', color: isSelected || (isBest && selected === null) ? 'rgba(255,255,255,0.75)' : '#374151', lineHeight: 1.5, margin: '0 0 0.375rem' }}>
+                <div style={{ paddingLeft: '24px', marginBottom: '10px' }}>
+                  <p style={{ fontSize: '0.8125rem', color: '#475569', lineHeight: 1.5, margin: 0 }}>
                     {ACTION_DETAILS[opt.action_type].what}
                   </p>
                 </div>
               )}
 
               {/* 3 key metrics */}
-              <div style={{ paddingLeft: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.375rem' }}>
-                <div style={{ padding: '0.375rem 0.5rem', background: isSelected || (isBest && selected === null) ? 'rgba(134,239,172,0.15)' : '#F0FDF4', borderRadius: '6px', border: `1px solid ${isSelected || (isBest && selected === null) ? 'rgba(134,239,172,0.3)' : '#BBF7D0'}` }}>
-                  <div style={{ fontSize: '0.4375rem', fontWeight: 700, color: isSelected || (isBest && selected === null) ? 'rgba(134,239,172,0.7)' : '#166534', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '1px' }}>Risk you eliminate</div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: isSelected || (isBest && selected === null) ? '#86efac' : '#059669', fontFamily: 'monospace' }}>−{formatINR(opt.exposure_reduction_inr)}</div>
+              <div style={{ paddingLeft: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                <div style={{ 
+                  padding: '8px', 
+                  background: '#F0FDF4', 
+                  borderRadius: '8px', 
+                  border: '1px solid #BBF7D0'
+                }}>
+                  <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#15803D', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Risk Neutralized</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#16A34A', fontFamily: 'monospace' }}>−{formatINR(opt.exposure_reduction_inr)}</div>
                 </div>
-                <div style={{ padding: '0.375rem 0.5rem', background: isSelected || (isBest && selected === null) ? 'rgba(252,165,165,0.12)' : '#FEF2F2', borderRadius: '6px', border: `1px solid ${isSelected || (isBest && selected === null) ? 'rgba(252,165,165,0.3)' : '#FECACA'}` }}>
-                  <div style={{ fontSize: '0.4375rem', fontWeight: 700, color: isSelected || (isBest && selected === null) ? 'rgba(252,165,165,0.7)' : '#991B1B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '1px' }}>Cost to do it</div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: isSelected || (isBest && selected === null) ? '#FCA5A5' : '#DC2626', fontFamily: 'monospace' }}>{formatINR(opt.cost_inr)}</div>
+                <div style={{ 
+                  padding: '8px', 
+                  background: '#FEF2F2', 
+                  borderRadius: '8px', 
+                  border: '1px solid #FECACA'
+                }}>
+                  <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Cost</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#DC2626', fontFamily: 'monospace' }}>{formatINR(opt.cost_inr)}</div>
                 </div>
-                <div style={{ padding: '0.375rem 0.5rem', background: isSelected || (isBest && selected === null) ? 'rgba(255,255,255,0.08)' : '#F9FAFB', borderRadius: '6px', border: `1px solid ${isSelected || (isBest && selected === null) ? 'rgba(255,255,255,0.15)' : 'var(--border)'}` }}>
-                  <div style={{ fontSize: '0.4375rem', fontWeight: 700, color: isSelected || (isBest && selected === null) ? 'rgba(255,255,255,0.4)' : '#6B7280', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '1px' }}>Takes effect in</div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: isSelected || (isBest && selected === null) ? '#fff' : '#111827', fontFamily: 'monospace' }}>{opt.time_to_effect_days}d</div>
+                <div style={{ 
+                  padding: '8px', 
+                  background: '#F8FAFC', 
+                  borderRadius: '8px', 
+                  border: '1px solid #E2E8F0'
+                }}>
+                  <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Lead Time</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#0F172A', fontFamily: 'monospace' }}>{opt.time_to_effect_days}d</div>
                 </div>
               </div>
 
-              {/* Tradeoff note */}
+              {/* Tradeoff */}
               {ACTION_DETAILS[opt.action_type] && (
-                <div style={{ paddingLeft: '1.5rem', marginTop: '0.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.25rem' }}>
-                  <span style={{ fontSize: '0.5625rem', color: isSelected || (isBest && selected === null) ? 'rgba(255,255,255,0.4)' : '#9CA3AF', lineHeight: 1.4 }}>
-                    ⚖ {ACTION_DETAILS[opt.action_type].tradeoff}
+                <div style={{ paddingLeft: '24px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Scale size={12} style={{ color: '#64748B' }} />
+                  <span style={{ fontSize: '0.75rem', color: '#64748B', fontStyle: 'italic' }}>
+                    {ACTION_DETAILS[opt.action_type].tradeoff}
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Expanded action area — only for selected option */}
+            {/* Action flow for selected card */}
             {isSelected && (
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1rem' }}>
-
-                {/* Fix 3: no alternates fallback */}
+              <div style={{ borderTop: '1px solid #E2E8F0', background: '#FFFFFF', padding: '16px' }}>
                 {isSwitch && alternates.length === 0 && !showExternal && (
-                  <div style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.55)', padding: '0.25rem 0 0.625rem' }}>
-                    No alternate suppliers on record for this category. Use "handled externally" below to log what you did.
+                  <div style={{ fontSize: '0.8125rem', color: '#64748B', paddingBottom: '10px' }}>
+                    No backup alternates on file. Use external tracking option below.
                   </div>
                 )}
 
-                {/* switch_supplier: show alternates */}
                 {isSwitch && alternates.length > 0 && !showExternal && (
                   <>
-                    <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
-                      Choose a supplier to switch to
+                    <div style={{ fontSize: '0.6875rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                      Alternate Supplier Options
                     </div>
-                    {/* Fix 5: removed the "I've placed the order" shortcut — it bypassed the full
-                        order pipeline (no PO, no PDF, no audit trail). Users must go through the
-                        supplier detail page → order modal → order summary → return & mark as done.
-                        The "handled externally" path below covers out-of-system orders. */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.625rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
                       {alternates.map(alt => (
                         <button
                           key={alt.alternate_id}
                           onClick={() => navigate(`/alternate-suppliers/${alt.supplier_id}`, { state: { primarySupplierId: supplierId, actionCardId: actionCard?.id } })}
                           style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '0.5rem 0.625rem', background: 'rgba(255,255,255,0.08)',
-                            border: '1px solid rgba(255,255,255,0.15)', borderRadius: '0.375rem',
+                            padding: '10px 14px', background: '#FFFFFF',
+                            border: '1px solid #E2E8F0', borderRadius: '8px',
                             cursor: 'pointer', textAlign: 'left', width: '100%',
+                            transition: 'all 150ms ease'
                           }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)' }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.borderColor = '#CBD5E1' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#E2E8F0' }}
                         >
                           <div>
-                            <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#fff' }}>{alt.supplier_name}</span>
-                            <span style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.45)', marginLeft: '0.375rem' }}>
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0F172A' }}>{alt.supplier_name}</span>
+                            <span style={{ fontSize: '0.75rem', color: '#64748B', marginLeft: '6px' }}>
                               {alt.city} · {(alt.quality_score * 100).toFixed(0)}% quality
                             </span>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', flexShrink: 0 }}>
-                            <span style={{ fontSize: '0.5rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.6875rem', fontWeight: 750, padding: '2px 6px', borderRadius: '4px', background: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
                               +{alt.cost_premium_pct.toFixed(0)}% cost
                             </span>
-                            <ExternalLink size={11} color="rgba(255,255,255,0.4)" />
+                            <ExternalLink size={12} color="#64748B" />
                           </div>
                         </button>
                       ))}
                     </div>
-                    <div style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
-                      Select a supplier above to review details and place an order → you'll be able to mark as done after the order is confirmed.
+                    <div style={{ fontSize: '0.75rem', color: '#64748B', fontStyle: 'italic' }}>
+                      Selecting an alternate will redirect to their profile to complete the supply redirection modal.
                     </div>
                   </>
                 )}
 
-                {/* Non-switch options: go to dedicated action page */}
                 {!isSwitch && !showExternal && (() => {
                   const actionRoutes: Record<string, string> = {
                     expedite:       `/risks/${supplierId}/expedite`,
@@ -397,59 +421,61 @@ function MitigationOptions({
                     <button
                       onClick={() => navigate(route)}
                       style={{
-                        padding: '0.625rem 1.25rem', background: '#059669', color: '#fff', border: 'none',
+                        padding: '10px 18px', background: '#10B981', color: '#FFFFFF', border: 'none',
                         borderRadius: '6px', fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer',
-                        fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', width: 'fit-content',
+                        display: 'flex', alignItems: 'center', gap: '6px', width: 'fit-content',
+                        transition: 'all 150ms ease'
                       }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#059669'}
+                      onMouseLeave={e => e.currentTarget.style.background = '#10B981'}
                     >
-                      Go to Action Page →
+                      Go to Order Execution Page →
                     </button>
                   ) : null
                 })()}
 
-                {/* External handling */}
                 {!showExternal && (
                   <button
                     onClick={() => setShowExternal(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginTop: isSwitch ? '0.375rem' : '0.75rem', fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '12px', fontSize: '0.75rem', color: '#4F46E5', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
                   >
-                    <ExternalLink size={11} /> I handled this outside the system
+                    <ExternalLink size={12} /> Log manual outside-system resolution
                   </button>
                 )}
 
                 {showExternal  && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>
-                      <MessageSquare size={13} /> Add a note (optional)
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', color: '#475569', fontWeight: 600 }}>
+                      <MessageSquare size={14} /> Resolution log note
                     </div>
                     <textarea
                       value={externalNote}
                       onChange={e => setExternalNote(e.target.value)}
-                      placeholder="e.g. Called supplier directly, confirmed order #PO-2024-891…"
+                      placeholder="Enter PO reference or offline deal details here..."
                       rows={2}
                       style={{
-                        width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px',
-                        border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.08)',
-                        color: '#fff', fontSize: '0.75rem', fontFamily: 'inherit', resize: 'none', outline: 'none',
+                        width: '100%', padding: '8px 12px', borderRadius: '8px',
+                        border: '1px solid #E2E8F0', background: '#FFFFFF',
+                        color: '#0F172A', fontSize: '0.8125rem', fontFamily: 'inherit', resize: 'none', outline: 'none',
                         boxSizing: 'border-box',
                       }}
                     />
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '8px' }}>
                       <button
                         onClick={handleMarkDone}
                         disabled={resolving}
                         style={{
-                          padding: '0.5rem 1rem', background: '#059669', color: '#fff', border: 'none',
+                          padding: '8px 16px', background: '#10B981', color: '#FFFFFF', border: 'none',
                           borderRadius: '6px', fontWeight: 700, fontSize: '0.75rem', cursor: resolving ? 'wait' : 'pointer',
-                          fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.375rem',
+                          display: 'flex', alignItems: 'center', gap: '6px',
                         }}
                       >
-                        <CheckCircle2 size={13} />
-                        {resolving ? 'Saving…' : 'Mark as Done'}
+                        <CheckCircle2 size={14} />
+                        {resolving ? 'Logging…' : 'Mark as Done'}
                       </button>
                       <button
                         onClick={() => setShowExternal(false)}
-                        style={{ padding: '0.5rem 0.75rem', background: 'none', border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.6)', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer', fontFamily: 'inherit' }}
+                        style={{ padding: '8px 12px', background: 'none', border: '1px solid #E2E8F0', color: '#64748B', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
                       >
                         Cancel
                       </button>
@@ -466,14 +492,11 @@ function MitigationOptions({
 }
 
 /* ── TFE Visual Comparison ──────────────────────────────────────────── */
-// selectedOption: the option the user has clicked. null = show best-option baseline.
 function TFEComparison({ sim, selectedOption }: {
   sim: MitigationSimulation
   selectedOption: MitigationSimulation['options'][number] | null
 }) {
   const currentExposure = sim.current_exposure_inr
-
-  // Values update in real time as user selects different options
   const exposureReduction = selectedOption ? selectedOption.exposure_reduction_inr : sim.savings_inr
   const actionCost        = selectedOption ? selectedOption.cost_inr              : sim.mitigation_cost_inr
   const residualExposure  = Math.max(0, currentExposure - exposureReduction)
@@ -481,63 +504,59 @@ function TFEComparison({ sim, selectedOption }: {
   const reductionPct      = currentExposure > 0 ? (exposureReduction / currentExposure) * 100 : 0
   const label             = selectedOption
     ? (ACTION_LABELS[selectedOption.action_type] ?? selectedOption.action_type)
-    : 'Best option'
+    : 'Primary recommendation'
 
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '1rem', boxShadow: 'var(--shadow-sm)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-        <h3 style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>If You Take This Action</h3>
-        <span style={{ fontSize: '0.5rem', color: selectedOption ? '#059669' : 'var(--ink-4)', fontWeight: 700, maxWidth: '140px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+    <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <h3 style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>Impact Projection</h3>
+        <span style={{ fontSize: '0.6875rem', color: selectedOption ? '#10B981' : '#64748B', fontWeight: 700, maxWidth: '160px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {label}
         </span>
       </div>
 
       {/* Row 1: current → residual */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
-        <div style={{ padding: '0.625rem 0.75rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '0.375rem' }}>
-          <div style={{ fontSize: '0.5rem', color: '#991B1B', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Money at Risk Now</div>
-          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#DC2626', fontFamily: 'monospace' }}>{formatINR(currentExposure)}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+        <div style={{ padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px' }}>
+          <div style={{ fontSize: '0.625rem', color: '#991B1B', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Current Exposure</div>
+          <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#DC2626', fontFamily: 'monospace' }}>{formatINR(currentExposure)}</div>
         </div>
-        <div style={{ padding: '0.625rem 0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.375rem' }}>
-          <div style={{ fontSize: '0.5rem', color: '#166534', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Money Still at Risk After</div>
-          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#059669', fontFamily: 'monospace', transition: 'all 300ms ease' }}>{formatINR(residualExposure)}</div>
-          <div style={{ fontSize: '0.5rem', color: '#166534', marginTop: '1px' }}>remaining if you take this action</div>
+        <div style={{ padding: '10px 12px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '8px' }}>
+          <div style={{ fontSize: '0.625rem', color: '#166534', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Residual Exposure</div>
+          <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>{formatINR(residualExposure)}</div>
         </div>
       </div>
 
-      {/* Row 2: breakdown — updates per selected option */}
-      <div style={{ padding: '0.625rem 0.75rem', background: '#000', borderRadius: '0.375rem', marginBottom: '0.5rem' }}>
+      {/* Row 2: breakdown */}
+      <div style={{ padding: '12px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Risk Eliminated</div>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'monospace', transition: 'all 300ms ease' }}>{formatINR(exposureReduction)}</div>
+            <div style={{ fontSize: '0.625rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Eliminated</div>
+            <div style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#0F172A', fontFamily: 'monospace' }}>{formatINR(exposureReduction)}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Cost to Execute</div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#FCA5A5', fontFamily: 'monospace', transition: 'all 300ms ease' }}>−{formatINR(actionCost)}</div>
+            <div style={{ fontSize: '0.625rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Cost</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#DC2626', fontFamily: 'monospace' }}>−{formatINR(actionCost)}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Net Benefit</div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: netGain >= 0 ? '#86EFAC' : '#FCA5A5', fontFamily: 'monospace', transition: 'all 300ms ease' }}>{netGain >= 0 ? '+' : '−'}{formatINR(Math.abs(netGain))}</div>
+            <div style={{ fontSize: '0.625rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>Net Yield</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 800, color: netGain >= 0 ? '#16A34A' : '#DC2626', fontFamily: 'monospace' }}>{netGain >= 0 ? '+' : '−'}{formatINR(Math.abs(netGain))}</div>
           </div>
         </div>
       </div>
 
-      {/* Progress bar — animates on option change */}
-      <div style={{ height: '28px', background: 'var(--bg-hover)', borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+      {/* Progress bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '0.725rem', fontWeight: 700, color: '#475569' }}>
+        <span>Mitigation Neutralization</span>
+        <span style={{ color: '#16A34A' }}>{reductionPct.toFixed(0)}% exposure neutralized</span>
+      </div>
+      <div style={{ height: '8px', background: '#F1F5F9', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
         <div style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
           width: `${Math.min(100, reductionPct)}%`,
-          background: 'linear-gradient(90deg, #059669, #34D399)',
+          background: 'linear-gradient(90deg, #10B981, #34D399)',
           transition: 'width 400ms ease',
         }} />
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.5625rem', fontWeight: 700,
-          color: reductionPct > 45 ? '#fff' : '#000',
-        }}>
-          {reductionPct.toFixed(0)}% of total risk eliminated
-        </div>
       </div>
     </div>
   )
@@ -550,11 +569,11 @@ export default function RiskMitigationPlan() {
   const queryClient = useQueryClient()
   const returnState = (location.state as any) ?? {}
   const [resolved, setResolved] = useState(false)
-  // Track which option the user has selected so TFEComparison can reflect it
   const [selectedOption, setSelectedOption] = useState<MitigationSimulation['options'][number] | null>(null)
   const autoResolved = useRef(false)
   const isMounted = useRef(true)
   const navTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     isMounted.current = true
     return () => {
@@ -588,7 +607,8 @@ export default function RiskMitigationPlan() {
   const risk = ((risks as SupplierRiskAnalysis[] | undefined) ?? []).find(r => r.supplier_id === id)
   const card = ((cards as IntelligentActionCard[] | undefined) ?? []).find(c => c.supplier_id === id)
 
-  // If ALL action cards for this supplier are resolved, redirect to resolution summary
+  const rColor = risk ? RISK_COLORS[risk.risk_level] || RISK_COLORS.medium : RISK_COLORS.medium
+
   const supplierActionCards = (actionData?.action_cards ?? []).filter((c: any) => c.supplier_id === id)
   const isSupplierResolved = !resolved
     && supplierActionCards.length > 0
@@ -613,15 +633,12 @@ export default function RiskMitigationPlan() {
   })()
   const actionCard = (actionData?.action_cards ?? []).find(a => a.supplier_id === id && !a.is_resolved)
 
-  // Fix 2: auto-resolve when returning from order summary — resolve ALL supplier cards
-  // so the supplier clears from dashboard/risks page immediately.
   useEffect(() => {
     if (!returnState.orderPlaced || autoResolved.current) return
-    // id (from useParams) is the supplier ID — resolve every card for this supplier
     if (!id) return
     api.resolveAllSupplierCards(id)
       .then(() => {
-        autoResolved.current = true   // mark only after success, not before
+        autoResolved.current = true
         queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
         queryClient.invalidateQueries({ queryKey: queryKeys.risk('all') })
@@ -635,28 +652,52 @@ export default function RiskMitigationPlan() {
           if (isMounted.current) navigate('/risks')
         }, 2000)
       })
-      .catch(() => {
-        // leave autoResolved.current = false so it can retry once on remount
-      })
   }, [returnState.orderPlaced, id, queryClient, navigate])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+    <div style={{ 
+      display: 'flex', flexDirection: 'column', gap: '16px', 
+      maxWidth: '1400px', margin: '0 auto', width: '100%',
+      fontFamily: "'Inter', system-ui, sans-serif"
+    }}>
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .stat-card {
+          transition: transform 150ms ease, box-shadow 150ms ease;
+        }
+        .stat-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04) !important;
+        }
+        .nav-link {
+          color: #64748B;
+          transition: color 150ms ease;
+          text-decoration: none;
+          font-weight: 500;
+        }
+        .nav-link:hover {
+          color: #0F172A;
+        }
+      `}</style>
 
       {/* Order placed banner */}
       {returnState.orderPlaced && (
         <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem',
-          padding: '0.75rem 1rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px',
+          padding: '12px 16px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '12px',
+          animation: 'fadeIn 0.25s ease-out'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-            <CheckCircle2 size={16} color="#16a34a" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <CheckCircle2 size={18} color="#16A34A" />
             <div>
-              <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#166534' }}>
+              <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#166534' }}>
                 Order placed — {returnState.supplierName}
               </div>
-              <div style={{ fontSize: '0.6875rem', color: '#16a34a', marginTop: '1px' }}>
-                {returnState.poNumber} · Marking this risk as resolved…
+              <div style={{ fontSize: '0.75rem', color: '#16A34A', marginTop: '1px' }}>
+                {returnState.poNumber} · Clearing risk profile…
               </div>
             </div>
           </div>
@@ -664,65 +705,108 @@ export default function RiskMitigationPlan() {
       )}
 
       {/* Precision Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button onClick={() => navigate(`/risks/${id}`)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
-            <ChevronLeft size={16} color="#000" />
-          </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: '16px' }}>
+        <div>
+          <div style={{ 
+            fontSize: '0.75rem', 
+            color: '#64748B', 
+            fontWeight: 500, 
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <span 
+              onClick={() => navigate('/')} 
+              className="nav-link"
+              style={{ cursor: 'pointer' }}
+            >
+              Dashboard
+            </span>
+            <span>/</span>
+            <span 
+              onClick={() => navigate('/risks')} 
+              className="nav-link"
+              style={{ cursor: 'pointer' }}
+            >
+              Risk Analysis
+            </span>
+            <span>/</span>
+            <span 
+              onClick={() => navigate(`/risks/${id}`)}
+              className="nav-link"
+              style={{ cursor: 'pointer' }}
+            >
+              {risk?.supplier_name ?? <Skeleton w={120} h={16} />}
+            </span>
+            <span>/</span>
+            <span style={{ color: '#0F172A', fontWeight: 700 }}>Mitigation Plan</span>
+            {risk && (
+              <span style={{ 
+                fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+                padding: '2px 8px', borderRadius: '20px', background: rColor.bg, color: rColor.text, border: `1px solid ${rColor.border}`,
+                marginLeft: '8px'
+              }}>
+                {risk.risk_level} Risk
+              </span>
+            )}
+          </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '2px' }}>
-              <span style={{ fontSize: '0.625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Strategic Mitigation</span>
-              <Badge level={risk?.risk_level ?? 'neutral'} />
-            </div>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#000', letterSpacing: '-0.02em', lineHeight: 1 }}>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.03em', margin: 0, lineHeight: 1.1 }}>
               {risk?.supplier_name ?? '…'}
             </h1>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '0.375rem' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {resolved && (
-            <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#059669', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10B981', display: 'flex', alignItems: 'center', gap: '4px', background: '#ECFDF5', padding: '4px 10px', borderRadius: '20px', border: '1px solid #A7F3D0' }}>
               <CheckCircle2 size={12} /> RESOLVED
             </span>
           )}
-          <button style={{
-            fontSize: '0.6875rem', fontWeight: 700, padding: '0.5rem 0.75rem',
-            background: 'none', border: '1px solid var(--border)', borderRadius: '4px', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '0.25rem'
-          }} onClick={() => window.print()}>
-            <Printer size={12} /> EXPORT
+          <button 
+            style={{
+              fontSize: '0.75rem', fontWeight: 600, padding: '6px 12px',
+              background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '6px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '6px', color: '#64748B',
+              transition: 'all 150ms ease'
+            }} 
+            onClick={() => window.print()}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#CBD5E1'; e.currentTarget.style.color = '#0F172A' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.color = '#64748B' }}
+          >
+            <Printer size={12} /> export
           </button>
         </div>
       </div>
 
       {/* KPI Grid */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
           <StatBox label="Total Exposure" value={card ? formatINR(card.financial_exposure_inr) : '—'} color="#DC2626" />
-          <StatBox label="How Far It Spreads" value={cascade ? `${cascade.max_depth} Tiers` : '—'} sub={`${cascade?.total_affected ?? 0} suppliers affected`} />
+          <StatBox label="Cascade Spread" value={cascade ? `${cascade.max_depth} Tiers` : '—'} sub={`${cascade?.total_affected ?? 0} suppliers impacted`} />
           <StatBox label="Revenue At Risk" value={card ? formatINR(card.financial_exposure_inr * 0.4) : '—'} />
-          <StatBox label="Alert Reliability" value={risk ? `${(risk.confidence * 100).toFixed(0)}%` : '—'} color="#059669" sub="signals in agreement" />
+          <StatBox label="Alert Reliability" value={risk ? `${(risk.confidence * 100).toFixed(0)}%` : '—'} color="#059669" sub="agreement score" />
         </div>
         {risk && <WhyThisScore risk={risk} />}
       </div>
 
       {/* Analysis Suite */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {/* Mitigation Timeline */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)', flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <h3 style={{ fontSize: '0.625rem', fontWeight: 700, color: '#000', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recovery Options</h3>
-              <span style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700 }}>LIVE SIMULATION</span>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '20px', alignItems: 'start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Recovery Options */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>Recovery Options</h3>
+              <span style={{ fontSize: '0.625rem', color: '#10B981', background: '#ECFDF5', padding: '2px 8px', borderRadius: '20px', fontWeight: 700 }}>LIVE SIMULATION</span>
             </div>
             
             {simLoading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.5rem 0' }}>
-                {[1,2,3,4].map(i => <div key={i} className="skeleton" style={{ height: 80, borderRadius: '0.5rem' }} />)}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 0' }}>
+                {[1,2,3,4].map(i => <div key={i} className="skeleton" style={{ height: 80, borderRadius: '12px' }} />)}
               </div>
             ) : !sim ? (
-              <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.8125rem' }}>
-                Could not load recovery options. Try refreshing the page.
+              <div style={{ padding: '32px 16px', textAlign: 'center', color: '#64748B', fontSize: '0.875rem' }}>
+                Could not load recovery options.
               </div>
             ) : (
               <MitigationOptions
@@ -742,18 +826,17 @@ export default function RiskMitigationPlan() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {/* Comparison — updates live as user selects different options */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Comparison */}
           {sim && <TFEComparison sim={sim} selectedOption={selectedOption} />}
 
           {/* Strategic Narrative */}
-          <div style={{ background: '#fff', border: '1px solid #000', borderRadius: '0.5rem', padding: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.5rem' }}>
-              <ShieldCheck size={12} color="#000" />
-              <span style={{ fontSize: '0.5625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#71717A' }}>Why This Matters</span>
-
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+              <ShieldCheck size={14} color="#4F46E5" />
+              <span style={{ fontSize: '0.6875rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748B' }}>Why This Matters</span>
             </div>
-            <p style={{ fontSize: '0.6875rem', lineHeight: 1.5, color: '#000', fontWeight: 400 }}>
+            <p style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: '#334155', fontWeight: 500, margin: 0 }}>
               {card?.executive_summary ?? 'Executing strategic alignment with secondary supply chain networks to neutralize upstream volatility.'}
             </p>
           </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, memo } from 'react'
 import { useSync } from '../../hooks/useGlobalSync'
 import { useSSE } from '../../hooks/useSSE'
 import { useHealth } from '../../hooks/useQueries'
-import { RefreshCcw, Zap, User } from 'lucide-react'
+import { RefreshCcw, Zap } from 'lucide-react'
 import type { HealthStatus } from '../../types'
 
 const LiveClock = memo(function LiveClock() {
@@ -32,23 +32,23 @@ function HealthStatusPill({ health }: { health: HealthStatus | undefined }) {
       <div
         onMouseLeave={() => setOpen(false)}
         style={{
-          display: 'flex', alignItems: 'center', gap: '5px',
-          padding: '4px 8px',
-          background: ok ? 'rgba(16, 185, 129, 0.05)' : 'rgba(245, 158, 11, 0.05)',
-          border: ok ? '1px solid rgba(16, 185, 129, 0.15)' : '1px solid rgba(245, 158, 11, 0.15)',
-          borderRadius: '4px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '4px 10px',
+          background: ok ? 'rgba(16, 185, 129, 0.06)' : 'rgba(245, 158, 11, 0.06)',
+          border: ok ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(245, 158, 11, 0.2)',
+          borderRadius: '6px', cursor: 'pointer',
           transition: 'background 150ms ease, border-color 150ms ease',
         }}
         onMouseEnter={() => setOpen(true)}
       >
         <div style={{ 
-          width: 5, 
-          height: 5, 
+          width: 6, 
+          height: 6, 
           borderRadius: '50%', 
           background: ok ? '#10B981' : '#F59E0B',
-          boxShadow: ok ? '0 0 4px rgba(16, 185, 129, 0.4)' : '0 0 4px rgba(245, 158, 11, 0.4)'
+          boxShadow: ok ? '0 0 6px rgba(16, 185, 129, 0.6)' : '0 0 6px rgba(245, 158, 11, 0.6)'
         }} />
-        <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: ok ? '#059669' : '#D97706' }}>
+        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: ok ? '#059669' : '#D97706' }}>
           API
         </span>
       </div>
@@ -85,14 +85,14 @@ function SSEStatus() {
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: '5px',
-      padding: '4px 8px',
-      background: isLive ? 'rgba(16, 185, 129, 0.05)' : 'rgba(148, 163, 184, 0.05)',
-      border: isLive ? '1px solid rgba(16, 185, 129, 0.15)' : '1px solid rgba(148, 163, 184, 0.15)',
-      borderRadius: '4px',
+      display: 'flex', alignItems: 'center', gap: '6px',
+      padding: '4px 10px',
+      background: isLive ? 'rgba(16, 185, 129, 0.06)' : 'rgba(148, 163, 184, 0.06)',
+      border: isLive ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(148, 163, 184, 0.2)',
+      borderRadius: '6px',
     }}>
-      <Zap size={10} style={{ color: isLive ? '#10B981' : '#94A3B8' }} fill={isLive ? '#10B981' : 'none'} />
-      <span style={{ fontSize: '0.6875rem', fontWeight: 500, color: isLive ? '#059669' : '#64748B' }}>
+      <Zap size={12} strokeWidth={2.5} style={{ color: isLive ? '#10B981' : '#94A3B8' }} fill={isLive ? '#10B981' : 'none'} />
+      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isLive ? '#059669' : '#64748B' }}>
         {isLive ? 'Live' : 'Offline'}
       </span>
     </div>
@@ -111,13 +111,13 @@ function RefreshButton() {
         onClick={forceRefresh}
         disabled={!canRefresh}
         style={{
-          display: 'flex', alignItems: 'center', gap: '5px',
-          padding: '5px 10px',
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '5px 12px',
           background: '#FFFFFF',
           border: '1px solid #E2E8F0',
           borderRadius: '6px',
           color: '#334155',
-          fontSize: '0.75rem', fontWeight: 500,
+          fontSize: '0.75rem', fontWeight: 600,
           cursor: canRefresh ? 'pointer' : 'not-allowed',
           opacity: canRefresh ? 1 : 0.4,
           transition: 'all 120ms ease',
@@ -125,7 +125,7 @@ function RefreshButton() {
         onMouseEnter={e => { if (canRefresh) { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.borderColor = '#CBD5E1'; } }}
         onMouseLeave={e => { if (canRefresh) { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#E2E8F0'; } }}
       >
-        <RefreshCcw size={12} style={{ animation: isRefreshing ? 'topbar-spin 0.7s linear infinite' : 'none', color: '#334155' }} />
+        <RefreshCcw size={12} strokeWidth={2.2} style={{ animation: isRefreshing ? 'topbar-spin 0.7s linear infinite' : 'none', color: '#334155' }} />
         {isRefreshing ? 'Syncing' : cooldownRemaining > 0 ? `${cooldownRemaining}s` : 'Refresh'}
       </button>
       <style>{`@keyframes topbar-spin { to { transform: rotate(360deg); } }`}</style>
@@ -138,42 +138,76 @@ export function TopBar() {
 
   return (
     <header style={{
-      height: '52px',
-      background: 'rgba(255, 255, 255, 0.85)',
-      backdropFilter: 'blur(12px)',
-      borderBottom: '1px solid rgba(226, 232, 240, 0.8)',
+      height: '56px',
+      background: 'rgba(255, 255, 255, 0.75)',
+      backdropFilter: 'blur(16px)',
+      borderBottom: '1px solid rgba(241, 245, 249, 0.8)',
+      boxShadow: '0 1px 3px rgba(15, 23, 42, 0.02), 0 4px 12px rgba(15, 23, 42, 0.01)',
       display: 'flex',
       alignItems: 'center',
-      padding: '0 20px',
-      gap: '12px',
+      padding: '0 24px',
+      gap: '16px',
       flexShrink: 0,
       zIndex: 50,
+      position: 'sticky',
+      top: 0,
     }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexShrink: 0 }}>
-        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.02em' }}>
-          SupplySense
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        <span style={{ 
+          fontSize: '1rem', 
+          fontWeight: 800, 
+          color: 'rgba(15, 23, 42, 1)', 
+          letterSpacing: '-0.03em',
+          display: 'flex',
+          alignItems: 'center',
+        }}>
+          Supply<span style={{ color: 'rgba(15, 23, 42, 1)' }}>Sense</span>
         </span>
-        <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: '#94A3B8' }}>
+        <div style={{ width: '1px', height: '12px', background: '#E2E8F0', margin: '0 4px' }} />
+        <span style={{ 
+          fontSize: '0.625rem', 
+          fontWeight: 700, 
+          color: '#94A3B8', 
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em' 
+        }}>
           by Cognizant
         </span>
       </div>
 
       <div style={{ flex: 1 }} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <SSEStatus />
-        <HealthStatusPill health={health} />
-        <div style={{ width: '1px', height: '18px', background: '#E2E8F0', margin: '0 4px' }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <SSEStatus />
+          <HealthStatusPill health={health} />
+        </div>
+        
+        <div style={{ width: '1px', height: '16px', background: '#F1F5F9', margin: '0 4px' }} />
         <RefreshButton />
-        <div style={{ width: '1px', height: '18px', background: '#E2E8F0', margin: '0 4px' }} />
+        
+        <div style={{ width: '1px', height: '16px', background: '#F1F5F9', margin: '0 4px' }} />
         <LiveClock />
-        <div style={{ width: '1px', height: '18px', background: '#E2E8F0', margin: '0 4px' }} />
+        
+        <div style={{ width: '1px', height: '16px', background: '#F1F5F9', margin: '0 4px' }} />
         <div style={{
-          width: '28px', height: '28px', borderRadius: '50%',
-          background: '#F1F5F9',
+          width: '32px', height: '32px', borderRadius: '50%',
+          background: '#EEF2FF',
+          border: '1px solid rgba(79, 70, 229, 0.08)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <User size={13} style={{ color: '#64748B' }} />
+          cursor: 'pointer',
+          transition: 'all 200ms ease',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = '#E0E7FF'
+          e.currentTarget.style.transform = 'scale(1.04)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = '#EEF2FF'
+          e.currentTarget.style.transform = 'scale(1)'
+        }}
+        >
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#4F46E5' }}>AK</span>
         </div>
       </div>
     </header>

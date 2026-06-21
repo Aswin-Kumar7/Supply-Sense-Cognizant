@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useActionCards, useWeightedRiskAnalysis, useProcurementCards } from '../hooks/useQueries'
 import {
   ShieldAlert, CheckCircle2, ArrowRight, TrendingDown, ShieldCheck,
-  AlertOctagon, Zap, Clock, Banknote
+  AlertOctagon, Clock, Banknote
 } from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
 
@@ -16,10 +16,10 @@ function formatINR(v: number) {
 }
 
 const LEVEL_CONFIG = {
-  critical: { color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', label: 'CRITICAL', icon: AlertOctagon },
-  high:     { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', label: 'HIGH', icon: ShieldAlert },
-  medium:   { color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', label: 'MEDIUM', icon: ShieldAlert },
-  low:      { color: '#059669', bg: '#F0FDF4', border: '#BBF7D0', label: 'LOW', icon: ShieldCheck },
+  critical: { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.12)', label: 'CRITICAL', icon: AlertOctagon },
+  high:     { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.12)', label: 'HIGH', icon: ShieldAlert },
+  medium:   { color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.12)', label: 'MEDIUM', icon: ShieldAlert },
+  low:      { color: '#10B981', bg: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.12)', label: 'LOW', icon: ShieldCheck },
 } as const
 
 /* ── Intelligent Action Card (Pending) ───────────────────────────────── */
@@ -31,67 +31,50 @@ function ActionCard({ risk, card }: { risk: SupplierRiskAnalysis; card: Intellig
   const likelihood = (risk.overall_score * 100).toFixed(0)
 
   return (
-    <div
-      style={{
-        background: '#FFF',
-        border: '1px solid #E5E7EB',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '0 2px 4px -1px rgba(0,0,0,0.05)',
-        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.transform = 'translateY(-2px)'
-        e.currentTarget.style.boxShadow = '0 8px 12px -3px rgba(0,0,0,0.08)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.transform = 'translateY(0)'
-        e.currentTarget.style.boxShadow = '0 2px 4px -1px rgba(0,0,0,0.05)'
-      }}
-    >
+    <div className="action-card">
       {/* Card Header */}
-      <div style={{ background: cfg.bg, padding: '12px 16px', borderBottom: `1px solid ${cfg.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-            <Icon size={14} color={cfg.color} />
-            <span style={{ fontSize: '0.6875rem', fontWeight: 800, color: cfg.color, letterSpacing: '0.05em' }}>
-              {cfg.label} RISK
-            </span>
-          </div>
-          <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#0F172A', margin: 0, letterSpacing: '-0.01em', lineHeight: 1.3 }}>
             {risk.supplier_name}
           </h3>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: cfg.bg, border: cfg.border, padding: '2px 8px', borderRadius: '4px', width: 'fit-content' }}>
+            <Icon size={10} color={cfg.color} />
+            <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: cfg.color, letterSpacing: '0.04em' }}>
+              {cfg.label}
+            </span>
+          </div>
         </div>
-        <div style={{ background: '#FFF', padding: '4px 10px', borderRadius: '6px', border: '1px solid #E5E7EB', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' }}>Exposure</span>
-          <span style={{ fontSize: '0.875rem', fontWeight: 800, color: '#111827', fontFamily: 'monospace' }}>{formatINR(card.financial_exposure_inr)}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 }}>
+          <span style={{ fontSize: '0.5625rem', fontWeight: 500, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Exposure</span>
+          <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', fontFamily: 'monospace' }}>{formatINR(card.financial_exposure_inr)}</span>
         </div>
       </div>
 
+      <div style={{ height: '1px', background: '#F1F5F9', margin: '4px 0' }} />
+
       {/* Card Body */}
-      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
         <div>
-          <h4 style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#374151', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Zap size={12} color="#3B82F6" /> Recommended Action
-          </h4>
-          <p style={{ fontSize: '0.8125rem', color: '#4B5563', lineHeight: 1.4, margin: 0 }}>
+          <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>
+            Recommended Action
+          </span>
+          <p style={{ fontSize: '0.8125rem', color: '#334155', lineHeight: 1.5, margin: 0, fontWeight: 500 }}>
             {card.title || "Review supplier risk profile and formulate mitigation strategy."}
           </p>
         </div>
 
         {/* Threat Metrics */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: '#F9FAFB', padding: '10px', borderRadius: '8px', border: '1px solid #F3F4F6', marginTop: 'auto' }}>
-          <div>
-            <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', marginBottom: '2px' }}>Risk Score</div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#111827' }}>{likelihood}%</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: 'auto' }}>
+          <div style={{ background: '#F8FAFC', padding: '10px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
+            <div style={{ fontSize: '0.5625rem', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Risk Score</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>{likelihood}%</div>
           </div>
-          <div>
-            <div style={{ fontSize: '0.625rem', fontWeight: 700, color: urgent ? '#DC2626' : '#6B7280', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Clock size={10} /> Time to Stockout
+          <div style={{ background: urgent ? 'rgba(239, 68, 68, 0.05)' : '#F8FAFC', padding: '10px', borderRadius: '6px', border: urgent ? '1px solid rgba(239, 68, 68, 0.12)' : '1px solid #E2E8F0' }}>
+            <div style={{ fontSize: '0.5625rem', fontWeight: 600, color: urgent ? '#EF4444' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Clock size={10} /> Est. Stockout
             </div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: urgent ? '#DC2626' : '#111827' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: urgent ? '#EF4444' : '#0F172A' }}>
               {card.days_to_stockout} Days
             </div>
           </div>
@@ -99,31 +82,12 @@ function ActionCard({ risk, card }: { risk: SupplierRiskAnalysis; card: Intellig
       </div>
 
       {/* Action Footer */}
-      <div style={{ padding: '12px 16px', borderTop: '1px solid #E5E7EB', background: '#FAFAFA' }}>
-        <button
-          onClick={() => navigate(`/risks/${risk.supplier_id}`)}
-          style={{
-            width: '100%',
-            padding: '8px',
-            background: '#111827',
-            color: '#F9FAFB',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '0.8125rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            transition: 'background 0.2s'
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = '#374151'}
-          onMouseLeave={e => e.currentTarget.style.background = '#111827'}
-        >
-          Review & Execute <ArrowRight size={14} />
-        </button>
-      </div>
+      <button
+        onClick={() => navigate(`/risks/${risk.supplier_id}`)}
+        className="execute-btn"
+      >
+        Review & Execute <ArrowRight size={12} />
+      </button>
     </div>
   )
 }
@@ -142,47 +106,40 @@ function ResolvedRow({ risk, card, resolvedCardId }: {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '12px 16px',
+        padding: '16px 20px',
         background: '#FFF',
-        border: '1px solid #E5E7EB',
-        borderRadius: '8px',
+        border: '1px solid #E2E8F0',
+        borderRadius: '12px',
         cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+        transition: 'all 200ms ease',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
       }}
-      onMouseEnter={e => {
-        e.currentTarget.style.borderColor = '#10B981'
-        e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.1)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.borderColor = '#E5E7EB'
-        e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)'
-      }}
+      className="resolved-row-hover"
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <CheckCircle2 size={16} color="#10B981" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#ECFDF5', border: '1px solid #A7F3D0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <CheckCircle2 size={16} color="#059669" />
         </div>
         <div>
-          <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#111827', marginBottom: '2px' }}>
+          <div style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#0F172A', marginBottom: '2px' }}>
             {risk.supplier_name}
           </div>
-          <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>
-            Action successfully mitigated
+          <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
+            Mitigation successfully resolved
           </div>
         </div>
       </div>
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '24px', textAlign: 'right' }}>
         <div>
-          <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', marginBottom: '2px' }}>Original Risk</div>
-          <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#374151' }}>{(risk.overall_score * 100).toFixed(0)}%</div>
+          <div style={{ fontSize: '0.625rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Original Risk</div>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#334155' }}>{(risk.overall_score * 100).toFixed(0)}%</div>
         </div>
         <div>
-          <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#10B981', textTransform: 'uppercase', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
-            <Banknote size={10} /> Exposure Mitigated
+          <div style={{ fontSize: '0.625rem', fontWeight: 800, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+            <Banknote size={11} /> Exposure Mitigated
           </div>
-          <div style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#10B981', fontFamily: 'monospace' }}>
+          <div style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>
             {formatINR(card.financial_exposure_inr)}
           </div>
         </div>
@@ -195,14 +152,13 @@ function ResolvedRow({ risk, card, resolvedCardId }: {
 type Filter = 'pending' | 'resolved'
 
 export default function PendingActionsPage() {
+  const navigate = useNavigate()
   const { data: actionData, isLoading: cardsLoading } = useActionCards()
   const { data: risks, isLoading: risksLoading } = useWeightedRiskAnalysis()
   const { data: procCards, isLoading: procLoading } = useProcurementCards()
   const [filter, setFilter] = useState<Filter>('pending')
 
   const isLoading = cardsLoading || risksLoading || procLoading
-
-  // syncRisks is handled centrally in DashboardLayout via useEffect
 
   const procCardMap = useMemo(
     () => new Map((procCards as IntelligentActionCard[] ?? []).map(c => [c.supplier_id, c])),
@@ -275,70 +231,150 @@ export default function PendingActionsPage() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '32px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '32px', fontFamily: "'Inter', sans-serif" }}>
+      <style>{`
+        .action-card {
+          background: #FFFFFF;
+          border: 1px solid #E2E8F0;
+          border-radius: 12px;
+          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+        }
+        .action-card:hover {
+          border-color: #CBD5E1;
+          box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+          transform: translateY(-2px);
+        }
+        .execute-btn {
+          width: 100%;
+          padding: 10px 14px;
+          background: #0F172A;
+          color: #FFFFFF;
+          border: none;
+          border-radius: 6px;
+          font-size: 0.8125rem;
+          font-weight: 600;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          transition: background 150ms ease, transform 100ms ease;
+        }
+        .execute-btn:hover {
+          background: #334155 !important;
+        }
+        .execute-btn:active {
+          transform: scale(0.98);
+        }
+        .resolved-row-hover {
+          transition: all 150ms ease;
+        }
+        .resolved-row-hover:hover {
+          border-color: #10B981 !important;
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.05) !important;
+          transform: translateX(2px);
+        }
+        .tab-btn {
+          transition: all 150ms ease;
+        }
+        .tab-btn:hover {
+          color: #0F172A !important;
+        }
+      `}</style>
+
       {/* Header */}
-      <div>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#111827', margin: '0 0 4px 0' }}>Action Center</h1>
-        <p style={{ fontSize: '0.8125rem', color: '#6B7280', margin: 0 }}>Review system-generated incident tickets and execute mitigation strategies.</p>
+      <div style={{ borderBottom: '1px solid #E2E8F0', paddingBottom: '16px' }}>
+        <div style={{ 
+          fontSize: '0.75rem', 
+          color: '#64748B', 
+          fontWeight: 500, 
+          marginBottom: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}>
+          <span 
+            onClick={() => navigate('/')} 
+            style={{ cursor: 'pointer', transition: 'color 150ms ease' }}
+            onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+            onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+          >
+            Dashboard
+          </span>
+          <span>/</span>
+          <span style={{ color: '#0F172A', fontWeight: 700 }}>Pending Actions</span>
+        </div>
+        
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1.1, margin: 0 }}>
+          Action Center
+        </h1>
+        <p style={{ fontSize: '0.875rem', color: '#64748B', marginTop: '6px', marginBottom: 0 }}>
+          Review system-generated incident tickets and execute mitigation strategies.
+        </p>
       </div>
 
       {/* Summary KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-        <div style={{ background: '#FFF', borderRadius: '12px', border: '1px solid #E5E7EB', padding: '16px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 2px 4px -1px rgba(0,0,0,0.05)' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: '#FEF2F2', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <TrendingDown size={24} color="#DC2626" />
+        <div style={{ background: '#FFFFFF', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '24px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+          <div style={{ width: '42px', height: '42px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <TrendingDown size={20} color="#EF4444" />
           </div>
           <div>
-            <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', marginBottom: '2px' }}>Pending Exposure</div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#DC2626', lineHeight: 1, fontFamily: 'monospace' }}>{formatINR(totalExposure)}</div>
-            <div style={{ fontSize: '0.75rem', color: '#DC2626', marginTop: '4px', fontWeight: 600 }}>
-              Across {activeRisks.length} active incidents
+            <div style={{ fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748B', marginBottom: '2px' }}>Pending Exposure</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 750, color: '#0F172A', lineHeight: 1.1, fontFamily: 'monospace', letterSpacing: '-0.02em' }}>{formatINR(totalExposure)}</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '4px', fontWeight: 500 }}>
+              Across <span style={{ color: '#EF4444', fontWeight: 700 }}>{activeRisks.length}</span> active incidents
             </div>
           </div>
         </div>
 
-        <div style={{ background: '#FFF', borderRadius: '12px', border: '1px solid #E5E7EB', padding: '16px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 2px 4px -1px rgba(0,0,0,0.05)' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: '#F0FDF4', border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <ShieldCheck size={24} color="#10B981" />
+        <div style={{ background: '#FFFFFF', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '24px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+          <div style={{ width: '42px', height: '42px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <ShieldCheck size={20} color="#10B981" />
           </div>
           <div>
-            <div style={{ fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', marginBottom: '2px' }}>Capital Mitigated</div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10B981', lineHeight: 1, fontFamily: 'monospace' }}>{formatINR(totalSaved)}</div>
-            <div style={{ fontSize: '0.75rem', color: '#10B981', marginTop: '4px', fontWeight: 600 }}>
-              Across {resolvedRisks.length} resolved incidents
+            <div style={{ fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748B', marginBottom: '2px' }}>Capital Mitigated</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 750, color: '#0F172A', lineHeight: 1.1, fontFamily: 'monospace', letterSpacing: '-0.02em' }}>{formatINR(totalSaved)}</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '4px', fontWeight: 500 }}>
+              Across <span style={{ color: '#10B981', fontWeight: 700 }}>{resolvedRisks.length}</span> resolved incidents
             </div>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ borderBottom: '1px solid #E5E7EB', display: 'flex', gap: '24px' }}>
+      <div style={{ borderBottom: '1px solid #E2E8F0', display: 'flex', gap: '24px' }}>
         {(['pending', 'resolved'] as Filter[]).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             style={{
-              padding: '0 0 10px 0',
+              padding: '0 0 12px 0',
               background: 'none',
               border: 'none',
-              borderBottom: `2px solid ${filter === f ? '#2563EB' : 'transparent'}`,
-              color: filter === f ? '#111827' : '#6B7280',
+              borderBottom: `2px solid ${filter === f ? '#0F172A' : 'transparent'}`,
+              color: filter === f ? '#0F172A' : '#64748B',
               fontSize: '0.875rem',
-              fontWeight: filter === f ? 700 : 500,
+              fontWeight: filter === f ? 800 : 600,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '8px'
             }}
+            className="tab-btn"
           >
             {f === 'pending' ? 'Incident Tickets' : 'Mitigation Audit Log'}
             <span style={{ 
-              background: filter === f ? '#2563EB' : '#F3F4F6', 
-              color: filter === f ? '#FFF' : '#4B5563', 
+              background: filter === f ? '#0F172A' : '#F1F5F9', 
+              color: filter === f ? '#FFF' : '#475569', 
               padding: '2px 8px', 
               borderRadius: '99px', 
               fontSize: '0.6875rem',
-              fontWeight: 700
+              fontWeight: 800
             }}>
               {f === 'pending' ? activeRisks.length : resolvedRisks.length}
             </span>
@@ -348,16 +384,16 @@ export default function PendingActionsPage() {
 
       {/* Content Area */}
       {isLoading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: '#9CA3AF' }}>Loading Action Center...</div>
+        <div style={{ padding: '40px', textAlign: 'center', color: '#64748B', fontSize: '0.875rem', fontWeight: 500 }}>Loading Action Center...</div>
       ) : filter === 'pending' ? (
         sortedActive.length === 0 ? (
-          <div style={{ padding: '60px', textAlign: 'center', background: '#F9FAFB', borderRadius: '12px', border: '1px dashed #D1D5DB' }}>
-            <ShieldCheck size={40} color="#10B981" style={{ margin: '0 auto 12px' }} />
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#111827', margin: '0 0 6px 0' }}>All Clear</h3>
-            <p style={{ fontSize: '0.8125rem', color: '#6B7280', margin: 0 }}>No pending incidents require your attention at this time.</p>
+          <div style={{ padding: '60px 20px', textAlign: 'center', background: '#FFFFFF', borderRadius: '16px', border: '1px dashed #E2E8F0' }}>
+            <ShieldCheck size={40} color="#059669" style={{ margin: '0 auto 12px', opacity: 0.8 }} />
+            <h3 style={{ fontSize: '1.125rem', fontWeight: 800, color: '#0F172A', margin: '0 0 6px 0' }}>All Clear</h3>
+            <p style={{ fontSize: '0.8125rem', color: '#64748B', margin: 0, fontWeight: 500 }}>No pending incidents require your attention at this time.</p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
             {sortedActive.map(r => (
               <ActionCard key={r.supplier_id} risk={r} card={procCardMap.get(r.supplier_id)!} />
             ))}
@@ -365,9 +401,9 @@ export default function PendingActionsPage() {
         )
       ) : (
         resolvedRisks.length === 0 ? (
-          <div style={{ padding: '60px', textAlign: 'center', background: '#F9FAFB', borderRadius: '12px', border: '1px dashed #D1D5DB' }}>
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#111827', margin: '0 0 6px 0' }}>No Audit History</h3>
-            <p style={{ fontSize: '0.8125rem', color: '#6B7280', margin: 0 }}>There are no resolved mitigations on record yet.</p>
+          <div style={{ padding: '60px 20px', textAlign: 'center', background: '#FFFFFF', borderRadius: '16px', border: '1px dashed #E2E8F0' }}>
+            <h3 style={{ fontSize: '1.125rem', fontWeight: 800, color: '#0F172A', margin: '0 0 6px 0' }}>No Audit History</h3>
+            <p style={{ fontSize: '0.8125rem', color: '#64748B', margin: 0, fontWeight: 500 }}>There are no resolved mitigations on record yet.</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

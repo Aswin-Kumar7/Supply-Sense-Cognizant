@@ -216,98 +216,131 @@ export function FloatingChatWidget() {
           position: 'fixed',
           bottom: '24px',
           right: '24px',
-          width: '56px',
-          height: '56px',
-          borderRadius: '28px',
-          background: '#111827',
+          width: '48px',
+          height: '48px',
+          borderRadius: '8px',
+          background: '#0F172A',
           color: '#FFF',
-          border: 'none',
-          boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
+          border: '1px solid #1E293B',
+          boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           cursor: 'pointer',
           zIndex: 9999,
-          transition: 'transform 0.2s ease, background 0.2s ease',
-          transform: isOpen ? 'scale(0.9)' : 'scale(1)',
+          transition: 'all 200ms cubic-bezier(0.16, 1, 0.3, 1)',
         }}
-        onMouseEnter={e => e.currentTarget.style.background = '#374151'}
-        onMouseLeave={e => e.currentTarget.style.background = '#111827'}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = '#1E293B'
+          e.currentTarget.style.transform = 'translateY(-2px)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = '#0F172A'
+          e.currentTarget.style.transform = 'translateY(0)'
+        }}
       >
-        {isOpen ? <X size={24} /> : <MessageSquare size={24} />}
+        {isOpen ? <X size={18} /> : <MessageSquare size={18} />}
       </button>
 
       {/* Chat Window */}
       {isOpen && (
         <div style={{
           position: 'fixed',
-          bottom: '96px',
+          bottom: '84px',
           right: '24px',
-          width: '400px',
-          height: '600px',
+          width: '380px',
+          height: '560px',
           maxHeight: 'calc(100vh - 120px)',
-          background: '#FFF',
-          borderRadius: '16px',
-          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.05)',
+          background: '#FFFFFF',
+          borderRadius: '12px',
+          border: '1px solid #E2E8F0',
+          boxShadow: '0 12px 30px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(0,0,0,0.02)',
           display: 'flex',
           flexDirection: 'column',
           zIndex: 9998,
           overflow: 'hidden',
-          animation: 'slideUp 0.2s ease-out forwards',
+          animation: 'slideUp 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards',
         }}>
           <style>{`
             @keyframes slideUp {
-              from { opacity: 0; transform: translateY(20px); }
+              from { opacity: 0; transform: translateY(12px); }
               to { opacity: 1; transform: translateY(0); }
             }
           `}</style>
 
           {/* Header */}
-          <div style={{ padding: '16px 20px', background: '#111827', color: '#FFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ 
+            padding: '14px 20px', 
+            background: '#FFFFFF', 
+            borderBottom: '1px solid #F1F5F9',
+            color: '#0F172A', 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center' 
+          }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Bot size={18} color="#FFF" />
+              <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Bot size={16} color="#4F46E5" />
               </div>
               <div>
-                <div style={{ fontSize: '0.9375rem', fontWeight: 700 }}>AI Advisor</div>
-                <div style={{ fontSize: '0.6875rem', color: '#9CA3AF' }}>Supply Chain Intelligence</div>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0F172A', letterSpacing: '-0.01em' }}>Copilot Advisor</div>
+                <div style={{ fontSize: '0.6875rem', color: '#64748B' }}>Supply chain path analyzer</div>
               </div>
             </div>
             {messages.length > 0 && (
               <button
                 onClick={() => { setMessages([]); sessionIdRef.current = null }}
-                style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', padding: '4px' }}
-                title="New Conversation"
+                style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', transition: 'color 150ms ease' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+                onMouseLeave={e => e.currentTarget.style.color = '#94A3B8'}
+                title="Reset conversation"
               >
-                <RotateCcw size={16} />
+                <RotateCcw size={14} />
               </button>
             )}
           </div>
 
           {/* Messages Area */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', background: '#F9FAFB' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: '16px', background: '#F8FAFC' }}>
             {messages.length === 0 ? (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
-                <Bot size={40} color="#D1D5DB" style={{ marginBottom: '16px' }} />
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: '0 0 8px 0' }}>Ask a What-If Question</h3>
-                <p style={{ fontSize: '0.8125rem', color: '#6B7280', margin: '0 0 24px 0', maxWidth: '280px', lineHeight: 1.5 }}>
-                  Analyse your live supply chain. Ask about disruption scenarios, financial exposure, or stockout forecasts.
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: '12px' }}>
+                <Bot size={36} color="#94A3B8" style={{ marginBottom: '16px', opacity: 0.8 }} />
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0F172A', margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>Simulate What-If Scenarios</h3>
+                <p style={{ fontSize: '0.75rem', color: '#64748B', margin: '0 0 24px 0', maxWidth: '280px', lineHeight: 1.5 }}>
+                  Ask about route disruption cascades, active stockout projections, or custom supplier exposure calculations.
                 </p>
 
                 {starterQuestions.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                    <div style={{ fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', color: '#9CA3AF', letterSpacing: '0.05em' }}>Suggested Questions</div>
+                    <div style={{ fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', color: '#94A3B8', letterSpacing: '0.06em', textAlign: 'left', marginBottom: '4px' }}>Suggested Actions</div>
                     {starterQuestions.map((q, i) => (
                       <button
                         key={i}
                         onClick={() => sendMessage(q)}
                         style={{
-                          padding: '10px 12px', background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '8px',
-                          fontSize: '0.75rem', color: '#374151', cursor: 'pointer', textAlign: 'left', lineHeight: 1.4,
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.02)', transition: 'border-color 0.15s ease'
+                          padding: '10px 14px', 
+                          background: '#FFFFFF', 
+                          border: '1px solid #E2E8F0', 
+                          borderRadius: '8px',
+                          fontSize: '0.75rem', 
+                          color: '#334155', 
+                          fontWeight: 500,
+                          cursor: 'pointer', 
+                          textAlign: 'left', 
+                          lineHeight: 1.4,
+                          boxShadow: '0 1px 2px rgba(15,23,42,0.02)', 
+                          transition: 'all 150ms ease'
                         }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = '#111827'}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = '#E5E7EB'}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.borderColor = '#4F46E5'
+                          e.currentTarget.style.color = '#4F46E5'
+                          e.currentTarget.style.background = '#EEF2FF'
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.borderColor = '#E2E8F0'
+                          e.currentTarget.style.color = '#334155'
+                          e.currentTarget.style.background = '#FFFFFF'
+                        }}
                       >
                         {q}
                       </button>
@@ -318,32 +351,27 @@ export function FloatingChatWidget() {
             ) : (
               <>
                 {messages.map(msg => (
-                  <div key={msg.id} style={{ display: 'flex', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', gap: '10px', alignItems: 'flex-end' }}>
-                    {msg.role === 'assistant' && (
-                      <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Bot size={12} color="#FFF" />
-                      </div>
-                    )}
+                  <div key={msg.id} style={{ display: 'flex', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', gap: '10px', alignItems: 'flex-start' }}>
                     <div style={{ maxWidth: '85%', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                       <div style={{
                         padding: '10px 14px',
-                        background: msg.role === 'user' ? '#111827' : msg.isError ? '#FEF2F2' : '#FFF',
-                        color: msg.role === 'user' ? '#FFF' : '#111827',
-                        border: `1px solid ${msg.role === 'user' ? '#111827' : msg.isError ? '#FECACA' : '#E5E7EB'}`,
-                        borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                        background: msg.role === 'user' ? '#4F46E5' : msg.isError ? '#FEF2F2' : '#FFFFFF',
+                        color: msg.role === 'user' ? '#FFFFFF' : '#0F172A',
+                        border: msg.role === 'user' ? 'none' : msg.isError ? '1px solid #FECACA' : '1px solid #E2E8F0',
+                        borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                        boxShadow: msg.role === 'user' ? '0 2px 6px rgba(79,70,229,0.15)' : '0 2px 8px rgba(15,23,42,0.03)',
                       }}>
                         {msg.role === 'user' ? (
-                          <div style={{ fontSize: '0.8125rem', lineHeight: 1.5 }}>{msg.content}</div>
+                          <div style={{ fontSize: '0.75rem', lineHeight: 1.45, fontWeight: 500, color: '#FFFFFF' }}>{msg.content}</div>
                         ) : (
                           <MarkdownContent text={msg.content} />
                         )}
                       </div>
                       
                       {msg.sources && msg.sources.length > 0 && (
-                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
                           {msg.sources.map(s => (
-                            <span key={s} style={{ fontSize: '0.5625rem', padding: '2px 6px', borderRadius: '4px', background: '#E5E7EB', color: '#4B5563', fontWeight: 600, textTransform: 'uppercase' }}>
+                            <span key={s} style={{ fontSize: '0.5625rem', padding: '2px 6px', borderRadius: '4px', background: '#E2E8F0', color: '#475569', fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
                               {SOURCE_LABELS[s] ?? s}
                             </span>
                           ))}
@@ -354,11 +382,8 @@ export function FloatingChatWidget() {
                 ))}
 
                 {isLoading && (
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-                    <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Bot size={12} color="#FFF" />
-                    </div>
-                    <div style={{ padding: '12px 16px', background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '14px 14px 14px 4px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                    <div style={{ padding: '10px 14px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px 12px 12px 2px', boxShadow: '0 2px 8px rgba(15,23,42,0.03)' }}>
                       <TypingDots />
                     </div>
                   </div>
@@ -369,33 +394,72 @@ export function FloatingChatWidget() {
           </div>
 
           {/* Input Area */}
-          <div style={{ padding: '16px', background: '#FFF', borderTop: '1px solid #E5E7EB', display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+          <div style={{ padding: '14px 16px', background: '#FFFFFF', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
             <textarea
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               onInput={handleInput}
-              placeholder={isLoading ? 'Analysing...' : 'Type a what-if scenario...'}
+              placeholder={isLoading ? 'Calculating...' : 'Ask a scenario question...'}
               disabled={isLoading}
               rows={1}
               style={{
-                flex: 1, padding: '10px 14px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '0.8125rem',
-                fontFamily: 'inherit', resize: 'none', outline: 'none', lineHeight: 1.5, background: isLoading ? '#F3F4F6' : '#FFF',
-                minHeight: '40px', maxHeight: '100px', transition: 'border-color 0.15s ease'
+                flex: 1, 
+                padding: '10px 14px', 
+                border: '1px solid #E2E8F0', 
+                borderRadius: '20px', 
+                fontSize: '0.75rem',
+                color: '#0F172A',
+                fontFamily: 'inherit', 
+                resize: 'none', 
+                outline: 'none', 
+                lineHeight: 1.4, 
+                background: isLoading ? '#F8FAFC' : '#FFFFFF',
+                minHeight: '38px', 
+                maxHeight: '80px', 
+                transition: 'all 150ms ease',
+                boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.02)'
               }}
-              onFocus={e => e.target.style.borderColor = '#111827'}
-              onBlur={e => e.target.style.borderColor = '#D1D5DB'}
+              onFocus={e => {
+                e.target.style.borderColor = '#4F46E5'
+                e.target.style.boxShadow = 'inset 0 1px 2px rgba(15,23,42,0.02), 0 0 0 2px rgba(79, 70, 229, 0.1)'
+              }}
+              onBlur={e => {
+                e.target.style.borderColor = '#E2E8F0'
+                e.target.style.boxShadow = 'inset 0 1px 2px rgba(15,23,42,0.02)'
+              }}
             />
             <button
               onClick={() => sendMessage(input)}
               disabled={isLoading || !input.trim()}
               style={{
-                width: '40px', height: '40px', borderRadius: '8px', background: isLoading || !input.trim() ? '#E5E7EB' : '#111827',
-                border: 'none', cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background 0.15s ease'
+                width: '38px', 
+                height: '38px', 
+                borderRadius: '50%', 
+                background: isLoading || !input.trim() ? '#F1F5F9' : '#0F172A',
+                color: isLoading || !input.trim() ? '#94A3B8' : '#FFFFFF',
+                border: 'none', 
+                cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                flexShrink: 0, 
+                transition: 'all 150ms ease',
+                boxShadow: isLoading || !input.trim() ? 'none' : '0 2px 6px rgba(15,23,42,0.1)'
+              }}
+              onMouseEnter={e => {
+                if (!isLoading && input.trim()) {
+                  e.currentTarget.style.background = '#1E293B'
+                }
+              }}
+              onMouseLeave={e => {
+                if (!isLoading && input.trim()) {
+                  e.currentTarget.style.background = '#0F172A'
+                }
               }}
             >
-              <Send size={16} color={isLoading || !input.trim() ? '#9CA3AF' : '#FFF'} />
+              <Send size={14} />
             </button>
           </div>
         </div>

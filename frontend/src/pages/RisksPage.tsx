@@ -14,22 +14,20 @@ function formatINR(n: number) {
 }
 
 const LEVEL_CONFIG = {
-  critical: { color: '#B91C1C', bg: '#FEE2E2', border: 'transparent', label: 'Critical' },
-  high:     { color: '#B45309', bg: '#FEF3C7', border: 'transparent', label: 'High' },
-  medium:   { color: '#1D4ED8', bg: '#DBEAFE', border: 'transparent', label: 'Medium' },
-  low:      { color: '#047857', bg: '#D1FAE5', border: 'transparent', label: 'Low' },
+  critical: { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.12)', label: 'Critical' },
+  high:     { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.12)', label: 'High' },
+  medium:   { color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.12)', label: 'Medium' },
+  low:      { color: '#10B981', bg: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.12)', label: 'Low' },
 } as const
 
 const FILTER_LEVELS = ['all', 'critical', 'high', 'medium'] as const
 type FilterLevel = typeof FILTER_LEVELS[number]
 
-
-
 function Skeleton() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="skeleton" style={{ height: 64, borderRadius: '0.5rem' }} />
+        <div key={i} className="skeleton" style={{ height: 60, borderRadius: '8px' }} />
       ))}
     </div>
   )
@@ -54,72 +52,89 @@ function RiskRow({ risk, card }: { risk: SupplierRiskAnalysis; card?: Intelligen
       style={{ cursor: 'pointer' }}
       className="table-row-hover"
     >
-      <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: cfg.bg, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.875rem' }}>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: cfg.bg, border: cfg.border, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8125rem' }}>
               {risk.supplier_name.charAt(0)}
             </div>
-            {risk.risk_level === 'critical' && <div style={{ position: 'absolute', top: -1, right: -1, width: 10, height: 10, background: '#EF4444', borderRadius: '50%', border: '2px solid #fff' }} />}
+            {risk.risk_level === 'critical' && (
+              <span style={{ 
+                position: 'absolute', 
+                top: -1, 
+                right: -1, 
+                width: 9, 
+                height: 9, 
+                background: '#EF4444', 
+                borderRadius: '50%', 
+                border: '2px solid #FFFFFF',
+                boxShadow: '0 0 4px rgba(239, 68, 68, 0.4)' 
+              }} />
+            )}
           </div>
           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{risk.supplier_name}</div>
-            <div style={{ fontSize: '0.75rem', color: '#6B7280', textTransform: 'capitalize' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{risk.supplier_name}</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
               {card ? `${card.category} · ${card.region}` : 'Supplier'}
             </div>
           </div>
         </div>
       </td>
 
-      <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'left' }}>
         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 750, color: '#0F172A', letterSpacing: '-0.02em' }}>
             {Math.round(priority * 100)}%
           </span>
-          <span style={{ fontSize: '0.75rem', color: '#6B7280' }}>Priority</span>
+          <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 500 }}>Priority</span>
         </div>
       </td>
 
-      <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)' }}>
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <span style={{ display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 500, padding: '2px 8px', color: cfg.color, borderRadius: '99px', background: cfg.bg }}>
+          <span style={{ display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: '4px', fontSize: '0.6875rem', fontWeight: 700, padding: '2px 8px', color: cfg.color, borderRadius: '20px', background: cfg.bg, border: cfg.border, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             {cfg.label}
           </span>
-          <span style={{ fontSize: '0.75rem', color: '#6B7280', paddingLeft: '2px' }}>
+          <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, paddingLeft: '2px' }}>
             {(risk.overall_score * 100).toFixed(0)}% Risk Score
           </span>
         </div>
       </td>
 
-      <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'left' }}>
         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
           {card ? (
             <>
-              <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
+              <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', fontVariantNumeric: 'tabular-nums' }}>
                 {formatINR(card.financial_exposure_inr)}
               </span>
-              <span style={{ fontSize: '0.75rem', color: '#6B7280' }}>Exposure</span>
+              <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 500 }}>Exposure</span>
             </>
           ) : (
-            <span style={{ fontSize: '0.875rem', color: '#9CA3AF' }}>—</span>
+            <span style={{ fontSize: '0.875rem', color: '#CBD5E1' }}>—</span>
           )}
         </div>
       </td>
 
-      <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)' }}>
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
         {card ? (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: urgent ? '#B91C1C' : '#111827' }}>
+            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: urgent ? '#EF4444' : '#0F172A', fontVariantNumeric: 'tabular-nums' }}>
               {card.days_to_stockout} {card.days_to_stockout === 1 ? 'day' : 'days'}
             </span>
           </div>
         ) : (
-          <span style={{ fontSize: '0.875rem', color: '#9CA3AF' }}>—</span>
+          <span style={{ fontSize: '0.875rem', color: '#CBD5E1' }}>—</span>
         )}
       </td>
 
-      <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
-        <button className="btn-table-action">
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'right' }}>
+        <button className="btn-table-action" style={{
+          background: needsAction ? '#0F172A' : '#FFFFFF',
+          color: needsAction ? '#FFFFFF' : '#334155',
+          border: needsAction ? '1px solid #0F172A' : '1px solid #E2E8F0',
+          fontWeight: 600,
+        }}>
           {needsAction ? 'Act Now' : 'Review'}
         </button>
       </td>
@@ -216,58 +231,85 @@ export default function RisksPage() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
 
       {/* Header */}
-      <div>
-        <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500, marginBottom: '0.375rem' }}>
-          Dashboard / Risk Analysis
-        </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        borderBottom: '1px solid #F1F5F9',
+        paddingBottom: '20px',
+        marginBottom: '4px',
+        flexWrap: 'wrap',
+        gap: '16px'
+      }}>
+        <div>
+          <div style={{ 
+            fontSize: '0.75rem', 
+            color: '#64748B', 
+            fontWeight: 500, 
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}>
+            <span 
+              onClick={() => navigate('/')} 
+              style={{ cursor: 'pointer', transition: 'color 150ms ease' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+              onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+            >
+              Dashboard
+            </span>
+            <span>/</span>
+            <span style={{ color: '#0F172A', fontWeight: 600 }}>Risk Analysis</span>
+          </div>
           <div>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#000', letterSpacing: '-0.02em', lineHeight: 1.1, margin: 0 }}>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1.1, margin: 0 }}>
               Risk Analysis
             </h1>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', marginTop: '0.25rem' }}>
+            <p style={{ fontSize: '0.875rem', color: '#64748B', marginTop: '6px', marginBottom: 0 }}>
               Suppliers ranked by risk severity · take action before exposure grows
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-end' }}>
-            {totalActiveExposure > 0 && (
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Unresolved Exposure</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#DC2626', fontFamily: 'monospace' }}>
-                  {formatINR(totalActiveExposure)}
-                </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-end' }}>
+          {totalActiveExposure > 0 && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.625rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Unresolved Exposure</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#EF4444', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                {formatINR(totalActiveExposure)}
               </div>
-            )}
-            {activeRisks.length > 0 && (
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.5rem', color: 'var(--ink-4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Suppliers at Risk</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#D97706', fontFamily: 'monospace' }}>
-                  {activeRisks.length}
-                </div>
+            </div>
+          )}
+          {activeRisks.length > 0 && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.625rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Suppliers at Risk</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#F59E0B', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                {activeRisks.length}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* View Mode Toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem' }}>
-        <div style={{ display: 'flex', gap: '2px', background: '#F3F4F6', padding: '4px', borderRadius: '8px', width: 'fit-content' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: '2px', background: '#F1F5F9', padding: '2px', borderRadius: '6px' }}>
           <button
             onClick={() => { setViewMode('active'); setSearch('') }}
             style={{
-              padding: '0.375rem 1rem',
-              borderRadius: '6px',
+              padding: '6px 12px',
+              borderRadius: '5px',
               border: 'none',
-              background: viewMode === 'active' ? '#fff' : 'transparent',
-              color: viewMode === 'active' ? '#111827' : '#6B7280',
-              fontSize: '0.8125rem',
-              fontWeight: 500,
+              background: viewMode === 'active' ? '#FFFFFF' : 'transparent',
+              color: viewMode === 'active' ? '#0F172A' : '#64748B',
+              fontSize: '0.75rem',
+              fontWeight: 600,
               cursor: 'pointer',
-              boxShadow: viewMode === 'active' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              boxShadow: viewMode === 'active' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
               transition: 'all 150ms ease',
             }}
           >
@@ -276,15 +318,15 @@ export default function RisksPage() {
           <button
             onClick={() => { setViewMode('resolved'); setSearch('') }}
             style={{
-              padding: '0.375rem 1rem',
-              borderRadius: '6px',
+              padding: '6px 12px',
+              borderRadius: '5px',
               border: 'none',
-              background: viewMode === 'resolved' ? '#fff' : 'transparent',
-              color: viewMode === 'resolved' ? '#111827' : '#6B7280',
-              fontSize: '0.8125rem',
-              fontWeight: 500,
+              background: viewMode === 'resolved' ? '#FFFFFF' : 'transparent',
+              color: viewMode === 'resolved' ? '#0F172A' : '#64748B',
+              fontSize: '0.75rem',
+              fontWeight: 600,
               cursor: 'pointer',
-              boxShadow: viewMode === 'resolved' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              boxShadow: viewMode === 'resolved' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
               transition: 'all 150ms ease',
             }}
           >
@@ -294,17 +336,21 @@ export default function RisksPage() {
 
         {viewMode === 'resolved' && (
           <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
+            <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search resolved history…"
               style={{
                 paddingLeft: '2rem', paddingRight: '1rem', height: '36px',
-                border: '1px solid #D1D5DB', borderRadius: '8px',
-                fontSize: '0.8125rem', outline: 'none', background: '#fff', width: '240px',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                border: '1px solid #E2E8F0', borderRadius: '20px',
+                fontSize: '0.75rem', outline: 'none', background: '#FFFFFF', width: '240px',
+                boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.02)',
+                color: '#0F172A',
+                transition: 'border-color 150ms ease'
               }}
+              onFocus={e => e.target.style.borderColor = '#0F172A'}
+              onBlur={e => e.target.style.borderColor = '#E2E8F0'}
             />
           </div>
         )}
@@ -315,34 +361,50 @@ export default function RisksPage() {
           {/* Action-needed banner */}
           {actionNeeded > 0 && (
             <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.75rem',
-              padding: '0.625rem 1rem',
-              background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '0.5rem',
-              fontSize: '0.8125rem',
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '10px 16px',
+              background: '#FFF5F5', border: '1px solid #FEE2E2', borderRadius: '10px',
+              fontSize: '0.75rem',
             }}>
-              <AlertOctagon size={14} style={{ color: '#DC2626', flexShrink: 0 }} />
-              <span style={{ color: '#991B1B', fontWeight: 600 }}>
+              {/* Pulsing Dot & label */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                <span 
+                  className="alert-beacon"
+                  style={{ 
+                    width: 6, 
+                    height: 6, 
+                    background: '#EF4444', 
+                  }} 
+                />
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Risk Alert
+                </span>
+              </div>
+
+              <div style={{ width: '1px', height: '16px', background: '#FCA5A5', flexShrink: 0 }} />
+
+              <span style={{ color: '#7F1D1D', fontWeight: 700 }}>
                 {actionNeeded} supplier{actionNeeded !== 1 ? 's' : ''} require immediate action
               </span>
               <span style={{ color: '#B91C1C' }}>—</span>
-              <span style={{ color: '#B91C1C' }}>
+              <span style={{ color: '#B91C1C', fontWeight: 600 }}>
                 {counts.critical > 0 && `${counts.critical} critical`}
-                {counts.critical > 0 && counts.high > 0 && ', '}
+                {counts.critical > 0 && counts.high > 0 && ' · '}
                 {counts.high > 0 && `${counts.high} high risk`}
               </span>
             </div>
           )}
 
           {customWeightsActive && (
-            <div style={{ padding: '0.625rem 1rem', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: '0.5rem', fontSize: '0.8125rem', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <AlertOctagon size={13} style={{ color: '#D97706' }} />
+            <div style={{ padding: '10px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <AlertOctagon size={14} style={{ color: '#F59E0B' }} />
               <span><strong>Custom weights active</strong> — risk scores reflect your settings profile.</span>
             </div>
           )}
 
           {/* Filter tabs + search */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0' }}>
-            <div style={{ display: 'flex', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #F1F5F9', paddingBottom: '0' }}>
+            <div style={{ display: 'flex', gap: '1.5rem' }}>
               {FILTER_LEVELS.map(level => {
                 const count = level === 'all' ? activeRisks.length : counts[level as keyof typeof counts]
                 const cfg = level !== 'all' ? LEVEL_CONFIG[level] : null
@@ -352,24 +414,25 @@ export default function RisksPage() {
                     key={level}
                     onClick={() => setFilter(level)}
                     style={{
-                      padding: '0.75rem 0',
+                      padding: '12px 0',
                       background: 'none', border: 'none',
-                      borderBottom: `2px solid ${isActive ? '#111827' : 'transparent'}`,
-                      fontSize: '0.875rem', fontWeight: 500,
-                      color: isActive ? '#111827' : '#6B7280',
+                      borderBottom: `2px solid ${isActive ? '#0F172A' : 'transparent'}`,
+                      fontSize: '0.875rem', fontWeight: 600,
+                      color: isActive ? '#0F172A' : '#64748B',
                       cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: '0.375rem',
-                      marginBottom: '-1px', transition: 'color 150ms',
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      marginBottom: '-1px', transition: 'all 150ms ease',
                       textTransform: 'capitalize',
                     }}
                   >
                     {level}
                     {count > 0 && (
                       <span style={{
-                        fontSize: '0.6875rem', fontWeight: 600,
-                        padding: '1px 6px', borderRadius: '99px',
-                        background: isActive && cfg ? cfg.bg : '#F3F4F6',
-                        color: isActive && cfg ? cfg.color : '#6B7280',
+                        fontSize: '0.6875rem', fontWeight: 700,
+                        padding: '2px 8px', borderRadius: '20px',
+                        background: isActive && cfg ? cfg.bg : '#F1F5F9',
+                        color: isActive && cfg ? cfg.color : '#64748B',
+                        border: isActive && cfg ? cfg.border : 'none',
                       }}>{count}</span>
                     )}
                   </button>
@@ -377,17 +440,21 @@ export default function RisksPage() {
               })}
             </div>
             <div style={{ position: 'relative', marginBottom: '8px' }}>
-              <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
+              <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search active suppliers…"
                 style={{
                   paddingLeft: '2rem', paddingRight: '1rem', height: '36px',
-                  border: '1px solid #D1D5DB', borderRadius: '8px',
-                  fontSize: '0.8125rem', outline: 'none', background: '#fff', width: '240px',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                  border: '1px solid #E2E8F0', borderRadius: '20px',
+                  fontSize: '0.75rem', outline: 'none', background: '#FFFFFF', width: '240px',
+                  boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.02)',
+                  color: '#0F172A',
+                  transition: 'border-color 150ms ease'
                 }}
+                onFocus={e => e.target.style.borderColor = '#0F172A'}
+                onBlur={e => e.target.style.borderColor = '#E2E8F0'}
               />
             </div>
           </div>
@@ -396,11 +463,11 @@ export default function RisksPage() {
 
       {/* Active Risks Table Wrapper */}
       {viewMode === 'active' && (
-        <div className="card-flush" style={{ display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '1.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#FFFFFF', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.02)' }}>
           {isLoading ? (
             <div style={{ padding: '1.25rem' }}><Skeleton /></div>
           ) : filtered.length === 0 ? (
-            <div style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
+            <div style={{ padding: '4rem 2rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.875rem' }}>
               {activeRisks.length === 0 && resolvedRisks.length > 0
                 ? '🎉 All risks have been resolved.'
                 : 'No active suppliers match the current filter.'}
@@ -409,13 +476,13 @@ export default function RisksPage() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
-                    <th style={{ width: '30%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
-                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Action Priority</th>
-                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk Score</th>
-                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Money at Risk</th>
-                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Days of Stock Left</th>
-                    <th style={{ width: '10%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
+                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFAFA' }}>
+                    <th style={{ width: '30%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Action Priority</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk Score</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Money at Risk</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Days of Stock Left</th>
+                    <th style={{ width: '10%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -431,22 +498,22 @@ export default function RisksPage() {
 
       {/* Resolved History Table Wrapper */}
       {viewMode === 'resolved' && (
-        <div className="card-flush" style={{ display: 'flex', flexDirection: 'column', background: '#fff' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#FFFFFF', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.02)' }}>
           {isLoading ? (
             <div style={{ padding: '1.25rem' }}><Skeleton /></div>
           ) : filteredResolved.length === 0 ? (
-            <div style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
+            <div style={{ padding: '4rem 2rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.875rem' }}>
               No resolved suppliers match your search.
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
-                    <th style={{ width: '40%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
-                    <th style={{ width: '20%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Money Protected</th>
-                    <th style={{ width: '25%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk Score at Time of Issue</th>
-                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
+                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFAFA' }}>
+                    <th style={{ width: '40%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
+                    <th style={{ width: '20%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Money Protected</th>
+                    <th style={{ width: '25%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk Score at Time of Issue</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -459,44 +526,44 @@ export default function RisksPage() {
                         style={{ cursor: 'pointer' }}
                         className="table-row-hover"
                       >
-                        <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <div style={{ position: 'relative', flexShrink: 0 }}>
-                              <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#D1FAE5', color: '#047857', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.875rem' }}>
+                              <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#D1FAE5', color: '#047857', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8125rem' }}>
                                 {r.supplier_name.charAt(0)}
                               </div>
-                              <div style={{ position: 'absolute', bottom: -1, right: -1, width: 14, height: 14, borderRadius: '50%', background: '#059669', border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <CheckCircle2 size={10} color="#fff" />
+                              <div style={{ position: 'absolute', bottom: -1, right: -1, width: 14, height: 14, borderRadius: '50%', background: '#059669', border: '2px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <CheckCircle2 size={10} color="#FFFFFF" />
                               </div>
                             </div>
                             <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>{r.supplier_name}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#6B7280', textTransform: 'capitalize' }}>
+                              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>{r.supplier_name}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
                                 Supplier
                               </div>
                             </div>
                           </div>
                         </td>
-                        <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
+                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'left' }}>
                           <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-                            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', fontVariantNumeric: 'tabular-nums' }}>
                               {formatINR((actionData?.action_cards ?? []).filter(c => c.supplier_id === r.supplier_id && c.is_resolved).reduce((acc, curr) => acc + (curr.estimated_impact_inr || 0), 0))}
                             </span>
-                            <span style={{ fontSize: '0.75rem', color: '#6B7280' }}>Resolved</span>
+                            <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 500 }}>Resolved</span>
                           </div>
                         </td>
-                        <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <span style={{ display: 'inline-flex', alignSelf: 'flex-start', fontSize: '0.75rem', fontWeight: 500, padding: '2px 8px', background: '#F3F4F6', color: '#374151', borderRadius: '99px' }}>
+                            <span style={{ display: 'inline-flex', alignSelf: 'flex-start', fontSize: '0.6875rem', fontWeight: 700, padding: '2px 8px', background: '#F1F5F9', color: '#334155', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                               Mitigated
                             </span>
-                            <span style={{ fontSize: '0.75rem', color: '#6B7280', paddingLeft: '2px' }}>
+                            <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, paddingLeft: '2px' }}>
                               {(r.overall_score * 100).toFixed(0)}% Risk Score
                             </span>
                           </div>
                         </td>
-                        <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
-                          <button className="btn-table-action">
+                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'right' }}>
+                          <button className="btn-table-action" style={{ fontWeight: 600 }}>
                             View Detail
                           </button>
                         </td>
@@ -511,33 +578,38 @@ export default function RisksPage() {
       )}
 
       <style>{`
-        .table-row-hover {
-          background: var(--bg-card);
-        }
         .table-row-hover td {
           transition: background 150ms ease;
         }
         .table-row-hover:hover td {
-          background: var(--bg-hover);
+          background: #F8FAFC;
         }
         .btn-table-action {
-          background: #fff;
-          color: #374151;
-          border: 1px solid #D1D5DB;
+          background: #FFFFFF;
+          color: #334155;
+          border: 1px solid #E2E8F0;
           cursor: pointer;
           transition: all 150ms ease;
           outline: none;
-          padding: 6px 12px;
+          padding: 6px 14px;
           border-radius: 6px;
           font-size: 0.75rem;
-          font-weight: 500;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+          box-shadow: 0 1px 2px rgba(15,23,42,0.02);
         }
-        .table-row-hover:hover .btn-table-action {
-          background: #F9FAFB;
-          border-color: #9CA3AF;
+        .btn-table-action:hover {
+          background: #F8FAFC;
+          border-color: #CBD5E1;
         }
-        @keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.75); } }
+        @keyframes beacon-glow {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.75); }
+          70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .alert-beacon {
+          display: inline-block;
+          border-radius: 50%;
+          animation: beacon-glow 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        }
       `}</style>
     </div>
   )

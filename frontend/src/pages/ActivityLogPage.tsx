@@ -118,7 +118,7 @@ function ReportModal({ cards, onClose }: { cards: ActionCard[]; onClose: () => v
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(3px)',
+        background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem',
       }}
       onClick={onClose}
@@ -136,67 +136,68 @@ function ReportModal({ cards, onClose }: { cards: ActionCard[]; onClose: () => v
         id="report-print-root"
         onClick={e => e.stopPropagation()}
         style={{
-          background: '#fff', borderRadius: '0.875rem', width: '100%', maxWidth: '720px',
+          background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '720px',
           maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-          boxShadow: '0 24px 60px rgba(0,0,0,0.2)',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+          border: '1px solid #E2E8F0',
         }}
       >
         {/* Modal header */}
-        <div className="no-print" style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="no-print" style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#000' }}>Generate Manager Report</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '2px' }}>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>Generate Manager Report</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px', fontWeight: 500 }}>
               Summary of actions taken — ready to send or download as PDF
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: '4px' }}>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', padding: '4px' }}>
             <X size={18} />
           </button>
         </div>
 
         {/* Type toggle */}
-        <div className="no-print" style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div className="no-print" style={{ padding: '16px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
           {(['daily', 'weekly'] as const).map(t => (
             <button
               key={t}
               onClick={() => setType(t)}
               style={{
-                padding: '0.375rem 1rem', borderRadius: '99px',
-                border: `1px solid ${type === t ? '#000' : 'var(--border)'}`,
-                background: type === t ? '#000' : '#fff',
-                color: type === t ? '#fff' : 'var(--ink-3)',
-                fontSize: '0.8125rem', fontWeight: type === t ? 700 : 500,
-                cursor: 'pointer', textTransform: 'capitalize',
+                padding: '6px 16px', borderRadius: '20px',
+                border: `1px solid ${type === t ? '#0F172A' : '#E2E8F0'}`,
+                background: type === t ? '#0F172A' : '#fff',
+                color: type === t ? '#fff' : '#64748B',
+                fontSize: '0.75rem', fontWeight: type === t ? 700 : 600,
+                cursor: 'pointer', textTransform: 'capitalize', transition: 'all 120ms ease'
               }}
             >
               {t === 'daily' ? 'Daily Report' : 'Weekly Report'}
             </button>
           ))}
-          <span style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginLeft: '0.5rem' }}>
+          <span style={{ fontSize: '0.75rem', color: '#94A3B8', marginLeft: '8px', fontWeight: 500 }}>
             {filtered.length} action{filtered.length !== 1 ? 's' : ''} in this period
           </span>
         </div>
 
         {/* Report preview (also printed) */}
-        <div style={{ overflowY: 'auto', flex: 1, padding: '1.5rem 2rem' }}>
+        <div style={{ overflowY: 'auto', flex: 1, padding: '24px 32px' }}>
 
           {/* Report header */}
-          <div style={{ borderBottom: '3px solid #000', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
+          <div style={{ borderBottom: '2px solid #0F172A', paddingBottom: '16px', marginBottom: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.375rem' }}>
+                <div style={{ fontSize: '0.5625rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
                   Supply·Sense FMCG Intelligence Platform
                 </div>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#000', letterSpacing: '-0.02em', margin: 0 }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 850, color: '#0F172A', letterSpacing: '-0.03em', margin: 0 }}>
                   {type === 'weekly' ? 'Weekly' : 'Daily'} Action Report
                 </h2>
-                <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '0.375rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '6px', fontWeight: 550 }}>
                   {periodLabel}
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Generated</div>
-                <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#000' }}>
+                <div style={{ fontSize: '0.5625rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Generated</div>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0F172A' }}>
                   {formatDate(now.toISOString())}
                 </div>
               </div>
@@ -204,14 +205,14 @@ function ReportModal({ cards, onClose }: { cards: ActionCard[]; onClose: () => v
           </div>
 
           {/* Summary row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
             {[
-              { label: 'Actions Resolved', value: String(filtered.length), color: '#000' },
+              { label: 'Actions Resolved', value: String(filtered.length), color: '#0F172A' },
               { label: 'Exposure Mitigated', value: formatINR(totalMitigated), color: '#059669' },
               { label: 'Critical / High', value: `${critical} / ${high}`, color: critical > 0 ? '#DC2626' : '#D97706' },
             ].map(({ label, value, color }) => (
-              <div key={label} style={{ padding: '0.75rem 1rem', background: '#F9FAFB', border: '1px solid var(--border)', borderRadius: '0.5rem' }}>
-                <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.375rem' }}>{label}</div>
+              <div key={label} style={{ padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px' }}>
+                <div style={{ fontSize: '0.5625rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
                 <div style={{ fontSize: '1.125rem', fontWeight: 800, color, fontFamily: 'monospace' }}>{value}</div>
               </div>
             ))}
@@ -219,52 +220,52 @@ function ReportModal({ cards, onClose }: { cards: ActionCard[]; onClose: () => v
 
           {/* Action rows */}
           {filtered.length === 0 ? (
-            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
+            <div style={{ padding: '32px', textAlign: 'center', color: '#64748B', fontSize: '0.875rem' }}>
               No actions resolved in this period.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 120px 100px', gap: '0.75rem', padding: '0.5rem 0', borderBottom: '2px solid #000', marginBottom: '0.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 120px 100px', gap: '12px', padding: '8px 0', borderBottom: '2px solid #0F172A', marginBottom: '4px' }}>
                 {['Action / Issue', 'Priority', 'Resolved At', 'Impact'].map((h, i) => (
-                  <div key={h} style={{ fontSize: '0.5rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 3 ? 'right' : 'left' }}>{h}</div>
+                  <div key={h} style={{ fontSize: '0.5625rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 3 ? 'right' : 'left' }}>{h}</div>
                 ))}
               </div>
               {filtered.map((c, i) => (
                 <div
                   key={c.id}
                   style={{
-                    display: 'grid', gridTemplateColumns: '1fr 110px 120px 100px', gap: '0.75rem',
-                    padding: '0.875rem 0', borderBottom: `1px solid ${i === filtered.length - 1 ? '#000' : 'var(--border)'}`,
+                    display: 'grid', gridTemplateColumns: '1fr 110px 120px 100px', gap: '12px',
+                    padding: '14px 0', borderBottom: `1px solid ${i === filtered.length - 1 ? '#0F172A' : '#E2E8F0'}`,
                     alignItems: 'start',
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#000', marginBottom: '0.25rem', lineHeight: 1.4 }}>{c.title}</div>
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', marginBottom: c.resolution_note ? '0.25rem' : 0 }}>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0F172A', marginBottom: '4px', lineHeight: 1.4 }}>{c.title}</div>
+                    <div style={{ fontSize: '0.6875rem', color: '#64748B', marginBottom: c.resolution_note ? '4px' : 0, fontWeight: 500 }}>
                       {ACTION_LABELS[c.action_type] ?? c.action_type}
                     </div>
                     {c.resolution_note && (
-                      <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)', fontStyle: 'italic', marginTop: '2px', lineHeight: 1.4 }}>
+                      <div style={{ fontSize: '0.6875rem', color: '#64748B', fontStyle: 'italic', marginTop: '4px', lineHeight: 1.4 }}>
                         "{c.resolution_note}"
                       </div>
                     )}
                   </div>
                   <div>
                     <span style={{
-                      fontSize: '0.5625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+                      fontSize: '0.5625rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
                       padding: '2px 8px', borderRadius: '4px',
-                      background: PRIORITY_BG[c.priority] ?? '#F9FAFB',
-                      color: PRIORITY_COLOR[c.priority] ?? '#6B7280',
+                      background: PRIORITY_BG[c.priority] ?? '#F8FAFC',
+                      color: PRIORITY_COLOR[c.priority] ?? '#64748B',
                     }}>
                       {c.priority}
                     </span>
                   </div>
-                  <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)' }}>
-                    <div style={{ fontWeight: 600, color: '#000' }}>{c.resolved_at ? formatDate(c.resolved_at) : '—'}</div>
+                  <div style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 500 }}>
+                    <div style={{ fontWeight: 700, color: '#0F172A' }}>{c.resolved_at ? formatDate(c.resolved_at) : '—'}</div>
                     <div>{c.resolved_at ? formatTime(c.resolved_at) : ''}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#059669', fontFamily: 'monospace' }}>{formatINR(c.estimated_impact_inr)}</div>
+                    <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>{formatINR(c.estimated_impact_inr)}</div>
                   </div>
                 </div>
               ))}
@@ -272,21 +273,21 @@ function ReportModal({ cards, onClose }: { cards: ActionCard[]; onClose: () => v
           )}
 
           {/* Footer */}
-          <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', fontSize: '0.625rem', color: 'var(--ink-4)' }}>
+          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', color: '#94A3B8', fontWeight: 500 }}>
             <span>Supply·Sense — FMCG Supply Chain Intelligence</span>
             <span>Total exposure mitigated: <strong style={{ color: '#059669' }}>{formatINR(totalMitigated)}</strong></span>
           </div>
         </div>
 
         {/* Action buttons */}
-        <div className="no-print" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border)', background: '#F9FAFB', display: 'flex', gap: '0.625rem', justifyContent: 'flex-end' }}>
+        <div className="no-print" style={{ padding: '16px 24px', borderTop: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
           <button
             onClick={handleCopy}
             style={{
-              display: 'flex', alignItems: 'center', gap: '0.375rem',
-              padding: '0.5rem 1rem', border: '1px solid var(--border)', borderRadius: '6px',
-              background: copied ? '#F0FDF4' : '#fff', color: copied ? '#059669' : '#000',
-              fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '8px 16px', border: '1px solid #E2E8F0', borderRadius: '8px',
+              background: copied ? '#ECFDF5' : '#fff', color: copied ? '#059669' : '#0F172A',
+              fontSize: '0.8125rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
               transition: 'all 150ms ease',
             }}
           >
@@ -296,10 +297,10 @@ function ReportModal({ cards, onClose }: { cards: ActionCard[]; onClose: () => v
           <button
             onClick={handlePrint}
             style={{
-              display: 'flex', alignItems: 'center', gap: '0.375rem',
-              padding: '0.5rem 1.25rem', border: 'none', borderRadius: '6px',
-              background: '#000', color: '#fff',
-              fontSize: '0.8125rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '8px 20px', border: 'none', borderRadius: '8px',
+              background: '#0F172A', color: '#fff',
+              fontSize: '0.8125rem', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
             }}
           >
             <Printer size={13} />
@@ -314,88 +315,81 @@ function ReportModal({ cards, onClose }: { cards: ActionCard[]; onClose: () => v
 /* ── Timeline Entry ─────────────────────────────────────────────────────── */
 function LogEntry({ card }: { card: ActionCard }) {
   const navigate = useNavigate()
-  const color = PRIORITY_COLOR[card.priority] ?? '#6B7280'
-  const bg = PRIORITY_BG[card.priority] ?? '#F9FAFB'
+  const color = PRIORITY_COLOR[card.priority] ?? '#64748B'
+  const bg = PRIORITY_BG[card.priority] ?? '#F8FAFC'
 
   return (
     <div style={{
       display: 'grid', gridTemplateColumns: '80px 4px 1fr auto',
-      gap: '0 1.25rem', alignItems: 'start', padding: '0 0 1.5rem',
+      gap: '0 20px', alignItems: 'start', padding: '0 0 24px',
     }}>
       {/* Timestamp column */}
-      <div style={{ textAlign: 'right', paddingTop: '0.125rem' }}>
-        <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: '#000' }}>
+      <div style={{ textAlign: 'right', paddingTop: '2px' }}>
+        <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#0F172A' }}>
           {card.resolved_at ? formatDate(card.resolved_at) : '—'}
         </div>
-        <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', marginTop: '2px' }}>
+        <div style={{ fontSize: '0.5625rem', color: '#94A3B8', marginTop: '2px', fontWeight: 600 }}>
           {card.resolved_at ? formatTime(card.resolved_at) : ''}
         </div>
       </div>
 
       {/* Timeline spine */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
-        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#059669', border: '2px solid #fff', boxShadow: '0 0 0 2px #059669', flexShrink: 0, marginTop: '0.25rem' }} />
-        <div style={{ width: '1px', flex: 1, background: 'var(--border)', marginTop: '4px' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, height: '100%' }}>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#059669', border: '2px solid #fff', boxShadow: '0 0 0 2px #059669', flexShrink: 0, marginTop: '4px' }} />
+        <div style={{ width: '1px', flex: 1, background: '#E2E8F0', marginTop: '4px' }} />
       </div>
 
-      {/* Content — full card is clickable, goes to resolved detail page */}
+      {/* Content */}
       <div
         onClick={() => navigate(`/activity/${card.id}`)}
         style={{
-          background: '#fff', border: '1px solid var(--border)', borderRadius: '0.625rem',
-          padding: '1rem 1.25rem', boxShadow: 'var(--shadow-sm)',
-          cursor: 'pointer', transition: 'border-color 150ms ease, box-shadow 150ms ease',
+          background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px',
+          padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+          cursor: 'pointer', transition: 'all 200ms ease',
         }}
-        onMouseEnter={e => {
-          e.currentTarget.style.borderColor = '#000'
-          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.borderColor = 'var(--border)'
-          e.currentTarget.style.boxShadow = 'var(--shadow-sm)'
-        }}
+        className="timeline-card-hover"
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '8px' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
               <span style={{
-                fontSize: '0.5rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-                padding: '2px 7px', borderRadius: '4px', background: bg, color, border: `1px solid ${color}22`,
+                fontSize: '0.5625rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
+                padding: '2px 8px', borderRadius: '4px', background: bg, color, border: `1px solid ${color}22`,
               }}>
                 {card.priority}
               </span>
-              <span style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500 }}>
+              <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 600 }}>
                 {ACTION_LABELS[card.action_type] ?? card.action_type}
               </span>
             </div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#000', lineHeight: 1.4, marginBottom: '0.375rem' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#0F172A', lineHeight: 1.4, marginBottom: '6px' }}>
               {card.title}
             </div>
             {card.description && (
-              <div style={{ fontSize: '0.75rem', color: 'var(--ink-3)', lineHeight: 1.5, marginBottom: card.resolution_note ? '0.5rem' : 0 }}>
+              <div style={{ fontSize: '0.75rem', color: '#64748B', lineHeight: 1.5, marginBottom: card.resolution_note ? '8px' : 0, fontWeight: 500 }}>
                 {card.description}
               </div>
             )}
             {card.resolution_note && (
               <div style={{
-                display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
-                padding: '0.5rem 0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0',
-                borderRadius: '0.375rem', marginTop: '0.5rem',
+                display: 'flex', alignItems: 'flex-start', gap: '8px',
+                padding: '8px 12px', background: '#ECFDF5', border: '1px solid #A7F3D0',
+                borderRadius: '6px', marginTop: '8px',
               }}>
-                <CheckCircle2 size={12} color="#16a34a" style={{ flexShrink: 0, marginTop: '1px' }} />
-                <span style={{ fontSize: '0.6875rem', color: '#166534', lineHeight: 1.5 }}>
-                  <strong>What was done:</strong> {card.resolution_note}
+                <CheckCircle2 size={12} color="#059669" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span style={{ fontSize: '0.6875rem', color: '#15803D', lineHeight: 1.5, fontWeight: 500 }}>
+                  <strong>Resolution note:</strong> {card.resolution_note}
                 </span>
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem', flexShrink: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', flexShrink: 0 }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Mitigated</div>
-              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>{formatINR(card.estimated_impact_inr)}</div>
+              <div style={{ fontSize: '0.5625rem', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Mitigated</div>
+              <div style={{ fontSize: '1rem', fontWeight: 850, color: '#059669', fontFamily: 'monospace' }}>{formatINR(card.estimated_impact_inr)}</div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.6875rem', color: 'var(--ink-4)' }}>
-              Full analysis <ArrowUpRight size={11} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.6875rem', color: '#64748B', fontWeight: 600 }}>
+              Audit profile <ArrowUpRight size={11} />
             </div>
           </div>
         </div>
@@ -408,19 +402,19 @@ function LogEntry({ card }: { card: ActionCard }) {
 }
 
 /* ── Stat Card ──────────────────────────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, sub, color = '#111827', iconColor, bg = '#FFF', border = '#E5E7EB', iconBg = '#F3F4F6', iconBorder = '#E5E7EB' }: {
-  icon: any; label: string; value: string; sub?: string
+function StatCard({ icon: Icon, label, value, sub, color = '#0F172A', iconColor, bg = '#FFF', border = '#E2E8F0', iconBg = '#F8FAFC', iconBorder = '#E2E8F0' }: {
+  icon: any; label: string; value: string; sub?: React.ReactNode
   color?: string; iconColor?: string; bg?: string; border?: string; iconBg?: string; iconBorder?: string
 }) {
   return (
-    <div style={{ padding: '24px', background: bg, border: `1px solid ${border}`, borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+    <div style={{ padding: '20px 24px', background: bg, border: `1px solid ${border}`, borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
       <div style={{ width: '56px', height: '56px', borderRadius: '12px', background: iconBg, border: `1px solid ${iconBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Icon size={28} color={iconColor ?? color} />
+        <Icon size={24} color={iconColor ?? color} />
       </div>
       <div>
-        <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', marginBottom: '4px' }}>{label}</div>
-        <div style={{ fontSize: '2rem', fontWeight: 800, color, lineHeight: 1, fontFamily: 'monospace' }}>{value}</div>
-        {sub && <div style={{ fontSize: '0.8125rem', color, fontWeight: 600, opacity: 0.8, marginTop: '6px' }}>{sub}</div>}
+        <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748B', marginBottom: '4px' }}>{label}</div>
+        <div style={{ fontSize: '1.75rem', fontWeight: 850, color, lineHeight: 1, fontFamily: 'monospace', letterSpacing: '-0.02em' }}>{value}</div>
+        {sub && <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, marginTop: '6px' }}>{sub}</div>}
       </div>
     </div>
   )
@@ -428,6 +422,7 @@ function StatCard({ icon: Icon, label, value, sub, color = '#111827', iconColor,
 
 /* ── Activity Log Page ──────────────────────────────────────────────────── */
 export default function ActivityLogPage() {
+  const navigate = useNavigate()
   const { data, isLoading } = useActionCards()
   const [filter, setFilter] = useState<TimeFilter>('week')
   const [showReport, setShowReport] = useState(false)
@@ -477,33 +472,74 @@ export default function ActivityLogPage() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', fontFamily: "'Inter', sans-serif" }}>
+      <style>{`
+        .timeline-card-hover {
+          transition: all 150ms ease;
+        }
+        .timeline-card-hover:hover {
+          border-color: #0F172A !important;
+          box-shadow: 0 8px 24px -10px rgba(15, 23, 42, 0.15) !important;
+          transform: translateX(2px);
+        }
+        .report-btn {
+          transition: all 150ms ease;
+        }
+        .report-btn:hover {
+          background: #334155 !important;
+        }
+        .filter-btn {
+          transition: all 120ms ease;
+        }
+        .filter-btn:hover {
+          border-color: #0F172A !important;
+          color: #0F172A !important;
+        }
+      `}</style>
 
       {showReport && (
         <ReportModal cards={resolvedCards} onClose={() => setShowReport(false)} />
       )}
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div style={{ borderBottom: '1px solid #E2E8F0', paddingBottom: '16px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500, marginBottom: '0.375rem' }}>
-            Dashboard / Activity Log
+          <div style={{ 
+            fontSize: '0.75rem', 
+            color: '#64748B', 
+            fontWeight: 500, 
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <span 
+              onClick={() => navigate('/')} 
+              style={{ cursor: 'pointer', transition: 'color 150ms ease' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+              onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+            >
+              Dashboard
+            </span>
+            <span>/</span>
+            <span style={{ color: '#0F172A', fontWeight: 700 }}>Activity Log</span>
           </div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#000', letterSpacing: '-0.02em', lineHeight: 1.1, margin: 0 }}>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1.1, margin: 0 }}>
             Activity Log
           </h1>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', marginTop: '0.25rem' }}>
+          <p style={{ fontSize: '0.875rem', color: '#64748B', marginTop: '6px', marginBottom: 0 }}>
             Full history of resolved supply chain actions — what was at risk and what was done
           </p>
         </div>
         <button
           onClick={() => setShowReport(true)}
           style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.625rem 1.25rem', background: '#000', color: '#fff',
-            border: 'none', borderRadius: '0.5rem', fontWeight: 700, fontSize: '0.8125rem',
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '10px 18px', background: '#0F172A', color: '#fff',
+            border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '0.8125rem',
             cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
           }}
+          className="report-btn"
         >
           <FileText size={14} />
           Generate Report
@@ -511,66 +547,67 @@ export default function ActivityLogPage() {
       </div>
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
         <StatCard
           icon={CheckCircle2}
           label="Total Resolved"
           value={String(resolvedCards.length)}
-          sub={`${thisWeek} this week`}
-          color="#10B981"
+          sub={<span><span style={{ color: '#10B981', fontWeight: 700 }}>{thisWeek}</span> this week</span>}
+          color="#0F172A"
           iconColor="#10B981"
-          bg="#FFF"
-          border="#E5E7EB"
-          iconBg="#F0FDF4"
-          iconBorder="#BBF7D0"
+          bg="#FFFFFF"
+          border="#E2E8F0"
+          iconBg="rgba(16, 185, 129, 0.05)"
+          iconBorder="rgba(16, 185, 129, 0.12)"
         />
         <StatCard
           icon={ShieldCheck}
           label="Exposure Mitigated"
           value={formatINR(resolvedCards.reduce((s, c) => s + c.estimated_impact_inr, 0))}
           sub="cumulative across all time"
-          color="#2563EB"
-          iconColor="#2563EB"
-          bg="#FFF"
-          border="#E5E7EB"
-          iconBg="#EFF6FF"
-          iconBorder="#BFDBFE"
+          color="#0F172A"
+          iconColor="#3B82F6"
+          bg="#FFFFFF"
+          border="#E2E8F0"
+          iconBg="rgba(59, 130, 246, 0.05)"
+          iconBorder="rgba(59, 130, 246, 0.12)"
         />
         <StatCard
           icon={BarChart3}
           label="Critical Issues Closed"
           value={String(resolvedCards.filter(c => c.priority === 'critical').length)}
-          sub={`${resolvedCards.filter(c => c.priority === 'high').length} high priority`}
-          color="#DC2626"
-          iconColor="#DC2626"
-          bg="#FFF"
-          border="#E5E7EB"
-          iconBg="#FEF2F2"
-          iconBorder="#FECACA"
+          sub={<span><span style={{ color: '#EF4444', fontWeight: 700 }}>{resolvedCards.filter(c => c.priority === 'high').length}</span> high priority</span>}
+          color="#0F172A"
+          iconColor="#EF4444"
+          bg="#FFFFFF"
+          border="#E2E8F0"
+          iconBg="rgba(239, 68, 68, 0.05)"
+          iconBorder="rgba(239, 68, 68, 0.12)"
         />
       </div>
 
       {/* Filter tabs + period summary */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: '0.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '6px' }}>
           {(['today', 'week', 'month', 'all'] as TimeFilter[]).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               style={{
-                padding: '0.375rem 0.875rem', borderRadius: '99px',
-                border: `1px solid ${filter === f ? '#000' : 'var(--border)'}`,
-                background: filter === f ? '#000' : '#fff',
-                color: filter === f ? '#fff' : 'var(--ink-3)',
-                fontSize: '0.75rem', fontWeight: filter === f ? 700 : 500, cursor: 'pointer',
+                padding: '6px 14px', borderRadius: '20px',
+                border: `1px solid ${filter === f ? '#0F172A' : '#E2E8F0'}`,
+                background: filter === f ? '#0F172A' : '#fff',
+                color: filter === f ? '#fff' : '#64748B',
+                fontSize: '0.75rem', fontWeight: filter === f ? 700 : 600, cursor: 'pointer',
               }}
+              className="filter-btn"
             >
               {FILTER_LABELS[f]}
             </button>
           ))}
         </div>
         {filtered.length > 0 && (
-          <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)' }}>
+          <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
             <strong style={{ color: '#059669', fontFamily: 'monospace' }}>{formatINR(totalMitigated)}</strong>
             {' '}mitigated · {filtered.length} action{filtered.length !== 1 ? 's' : ''}
             {criticalResolved > 0 && ` · ${criticalResolved} critical`}
@@ -580,16 +617,16 @@ export default function ActivityLogPage() {
 
       {/* Timeline */}
       {isLoading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[120, 90, 110].map(h => (
-            <div key={h} className="skeleton" style={{ height: h, borderRadius: '0.625rem' }} />
+            <div key={h} className="skeleton" style={{ height: h, borderRadius: '12px' }} />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{ padding: '4rem 2rem', textAlign: 'center', background: '#fff', border: '1px solid var(--border)', borderRadius: '0.625rem' }}>
-          <History size={32} color="var(--ink-4)" style={{ marginBottom: '1rem', opacity: 0.4 }} />
-          <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#000', marginBottom: '0.375rem' }}>No resolved actions yet</div>
-          <div style={{ fontSize: '0.8125rem', color: 'var(--ink-4)' }}>
+        <div style={{ padding: '60px 20px', textAlign: 'center', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '16px' }}>
+          <History size={32} color="#94A3B8" style={{ marginBottom: '12px', opacity: 0.5 }} />
+          <div style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#0F172A', marginBottom: '4px' }}>No resolved actions yet</div>
+          <div style={{ fontSize: '0.8125rem', color: '#64748B', fontWeight: 500 }}>
             {filter !== 'all' ? `No actions resolved in this period — try "All Time"` : 'Resolved actions will appear here once you mark issues as done'}
           </div>
         </div>
@@ -598,13 +635,13 @@ export default function ActivityLogPage() {
           {grouped.map(([dateLabel, cards]) => (
             <div key={dateLabel}>
               {/* Date section header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                  <CalendarDays size={12} color="var(--ink-4)" />
-                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{dateLabel}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', marginTop: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CalendarDays size={14} color="#64748B" />
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{dateLabel}</span>
                 </div>
-                <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
-                <span style={{ fontSize: '0.625rem', color: 'var(--ink-4)' }}>{cards.length} action{cards.length !== 1 ? 's' : ''}</span>
+                <div style={{ flex: 1, height: '1px', background: '#E2E8F0' }} />
+                <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 600 }}>{cards.length} action{cards.length !== 1 ? 's' : ''}</span>
               </div>
               {/* Entries */}
               <div style={{ paddingLeft: '0' }}>
@@ -618,23 +655,25 @@ export default function ActivityLogPage() {
       {/* Report prompt at bottom */}
       {filtered.length > 0 && (
         <div style={{
-          padding: '1rem 1.25rem', background: '#F9FAFB', border: '1px solid var(--border)',
-          borderRadius: '0.625rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem',
+          padding: '20px', background: '#F8FAFC', border: '1px solid #E2E8F0',
+          borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
         }}>
           <div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#000' }}>Ready to share with your manager?</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--ink-3)', marginTop: '2px' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.01em' }}>Ready to share with your manager?</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '4px', fontWeight: 500 }}>
               Generate a daily or weekly PDF report — or copy as plain text to paste into an email.
             </div>
           </div>
           <button
             onClick={() => setShowReport(true)}
             style={{
-              display: 'flex', alignItems: 'center', gap: '0.375rem',
-              padding: '0.625rem 1.25rem', background: '#000', color: '#fff',
-              border: 'none', borderRadius: '6px', fontWeight: 700, fontSize: '0.8125rem',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '10px 18px', background: '#0F172A', color: '#fff',
+              border: 'none', borderRadius: '8px', fontWeight: 750, fontSize: '0.8125rem',
               cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
             }}
+            className="report-btn"
           >
             <FileText size={13} /> Generate Report <ChevronRight size={13} />
           </button>

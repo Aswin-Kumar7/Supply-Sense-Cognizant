@@ -51,47 +51,96 @@ export default function OrderSummaryPage() {
 
   return (
     <>
-      {/* Print styles */}
+      {/* CSS Styles */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
           body { background: #fff !important; }
           .print-page { box-shadow: none !important; border: none !important; }
         }
+
+        .btn-back {
+          background: none;
+          border: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          color: #64748B;
+          font-size: 0.8125rem;
+          font-family: inherit;
+          padding: 6px 12px;
+          border-radius: 6px;
+          transition: all 120ms ease;
+        }
+        .btn-back:hover {
+          color: #0F172A;
+          background: #F1F5F9;
+        }
+        .btn-back:active {
+          transform: scale(0.97);
+        }
+
+        .btn-action-primary {
+          background: #0F172A;
+          color: #ffffff;
+          border: none;
+          padding: 0.625rem 1.25rem;
+          border-radius: 8px;
+          font-weight: 700;
+          font-size: 0.75rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 120ms ease;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+        }
+        .btn-action-primary:hover {
+          background: #1E293B;
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+        }
+        .btn-action-primary:active {
+          transform: scale(0.97);
+        }
+
+        .btn-secondary {
+          background: #ffffff;
+          color: #334155;
+          border: 1px solid #E2E8F0;
+          padding: 0.625rem 1.25rem;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 0.75rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 120ms ease;
+        }
+        .btn-secondary:hover {
+          background: #F8FAFC;
+          border-color: #CBD5E1;
+          color: #0F172A;
+        }
+        .btn-secondary:active {
+          transform: scale(0.97);
+        }
       `}</style>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '760px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '760px', margin: '2rem auto', width: '100%', fontFamily: "'Inter', sans-serif" }}>
 
         {/* Header actions — hidden on print */}
         <div className="no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button
-            onClick={() => navigate(-1)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--ink-3)', fontSize: '0.8125rem', fontFamily: 'inherit', padding: '4px 0' }}
-          >
+          <button onClick={() => navigate(-1)} className="btn-back">
             <ChevronLeft size={14} /> Back
           </button>
           <div style={{ display: 'flex', gap: '0.625rem' }}>
-            <button
-              onClick={() => window.print()}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.375rem',
-                padding: '0.5rem 1rem', border: '1px solid var(--border)', borderRadius: '6px',
-                background: '#fff', color: '#000', fontSize: '0.75rem', fontWeight: 600,
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
+            <button onClick={() => window.print()} className="btn-secondary">
               <Printer size={13} /> Download PDF
             </button>
             {primarySupplierId && (
-              <button
-                onClick={handleReturnToMitigation}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.375rem',
-                  padding: '0.5rem 1.25rem', border: 'none', borderRadius: '6px',
-                  background: '#000', color: '#fff', fontSize: '0.75rem', fontWeight: 700,
-                  cursor: 'pointer', fontFamily: 'inherit',
-                }}
-              >
+              <button onClick={handleReturnToMitigation} className="btn-action-primary">
                 <CheckCircle2 size={13} />
                 {canAutoResolve ? 'Return & Mark as Done' : 'Return to Mitigation Plan'}
               </button>
@@ -100,7 +149,7 @@ export default function OrderSummaryPage() {
         </div>
 
         {/* Order summary card */}
-        <div className="print-page" style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.75rem', overflow: 'hidden' }}>
+        <div className="print-page" style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '0.75rem', overflow: 'hidden', boxShadow: '0 4px 20px -2px rgba(15,23,42,0.05)' }}>
 
           {/* PO Header */}
           <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -206,14 +255,7 @@ export default function OrderSummaryPage() {
                   : 'Return to the mitigation plan to review next steps.'}
               </div>
             </div>
-            <button
-              onClick={handleReturnToMitigation}
-              style={{
-                padding: '0.625rem 1.25rem', background: '#000', color: '#fff', border: 'none',
-                borderRadius: '6px', fontWeight: 700, fontSize: '0.8125rem', cursor: 'pointer',
-                fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0,
-              }}
-            >
+            <button onClick={handleReturnToMitigation} className="btn-action-primary" style={{ fontSize: '0.8125rem' }}>
               <CheckCircle2 size={14} />
               {canAutoResolve ? 'Return & Mark as Done' : 'Return to Mitigation Plan'}
             </button>
