@@ -141,14 +141,47 @@ const PREVENTION: Record<string, { title: string; points: string[] }> = {
   },
 }
 
-/* ── Parse resolution note into structured components ─────────────────── */
+/* ── Parse resolution note into all structured fields ─────────────────── */
 function parseNote(note: string | null) {
-  if (!note) return { chosenActionLabel: null, handledExternally: false, userNote: null }
+  if (!note) return { chosenActionLabel: null, handledExternally: false, userNote: null, fields: {} as Record<string, string> }
   const parts = note.split(' — ')
   const chosenActionLabel = parts.find(p => p.startsWith('Action taken:'))?.replace('Action taken: ', '').trim() ?? null
   const handledExternally = parts.includes('Handled externally')
-  const userNote = parts.find(p => !p.startsWith('Action taken:') && p !== 'Handled externally')?.trim() ?? null
-  return { chosenActionLabel, handledExternally, userNote }
+
+  // All structured keys emitted by the three action pages + legacy keys
+  const KNOWN_KEYS = [
+    // Legacy keys (older logs)
+    'PO Number', 'Expected delivery', 'Ordered from', 'Contacted via', 'New delivery ETA',
+    'Extra cost paid', 'Substitutions',
+    // Expedite Orders page
+    'Contact', 'Contact phone', 'Via', 'Original ETA', 'New ETA', 'Days gained',
+    'Freight method', 'Rush cost (₹)', 'PO references', 'Supplier ref',
+    'Confirmed on', 'Follow-up by',
+    // Increase Stock page
+    'Buffer target', 'SKUs ordered', 'Order source', 'Contact method',
+    'Vendor', 'PO number', 'Order date', 'Lead time confirmed',
+    'Finance approval', 'Freight mode', 'Payment terms', 'Receiving warehouse',
+    // Substitute SKUs page
+    'Quantities', 'Quality tier', 'Duration', 'Revert date',
+    'Customer notified on', 'Substitute supplier contact', 'Stakeholders notified',
+    // Shared
+    'Authorized by',
+  ]
+
+  const fields: Record<string, string> = {}
+  parts.forEach(p => {
+    for (const key of KNOWN_KEYS) {
+      if (p.startsWith(`${key}:`)) { fields[key] = p.replace(`${key}:`, '').trim(); return }
+    }
+  })
+
+  // Anything left that isn't a known key, action taken, or "Handled externally" is a free-text note
+  const userNote = parts.find(p =>
+    !p.startsWith('Action taken:') &&
+    p !== 'Handled externally' &&
+    !KNOWN_KEYS.some(k => p.startsWith(`${k}:`))
+  )?.trim() ?? null
+  return { chosenActionLabel, handledExternally, userNote, fields }
 }
 
 /* ── Section wrapper ──────────────────────────────────────────────────── */
@@ -228,27 +261,6 @@ function OptionsList({ sim, chosenActionType }: { sim: MitigationSimulation; cho
   )
 }
 
-/* ── Impact bar ─────────────────────────────────────────────────────────── */
-function ImpactBar({ before, after, label }: { before: number; after: number; label: string }) {
-  const pct = before > 0 ? Math.min(100, ((before - after) / before) * 100) : 0
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.375rem' }}>
-        <span style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', fontWeight: 500 }}>{label}</span>
-        <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#059669' }}>{pct.toFixed(0)}% reduced</span>
-      </div>
-      <div style={{ height: '8px', background: '#F4F4F5', borderRadius: '99px', overflow: 'hidden', position: 'relative' }}>
-        <div style={{ position: 'absolute', inset: 0, width: '100%', background: '#FEE2E2', borderRadius: '99px' }} />
-        <div style={{ position: 'absolute', inset: 0, width: `${pct}%`, background: 'linear-gradient(90deg, #059669, #34D399)', borderRadius: '99px', transition: 'width 1s ease' }} />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.375rem', fontSize: '0.5625rem', color: 'var(--ink-4)' }}>
-        <span style={{ color: '#DC2626', fontFamily: 'monospace', fontWeight: 700 }}>{formatINR(before)}</span>
-        <span>→ residual: <span style={{ color: '#059669', fontFamily: 'monospace', fontWeight: 700 }}>{formatINR(after)}</span></span>
-      </div>
-    </div>
-  )
-}
-
 /* ── Timeline ───────────────────────────────────────────────────────────── */
 function Timeline({ card }: { card: ActionCard }) {
   const daysToResolve = card.resolved_at
@@ -301,6 +313,12 @@ export default function ResolvedActionDetailPage() {
     [actionData, cardId]
   )
 
+  // IntelligentActionCard carries extra fields (affected_skus, days_to_stockout) not on ActionCard
+  const procCard = useMemo(
+    () => (procCards as any[] | undefined)?.find((c: any) => c.supplier_id === card?.supplier_id),
+    [procCards, card]
+  )
+
   const { data: sim, isLoading: simLoading } = useQuery({
     queryKey: ['mitigation-sim', card?.supplier_id],
     queryFn: () => api.getMitigationSimulation(card!.supplier_id!),
@@ -312,12 +330,7 @@ export default function ResolvedActionDetailPage() {
     () => (risks as any[] | undefined)?.find((r: any) => r.supplier_id === card?.supplier_id),
     [risks, card]
   )
-  const procCard = useMemo(
-    () => (procCards as any[] | undefined)?.find((c: any) => c.supplier_id === card?.supplier_id),
-    [procCards, card]
-  )
-
-  const { chosenActionLabel, handledExternally, userNote } = parseNote(card?.resolution_note ?? null)
+  const { chosenActionLabel, handledExternally, userNote, fields } = parseNote(card?.resolution_note ?? null)
   // Use the action that was actually chosen (from resolution_note) for icon / prevention tips.
   // Fall back to card.action_type (original recommendation) when no note was recorded.
   const actualActionType = resolvedActionType(card?.resolution_note ?? null, card?.action_type ?? '')
@@ -379,165 +392,189 @@ export default function ResolvedActionDetailPage() {
     )
   }
 
+  /* ── Derived display values ──────────────────────────────────────────── */
+  const daysToResolve = card.resolved_at
+    ? Math.max(0, Math.round((new Date(card.resolved_at).getTime() - new Date(card.created_at).getTime()) / 86_400_000))
+    : null
+
   /* ── Main render ─────────────────────────────────────────────────────── */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '900px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '960px' }}>
 
-      {/* Back nav */}
-      <button
-        onClick={() => navigate('/activity')}
-        style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: '0.8125rem', fontFamily: 'inherit', padding: '4px 0', width: 'fit-content' }}
-      >
+      {/* Back */}
+      <button onClick={() => navigate('/activity')} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: '0.8125rem', fontFamily: 'inherit', padding: '4px 0', width: 'fit-content' }}>
         <ChevronLeft size={14} /> Back to Activity Log
       </button>
 
-      {/* Hero — resolved banner */}
-      <div style={{
-        background: '#000', borderRadius: '0.75rem', padding: '1.5rem',
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1.5rem',
-      }}>
+      {/* ── HERO BANNER ──────────────────────────────────────────────────── */}
+      <div style={{ background: '#000', borderRadius: '0.75rem', padding: '1.5rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1.5rem' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <CheckCircle2 size={18} color="#16a34a" />
+          {/* Resolved stamp */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <CheckCircle2 size={15} color="#16a34a" />
             </div>
             <div>
-              <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Issue Resolved
-              </span>
+              <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Incident Closed</div>
               <div style={{ fontSize: '0.6875rem', color: '#86efac', fontWeight: 600 }}>
-                {card.resolved_at ? fmtDateTime(card.resolved_at) : ''}
+                {card.resolved_at ? fmtDateTime(card.resolved_at) : '—'}
+                {daysToResolve !== null && (
+                  <span style={{ marginLeft: 8, padding: '1px 6px', background: 'rgba(134,239,172,0.15)', borderRadius: 4, fontSize: '0.5rem', fontWeight: 700, letterSpacing: '0.04em' }}>
+                    {daysToResolve === 0 ? 'SAME DAY' : `${daysToResolve}d RESPONSE`}
+                  </span>
+                )}
               </div>
             </div>
           </div>
-          <h1 style={{ fontSize: '1.375rem', fontWeight: 700, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.3, margin: '0 0 0.5rem' }}>
+
+          {/* Supplier name + title */}
+          <div style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'rgba(255,255,255,0.45)', marginBottom: '0.25rem' }}>
+            {supplierRisk?.supplier_name ?? ''}
+          </div>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.3, margin: '0 0 0.625rem' }}>
             {card.title}
           </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
-            <span style={{
-              fontSize: '0.5rem', fontWeight: 800, padding: '2px 8px', borderRadius: '4px', letterSpacing: '0.06em',
-              background: PRIORITY_BG[card.priority] ?? '#F9FAFB',
-              color: PRIORITY_COLOR[card.priority] ?? '#6B7280',
-            }}>{card.priority.toUpperCase()}</span>
-            <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.5)' }}>
-              {ACTION_LABELS[card.action_type] ?? card.action_type}
+
+          {/* Badges */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.5rem', fontWeight: 800, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.06em', background: PRIORITY_BG[card.priority] ?? '#F9FAFB', color: PRIORITY_COLOR[card.priority] ?? '#6B7280' }}>
+              {card.priority.toUpperCase()} PRIORITY
             </span>
+            <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)' }}>·</span>
+            <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)' }}>{(procCard as any)?.affected_skus ?? '—'} products affected</span>
             {supplierRisk && (
               <>
-                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
-                <Badge level={supplierRisk.risk_level} />
+                <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)' }}>Current supplier risk: <strong style={{ color: currentRiskPct !== null && currentRiskPct >= 50 ? '#FCA5A5' : '#86efac' }}>{currentRiskPct ?? '—'}%</strong></span>
               </>
             )}
           </div>
         </div>
+
+        {/* Financial outcome */}
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Exposure Mitigated</div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#86efac', fontFamily: 'monospace', lineHeight: 1 }}>{formatINR(card.estimated_impact_inr)}</div>
-          {procCard && (
-            <div style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.35)', marginTop: '4px' }}>
-              of {formatINR(procCard.financial_exposure_inr)} total exposure
-            </div>
-          )}
+          <div style={{ fontSize: '0.45rem', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Net Saved</div>
+          <div style={{ fontSize: '2.25rem', fontWeight: 800, color: netGain >= 0 ? '#86efac' : '#fca5a5', fontFamily: 'monospace', lineHeight: 1 }}>{netGain >= 0 ? '+' : ''}{formatINR(netGain)}</div>
+          <div style={{ fontSize: '0.5625rem', color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>{formatINR(grossSaved)} saved · {formatINR(actionCost)} cost</div>
+          <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.2)', marginTop: 2 }}>~estimates based on action type</div>
         </div>
       </div>
 
-      {/* Two-column layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '1rem', alignItems: 'start' }}>
+      {/* ── TWO COLUMN LAYOUT ─────────────────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '1rem', alignItems: 'start' }}>
 
-        {/* LEFT COLUMN */}
+        {/* ── LEFT: main content ─────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-          {/* Problem Summary */}
-          <Section title="Problem Summary" icon={AlertTriangle} accent="#DC2626">
-            {card.description ? (
-              <p style={{ fontSize: '0.8125rem', color: '#000', lineHeight: 1.7, margin: '0 0 1rem' }}>
-                {card.description}
+          {/* 1. INCIDENT DETAILS */}
+          <Section title="Incident Details" icon={AlertTriangle} accent="#DC2626">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Description */}
+              <p style={{ fontSize: '0.8125rem', color: '#111827', lineHeight: 1.7, margin: 0 }}>
+                {card.description ?? 'No description recorded for this incident.'}
               </p>
-            ) : (
-              <p style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', fontStyle: 'italic', margin: '0 0 1rem' }}>
-                No detailed description recorded for this issue.
-              </p>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-              {[
-                { label: 'Risk detected', value: fmtDate(card.created_at) },
-                { label: 'Priority', value: card.priority.charAt(0).toUpperCase() + card.priority.slice(1) },
-                { label: 'Action type', value: ACTION_LABELS[card.action_type] ?? card.action_type },
-                { label: 'Exposure at risk', value: formatINR(card.estimated_impact_inr) },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <div style={{ fontSize: '0.5rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{label}</div>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#000' }}>{value}</div>
+              {/* Key facts grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                {([
+                  { label: 'Flagged on',        value: fmtDate(card.created_at) },
+                  { label: 'Priority',           value: card.priority.charAt(0).toUpperCase() + card.priority.slice(1) },
+                  { label: 'Products at risk',   value: `${(procCard as any)?.affected_skus ?? '—'} SKUs` },
+                  { label: 'Exposure at risk',   value: formatINR(card.estimated_impact_inr) },
+                  { label: 'Stock left (then)',  value: (procCard as any)?.days_to_stockout != null ? `${(procCard as any).days_to_stockout} days` : '—' },
+                  { label: 'Resolved on',        value: card.resolved_at ? fmtDate(card.resolved_at) : '—' },
+                ] as {label:string;value:string}[]).map(({ label, value }) => (
+                  <div key={label}>
+                    <div style={{ fontSize: '0.45rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#000' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Section>
+
+          {/* 2. ACTION TAKEN */}
+          <Section title="Action Taken" icon={ActionIcon} accent="#059669">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+
+              {/* Action badge */}
+              <div style={{ padding: '0.875rem 1rem', background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <ActionIcon size={18} color="#fff" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.5rem', fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Action Taken</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#14532D' }}>
+                    {chosenActionLabel ?? ACTION_LABELS[card.action_type] ?? card.action_type}
+                  </div>
+                  {handledExternally && (
+                    <div style={{ fontSize: '0.625rem', color: '#16a34a', marginTop: 2 }}>Handled outside this system</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Logged operational details */}
+              {Object.keys(fields).length > 0 && (
+                <div style={{ background: '#FAFAFA', border: '1px solid var(--border)', borderRadius: '0.5rem', overflow: 'hidden' }}>
+                  <div style={{ padding: '0.625rem 1rem', borderBottom: '1px solid var(--border)', background: '#F3F4F6' }}>
+                    <span style={{ fontSize: '0.5rem', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Logged Details</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+                    {Object.entries(fields).map(([key, value], i) => (
+                      <div key={key} style={{ padding: '0.625rem 1rem', borderBottom: i < Object.keys(fields).length - 2 ? '1px solid var(--border)' : undefined, borderRight: i % 2 === 0 ? '1px solid var(--border)' : undefined }}>
+                        <div style={{ fontSize: '0.45rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{key}</div>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#000' }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Free text notes */}
+              {userNote && (
+                <div style={{ padding: '0.875rem 1rem', background: '#FAFAFA', border: '1px solid var(--border)', borderRadius: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.5rem' }}>
+                    <MessageSquare size={13} color="var(--ink-4)" />
+                    <span style={{ fontSize: '0.5rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Additional Notes</span>
+                  </div>
+                  <p style={{ fontSize: '0.8125rem', color: '#111827', lineHeight: 1.6, margin: 0 }}>"{userNote}"</p>
+                </div>
+              )}
+
+              {!chosenActionLabel && !userNote && Object.keys(fields).length === 0 && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--ink-4)', fontStyle: 'italic', margin: 0 }}>
+                  No details were logged at resolution time.
+                </p>
+              )}
+            </div>
+          </Section>
+
+          {/* 3. FINANCIAL OUTCOME */}
+          <Section title="Financial Outcome" icon={TrendingDown} accent="#059669">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {([
+                { label: 'Money that was at risk',   sub: 'total exposure when issue was flagged',                    value: formatINR(impactBefore),  color: '#DC2626' },
+                { label: 'Loss avoided',             sub: `${Math.round(reductionPct*100)}% cut — ${ACTION_LABELS[actualActionType] ?? 'action taken'}`, value: `−${formatINR(grossSaved)}`, color: '#059669' },
+                { label: 'Cost to execute action',   sub: 'what was spent to carry out the fix',                     value: `+${formatINR(actionCost)}`, color: '#D97706' },
+                { label: 'Residual exposure',        sub: 'portion the action could not eliminate',                  value: formatINR(impactAfter),   color: '#6B7280' },
+                { label: 'Net benefit',              sub: 'loss avoided minus cost of action',                       value: `${netGain >= 0 ? '+' : ''}${formatINR(netGain)}`, color: netGain >= 0 ? '#059669' : '#DC2626', bold: true },
+              ] as {label:string;sub:string;value:string;color:string;bold?:boolean}[]).map(({ label, sub, value, color, bold }, i, arr) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : undefined, borderTop: bold ? '2px solid var(--border)' : undefined, marginTop: bold ? '0.25rem' : undefined }}>
+                  <div>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: bold ? 700 : 500, color: '#000' }}>{label}</div>
+                    <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', marginTop: 1 }}>{sub}</div>
+                  </div>
+                  <div style={{ fontSize: bold ? '1.125rem' : '0.9375rem', fontWeight: 800, color, fontFamily: 'monospace' }}>{value}</div>
                 </div>
               ))}
             </div>
           </Section>
 
-          {/* What Was Done */}
-          <Section title="What Was Done" icon={ActionIcon} accent="#059669">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-
-              {/* Chosen action */}
-              <div style={{ padding: '0.875rem 1rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
-                  <CheckCircle2 size={14} color="#16a34a" />
-                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Action Taken</span>
-                </div>
-                <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#14532D' }}>
-                  {chosenActionLabel ?? ACTION_LABELS[card.action_type] ?? card.action_type}
-                </div>
-                {handledExternally && (
-                  <div style={{ fontSize: '0.6875rem', color: '#16a34a', marginTop: '4px', fontStyle: 'italic' }}>
-                    Handled outside the system (external action)
-                  </div>
-                )}
-              </div>
-
-              {/* Resolution note / user's own words */}
-              {userNote ? (
-                <div style={{ padding: '0.875rem 1rem', background: '#FAFAFA', border: '1px solid var(--border)', borderRadius: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginBottom: '0.5rem' }}>
-                    <MessageSquare size={13} color="var(--ink-4)" />
-                    <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Resolution Notes</span>
-                  </div>
-                  <p style={{ fontSize: '0.8125rem', color: '#000', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
-                    "{userNote}"
-                  </p>
-                </div>
-              ) : (
-                <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)', fontStyle: 'italic' }}>
-                  No additional notes were recorded at the time of resolution.
-                </div>
-              )}
-            </div>
-          </Section>
-
-          {/* Available Options (mitigation simulation) */}
-          <Section title="Options That Were Available" icon={Target}>
-            {simLoading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {[60, 60, 60].map(h => <div key={h} className="skeleton" style={{ height: h, borderRadius: '0.5rem' }} />)}
-              </div>
-            ) : sim ? (
-              <OptionsList sim={sim} chosenActionType={resolvedActionType(card.resolution_note, card.action_type)} />
-            ) : (
-              <p style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', fontStyle: 'italic' }}>
-                Simulation data not available for this supplier.
-              </p>
-            )}
-          </Section>
-
-          {/* Prevention */}
-          <Section title={`How to Prevent This Next Time — ${prevention.title}`} icon={Lightbulb} accent="#D97706">
+          {/* 4. HOW TO PREVENT NEXT TIME */}
+          <Section title={`Prevent Recurrence — ${prevention.title}`} icon={Lightbulb} accent="#D97706">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {prevention.points.map((point, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                  <div style={{
-                    width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
-                    background: '#000', color: '#fff',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.5625rem', fontWeight: 700, marginTop: '1px',
-                  }}>{i + 1}</div>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, background: '#000', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.5625rem', fontWeight: 700, marginTop: 1 }}>{i + 1}</div>
                   <p style={{ fontSize: '0.8125rem', color: '#000', lineHeight: 1.65, margin: 0 }}>{point}</p>
                 </div>
               ))}
@@ -545,72 +582,67 @@ export default function ResolvedActionDetailPage() {
           </Section>
         </div>
 
-        {/* RIGHT COLUMN */}
+        {/* ── RIGHT: sidebar ─────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-          {/* Financial impact */}
-          <Section title="Financial Impact" icon={TrendingDown} accent="#059669">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-
-              {/* Before / After — sourced from card.estimated_impact_inr (historical truth) */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem' }}>
-                <div style={{ padding: '0.75rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '0.5rem' }}>
-                  <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>Before</div>
-                  <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#DC2626', fontFamily: 'monospace' }}>{formatINR(impactBefore)}</div>
-                  <div style={{ fontSize: '0.45rem', color: '#991B1B', marginTop: '2px', opacity: 0.7 }}>exposure when issue raised</div>
-                </div>
-                <div style={{ padding: '0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.5rem' }}>
-                  <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>After</div>
-                  <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>{formatINR(impactAfter)}</div>
-                  <div style={{ fontSize: '0.45rem', color: '#166534', marginTop: '2px', opacity: 0.7 }}>residual after {ACTION_LABELS[actualActionType] ?? 'action'}</div>
-                </div>
-              </div>
-
-              <ImpactBar before={impactBefore} after={impactAfter} label="Exposure reduction" />
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
-                {[
-                  { label: 'Gross savings', value: formatINR(grossSaved), color: '#059669', sub: 'exposure eliminated' },
-                  { label: 'Net gain', value: formatINR(netGain), color: '#2563EB', sub: 'after action cost' },
-                  { label: 'Action cost', value: formatINR(actionCost), color: '#DC2626', sub: 'cost to execute' },
-                  {
-                    label: 'Current risk',
-                    value: currentRiskPct !== null ? `${currentRiskPct}%` : '—',
-                    color: currentRiskPct !== null && currentRiskPct >= 50 ? '#DC2626' : '#059669',
-                    sub: currentRiskPct !== null && currentRiskPct >= 30 ? 'supplier still at risk' : 'supplier stabilised',
-                  },
-                ].map(({ label, value, color, sub }) => (
-                  <div key={label}>
-                    <div style={{ fontSize: '0.45rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{label}</div>
-                    <div style={{ fontSize: '0.9375rem', fontWeight: 800, color, fontFamily: 'monospace' }}>{value}</div>
-                    <div style={{ fontSize: '0.4375rem', color: 'var(--ink-4)', marginTop: '1px' }}>{sub}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Section>
-
-          {/* Timeline */}
-          <Section title="Resolution Timeline" icon={Clock}>
-            <Timeline card={card} />
-          </Section>
-
-          {/* Supplier context */}
+          {/* Supplier current status */}
           {supplierRisk && (
-            <Section title="Supplier Context" icon={BarChart3}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#000' }}>{supplierRisk.supplier_name}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Badge level={supplierRisk.risk_level} />
-                  <span style={{ fontSize: '0.75rem', color: 'var(--ink-3)' }}>{(supplierRisk.overall_score * 100).toFixed(0)}% risk score</span>
+            <Section title="Supplier Today" icon={BarChart3} accent={currentRiskPct !== null && currentRiskPct >= 50 ? '#DC2626' : '#059669'}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#000', marginBottom: 4 }}>{supplierRisk.supplier_name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Badge level={supplierRisk.risk_level} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--ink-3)', fontWeight: 600 }}>{currentRiskPct}% risk score</span>
+                  </div>
                 </div>
-                <p style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', lineHeight: 1.5, margin: '0.25rem 0 0', padding: '0.625rem', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '0.375rem' }}>
-                  Note: The supplier's underlying risk score reflects real-world conditions (disruptions, inventory, delivery data) and is independent of this action's resolution status. Resolving an action card records that you've taken action — it doesn't remove the root cause.
-                </p>
+
+                {/* Risk bar */}
+                <div>
+                  <div style={{ height: 8, background: '#F4F4F5', borderRadius: 99, overflow: 'hidden' }}>
+                    <div style={{ width: `${currentRiskPct ?? 0}%`, height: '100%', background: currentRiskPct !== null && currentRiskPct >= 60 ? '#DC2626' : currentRiskPct !== null && currentRiskPct >= 40 ? '#D97706' : '#059669', borderRadius: 99, transition: 'width 0.6s ease' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.45rem', color: 'var(--ink-4)' }}>
+                    <span>0% (no risk)</span><span>100% (critical)</span>
+                  </div>
+                </div>
+
+                {currentRiskPct !== null && currentRiskPct >= 50 ? (
+                  <div style={{ padding: '0.625rem 0.75rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8 }}>
+                    <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#991B1B', marginBottom: 3 }}>⚠ Still at elevated risk</div>
+                    <div style={{ fontSize: '0.5625rem', color: '#991B1B', lineHeight: 1.4 }}>The card is closed but the root cause may still be active. Continue monitoring this supplier closely.</div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '0.625rem 0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8 }}>
+                    <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#166534', marginBottom: 3 }}>✓ Supplier looks stable</div>
+                    <div style={{ fontSize: '0.5625rem', color: '#166534', lineHeight: 1.4 }}>Risk score has reduced. Continue standard monitoring.</div>
+                  </div>
+                )}
+
+                <button onClick={() => navigate(`/risks/${card.supplier_id}`)} style={{ padding: '0.5rem 0.875rem', background: '#000', color: '#fff', border: 'none', borderRadius: 6, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', width: '100%' }}>
+                  View Supplier Risk Profile →
+                </button>
               </div>
             </Section>
           )}
 
+          {/* Resolution Timeline */}
+          <Section title="Resolution Timeline" icon={Clock}>
+            <Timeline card={card} />
+          </Section>
+
+          {/* Options that existed */}
+          <Section title="Options That Were Available" icon={Target}>
+            {simLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                {[50, 50, 50, 50].map((h, i) => <div key={i} className="skeleton" style={{ height: h, borderRadius: '0.375rem' }} />)}
+              </div>
+            ) : sim ? (
+              <OptionsList sim={sim} chosenActionType={actualActionType} />
+            ) : (
+              <p style={{ fontSize: '0.75rem', color: 'var(--ink-3)', fontStyle: 'italic' }}>Simulation data unavailable.</p>
+            )}
+          </Section>
         </div>
       </div>
     </div>

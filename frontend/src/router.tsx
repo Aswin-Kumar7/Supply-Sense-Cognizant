@@ -9,6 +9,9 @@ const DashboardPage          = React.lazy(() => import('./pages/Dashboard').then
 const RisksPage              = React.lazy(() => import('./pages/RisksPage'))
 const RiskDetailPage         = React.lazy(() => import('./pages/RiskDetailPage'))
 const RiskMitigationPlan     = React.lazy(() => import('./pages/RiskMitigationPlan'))
+const ExpediteOrdersPage     = React.lazy(() => import('./pages/ExpediteOrdersPage'))
+const IncreaseStockPage      = React.lazy(() => import('./pages/IncreaseStockPage'))
+const SubstituteSkusPage     = React.lazy(() => import('./pages/SubstituteSkusPage'))
 const CompaniesPage          = React.lazy(() => import('./pages/CompaniesPage'))
 const CompanyDetailPage      = React.lazy(() => import('./pages/CompanyDetailPage'))
 const AlternateSuppliersPage       = React.lazy(() => import('./pages/AlternateSuppliersPage'))
@@ -52,6 +55,18 @@ export const router = createBrowserRouter([
       {
         path: 'risks/:id/mitigation',
         element: <LazyRoute><RiskMitigationPlan /></LazyRoute>,
+      },
+      {
+        path: 'risks/:id/expedite',
+        element: <LazyRoute><ExpediteOrdersPage /></LazyRoute>,
+      },
+      {
+        path: 'risks/:id/increase-stock',
+        element: <LazyRoute><IncreaseStockPage /></LazyRoute>,
+      },
+      {
+        path: 'risks/:id/substitute-skus',
+        element: <LazyRoute><SubstituteSkusPage /></LazyRoute>,
       },
       {
         path: 'companies',

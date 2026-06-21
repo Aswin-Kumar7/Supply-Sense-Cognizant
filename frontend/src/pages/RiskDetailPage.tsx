@@ -6,7 +6,7 @@ import { queryKeys } from '../hooks/queryKeys'
 import { useWeightedRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
 import {
   LineChart, CloudLightning, ShieldAlert, CalendarDays, Box,
-  CheckCircle2, PlayCircle, Cpu,
+  CheckCircle2, Cpu,
   Network, ChevronRight, XCircle, Timer, Banknote, Layers,
   TrendingDown
 } from 'lucide-react'
@@ -257,20 +257,6 @@ export default function RiskDetailPage() {
             </span>
           )}
         </div>
-        
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={() => navigate(`/risks/${id}/mitigation`)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '6px 14px', background: '#FFF', color: '#374151',
-              border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-            }}
-          >
-            <PlayCircle size={14} /> Run Mitigation
-          </button>
-        </div>
       </div>
 
       <div style={{ padding: '20px 24px', maxWidth: '1400px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -293,9 +279,9 @@ export default function RiskDetailPage() {
           </div>
           
           <MetricItem label="Financial Exposure" value={card ? formatINR(card.financial_exposure_inr) : '--'} icon={<Banknote size={14} />} alert={true} />
-          <MetricItem label="Days to Stockout" value={card ? String(card.days_to_stockout) : '--'} icon={<Timer size={14} />} alert={card && card.days_to_stockout < 5} />
-          <MetricItem label="SKUs at Risk" value={card ? String(card.affected_skus) : '--'} icon={<Box size={14} />} />
-          <MetricItem label="Recovery Window" value={card ? card.escalation_window : '--'} icon={<TrendingDown size={14} />} />
+          <MetricItem label="Days of Stock Left" value={card ? `${card.days_to_stockout}d` : '--'} icon={<Timer size={14} />} alert={card && card.days_to_stockout < 5} />
+          <MetricItem label="Products at Risk" value={card ? String(card.affected_skus) : '--'} icon={<Box size={14} />} />
+          <MetricItem label="Act Within" value={card ? card.escalation_window : '--'} icon={<TrendingDown size={14} />} />
         </div>
 
         {/* ── Main Layout: 2 Columns ────────────────────────────────────── */}
@@ -305,59 +291,100 @@ export default function RiskDetailPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             
             {/* AI Strategic Assessment */}
-            {card && (
+            {card && (() => {
+              // Detect fallback: the template always starts with "Supplier risk score indicates"
+              const isFallback = card.reasoning?.startsWith('Supplier risk score indicates')
+              return (
               <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
                 <div style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Cpu size={16} color="#2563EB" />
-                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>AI Strategic Assessment</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>Strategic Assessment</span>
+                  {isFallback ? (
+                    <span style={{ marginLeft: 'auto', fontSize: '10px', fontWeight: 600, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '99px' }}>
+                      ~ Rule-based estimate · AI unavailable
+                    </span>
+                  ) : (
+                    <span style={{ marginLeft: 'auto', fontSize: '10px', fontWeight: 600, color: '#1D4ED8', background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: '99px' }}>
+                      AI-generated
+                    </span>
+                  )}
                 </div>
                 <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <div>
                     <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 8px', color: '#111827' }}>{card.recommended_action}</h3>
                     <p style={{ fontSize: '13px', color: '#4B5563', lineHeight: 1.5, margin: 0 }}>{card.reasoning}</p>
                   </div>
-                  
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    {card.urgency_narrative && (
-                      <div style={{ flex: 1, background: '#FEF2F2', border: '1px solid #FCA5A5', padding: '10px 12px', borderRadius: '12px', display: 'flex', gap: '10px' }}>
-                        <ShieldAlert size={16} color="#DC2626" style={{ flexShrink: 0, marginTop: '1px' }} />
-                        <span style={{ fontSize: '12px', color: '#991B1B', lineHeight: 1.4, fontWeight: 500 }}>{card.urgency_narrative}</span>
+
+                  {/* Severity + Cost — two clear panels */}
+                  {(() => {
+                    const days = card.days_to_stockout ?? 999
+                    const severity = days <= 3 ? 'critical' : days <= 7 ? 'high' : 'medium'
+                    const severityConfig = {
+                      critical: { label: 'CRITICAL', sub: 'Stock runs out in under 3 days', bg: '#FEF2F2', border: '#FCA5A5', text: '#991B1B', badge: '#DC2626' },
+                      high:     { label: 'HIGH',     sub: `Stock runs out in ${days} days — act before it\'s gone`, bg: '#FFF7ED', border: '#FDBA74', text: '#9A3412', badge: '#EA580C' },
+                      medium:   { label: 'MEDIUM',   sub: `${days} days of stock remaining — monitor closely`, bg: '#FFFBEB', border: '#FDE68A', text: '#92400E', badge: '#D97706' },
+                    }[severity]
+                    const dailyLoss = Math.round((card.financial_exposure_inr ?? 0) * 0.15)
+                    return (
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        {/* Severity panel */}
+                        <div style={{ flex: 1, background: severityConfig.bg, border: `1px solid ${severityConfig.border}`, padding: '12px', borderRadius: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                            <ShieldAlert size={14} color={severityConfig.badge} />
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: severityConfig.badge, letterSpacing: '0.06em' }}>
+                              {severityConfig.label} SEVERITY
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: severityConfig.text, lineHeight: 1.5, fontWeight: 500 }}>
+                            {severityConfig.sub}
+                          </div>
+                          <div style={{ fontSize: '11px', color: severityConfig.text, opacity: 0.75, marginTop: '4px' }}>
+                            Act within: <strong>{card.escalation_window || 'immediately'}</strong>
+                          </div>
+                        </div>
+                        {/* Cost of waiting panel */}
+                        <div style={{ flex: 1, background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '12px', borderRadius: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                            <Timer size={14} color="#64748B" />
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                              Cost of Waiting
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A', fontFamily: 'monospace', lineHeight: 1 }}>
+                            ~{formatINR(dailyLoss)}<span style={{ fontSize: '11px', fontWeight: 500, color: '#64748B' }}> / day</span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748B', marginTop: '4px', lineHeight: 1.4 }}>
+                            estimated loss from SLA penalties + lost sales each day you don't act
+                          </div>
+                          {isFallback && (
+                            <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
+                              ~ estimate · 15% of total exposure
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    {card.cost_of_delay_narrative && (
-                      <div style={{ flex: 1, background: '#FFFBEB', border: '1px solid #FDE68A', padding: '10px 12px', borderRadius: '12px', display: 'flex', gap: '10px' }}>
-                        <Timer size={16} color="#D97706" style={{ flexShrink: 0, marginTop: '1px' }} />
-                        <span style={{ fontSize: '12px', color: '#B45309', lineHeight: 1.4, fontWeight: 500 }}>{card.cost_of_delay_narrative}</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Primary Call to Action */}
-                  <div style={{ marginTop: '6px', borderTop: '1px solid #E5E7EB', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: '#6B7280' }}>Simulate alternative suppliers to mitigate this risk.</span>
-                    <button
-                      onClick={() => navigate(`/risks/${id}/mitigation`)}
-                      style={{ 
-                        display: 'flex', alignItems: 'center', gap: '8px',
-                        padding: '8px 16px', background: '#2563EB', color: '#FFF',
-                        border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                        boxShadow: '0 1px 2px rgba(37,99,235,0.2)',
-                        transition: 'background 0.2s'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#1D4ED8'}
-                      onMouseLeave={e => e.currentTarget.style.background = '#2563EB'}
-                    >
-                      <PlayCircle size={16} color="#FFF" /> Run Mitigation Simulation
-                    </button>
-                  </div>
+                    )
+                  })()}
+
+                  <button
+                    onClick={() => navigate(`/risks/${id}/mitigation`)}
+                    style={{
+                      width: '100%', padding: '10px 16px', background: '#000', color: '#fff',
+                      border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit', marginTop: '8px'
+                    }}
+                  >
+                    Explore Solutions →
+                  </button>
                 </div>
               </div>
-            )}
+              )
+            })()}
 
             {/* Risk Telemetry */}
             <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0, color: '#111827' }}>Risk Telemetry</h3>
+                <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0, color: '#111827' }}>Live Risk Signals</h3>
                 <span style={{ fontSize: '10px', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Strands Analytics</span>
               </div>
               {risk ? <SignalDataTable risk={risk} /> : <Skeleton h={150} />}
@@ -376,7 +403,7 @@ export default function RiskDetailPage() {
 
             {/* Contributing Factors */}
             <div style={{ background: '#FFF', border: '1px solid #E5E7EB', borderRadius: '16px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 16px', color: '#111827' }}>Weighted Drivers</h3>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 16px', color: '#111827' }}>What's Driving the Risk</h3>
               {risk ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {Object.entries(risk.factors ?? {})

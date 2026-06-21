@@ -84,7 +84,7 @@ function ActionCard({ risk, card }: { risk: SupplierRiskAnalysis; card: Intellig
         {/* Threat Metrics */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: '#F9FAFB', padding: '10px', borderRadius: '8px', border: '1px solid #F3F4F6', marginTop: 'auto' }}>
           <div>
-            <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', marginBottom: '2px' }}>Likelihood</div>
+            <div style={{ fontSize: '0.625rem', fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', marginBottom: '2px' }}>Risk Score</div>
             <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#111827' }}>{likelihood}%</div>
           </div>
           <div>

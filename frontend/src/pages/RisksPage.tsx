@@ -86,7 +86,7 @@ function RiskRow({ risk, card }: { risk: SupplierRiskAnalysis; card?: Intelligen
             {cfg.label}
           </span>
           <span style={{ fontSize: '0.75rem', color: '#6B7280', paddingLeft: '2px' }}>
-            {(risk.overall_score * 100).toFixed(0)}% Likelihood
+            {(risk.overall_score * 100).toFixed(0)}% Risk Score
           </span>
         </div>
       </td>
@@ -412,7 +412,7 @@ export default function RisksPage() {
                   <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
                     <th style={{ width: '30%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
                     <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Action Priority</th>
-                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Chance of Failure</th>
+                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk Score</th>
                     <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Money at Risk</th>
                     <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Days of Stock Left</th>
                     <th style={{ width: '10%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
@@ -445,7 +445,7 @@ export default function RisksPage() {
                   <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
                     <th style={{ width: '40%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
                     <th style={{ width: '20%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Money Protected</th>
-                    <th style={{ width: '25%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Original Likelihood</th>
+                    <th style={{ width: '25%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk Score at Time of Issue</th>
                     <th style={{ width: '15%', padding: '0.75rem 1rem', fontSize: '0.6875rem', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
                   </tr>
                 </thead>
