@@ -34,6 +34,23 @@ const ACTION_LABELS: Record<string, string> = {
   reorder:         'Issued reorder',
 }
 
+// How much each action type reduces financial exposure (matches financial_engine.py)
+const RISK_REDUCTION_MAP: Record<string, number> = {
+  switch_supplier: 0.60,
+  increase_stock:  0.40,
+  expedite:        0.30,
+  substitute_sku:  0.25,
+  reorder:         0.40,
+}
+// Cost of executing each action as a fraction of exposure (matches financial_engine.py)
+const COST_FRACTION_MAP: Record<string, number> = {
+  switch_supplier: 0.15,
+  increase_stock:  0.25,
+  expedite:        0.10,
+  substitute_sku:  0.08,
+  reorder:         0.15,
+}
+
 // Reverse map: label text → action_type key
 // Covers both the labels stored in resolution_note (from RiskMitigationPlan) and the
 // canonical labels above, so we can identify which option was actually chosen.
@@ -307,6 +324,18 @@ export default function ResolvedActionDetailPage() {
   const prevention = PREVENTION[actualActionType] ?? PREVENTION.reorder
   const ActionIcon = ACTION_ICONS[actualActionType] ?? CheckCircle2
 
+  // Financial Impact — derived from the actual recorded exposure at the time the card was raised.
+  // We do NOT use sim.current_exposure_inr because that's a fresh live calculation and won't match
+  // the historical exposure at resolution time. card.estimated_impact_inr is the source of truth.
+  const impactBefore   = card?.estimated_impact_inr ?? 0
+  const reductionPct   = RISK_REDUCTION_MAP[actualActionType] ?? 0.60
+  const costFraction   = COST_FRACTION_MAP[actualActionType] ?? 0.15
+  const impactAfter    = Math.round(impactBefore * (1 - reductionPct))
+  const grossSaved     = impactBefore - impactAfter
+  const actionCost     = Math.round(impactBefore * costFraction)
+  const netGain        = grossSaved - actionCost
+  const currentRiskPct = supplierRisk ? Math.round(supplierRisk.overall_score * 100) : null
+
   /* ── Loading / not found ─────────────────────────────────────────────── */
   if (cardsLoading) {
     return (
@@ -523,47 +552,41 @@ export default function ResolvedActionDetailPage() {
           <Section title="Financial Impact" icon={TrendingDown} accent="#059669">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-              {sim ? (
-                <>
-                  {/* Big numbers */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem' }}>
-                    <div style={{ padding: '0.75rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '0.5rem' }}>
-                      <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Before</div>
-                      <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#DC2626', fontFamily: 'monospace' }}>{formatINR(sim.current_exposure_inr)}</div>
-                    </div>
-                    <div style={{ padding: '0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.5rem' }}>
-                      <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>After</div>
-                      <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>{formatINR(sim.mitigated_exposure_inr)}</div>
-                    </div>
-                  </div>
-
-                  <ImpactBar before={sim.current_exposure_inr} after={sim.mitigated_exposure_inr} label="Exposure reduction" />
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
-                    {[
-                      { label: 'Gross savings', value: formatINR(sim.savings_inr), color: '#059669' },
-                      { label: 'Net gain', value: formatINR(sim.net_saving_inr), color: '#2563EB' },
-                      { label: 'Action cost', value: formatINR(sim.mitigation_cost_inr), color: '#DC2626' },
-                      { label: 'Risk before', value: `${(sim.risk_before * 100).toFixed(0)}%`, color: '#DC2626' },
-                    ].map(({ label, value, color }) => (
-                      <div key={label}>
-                        <div style={{ fontSize: '0.45rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{label}</div>
-                        <div style={{ fontSize: '0.9375rem', fontWeight: 800, color, fontFamily: 'monospace' }}>{value}</div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div>
-                  <div style={{ padding: '0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.5rem', marginBottom: '0.75rem' }}>
-                    <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Estimated Exposure Mitigated</div>
-                    <div style={{ fontSize: '1.375rem', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>{formatINR(card.estimated_impact_inr)}</div>
-                  </div>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--ink-4)', fontStyle: 'italic' }}>
-                    Detailed simulation data unavailable.
-                  </p>
+              {/* Before / After — sourced from card.estimated_impact_inr (historical truth) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.625rem' }}>
+                <div style={{ padding: '0.75rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '0.5rem' }}>
+                  <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>Before</div>
+                  <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#DC2626', fontFamily: 'monospace' }}>{formatINR(impactBefore)}</div>
+                  <div style={{ fontSize: '0.45rem', color: '#991B1B', marginTop: '2px', opacity: 0.7 }}>exposure when issue raised</div>
                 </div>
-              )}
+                <div style={{ padding: '0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.5rem' }}>
+                  <div style={{ fontSize: '0.45rem', fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>After</div>
+                  <div style={{ fontSize: '1.125rem', fontWeight: 800, color: '#059669', fontFamily: 'monospace' }}>{formatINR(impactAfter)}</div>
+                  <div style={{ fontSize: '0.45rem', color: '#166534', marginTop: '2px', opacity: 0.7 }}>residual after {ACTION_LABELS[actualActionType] ?? 'action'}</div>
+                </div>
+              </div>
+
+              <ImpactBar before={impactBefore} after={impactAfter} label="Exposure reduction" />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+                {[
+                  { label: 'Gross savings', value: formatINR(grossSaved), color: '#059669', sub: 'exposure eliminated' },
+                  { label: 'Net gain', value: formatINR(netGain), color: '#2563EB', sub: 'after action cost' },
+                  { label: 'Action cost', value: formatINR(actionCost), color: '#DC2626', sub: 'cost to execute' },
+                  {
+                    label: 'Current risk',
+                    value: currentRiskPct !== null ? `${currentRiskPct}%` : '—',
+                    color: currentRiskPct !== null && currentRiskPct >= 50 ? '#DC2626' : '#059669',
+                    sub: currentRiskPct !== null && currentRiskPct >= 30 ? 'supplier still at risk' : 'supplier stabilised',
+                  },
+                ].map(({ label, value, color, sub }) => (
+                  <div key={label}>
+                    <div style={{ fontSize: '0.45rem', fontWeight: 700, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{label}</div>
+                    <div style={{ fontSize: '0.9375rem', fontWeight: 800, color, fontFamily: 'monospace' }}>{value}</div>
+                    <div style={{ fontSize: '0.4375rem', color: 'var(--ink-4)', marginTop: '1px' }}>{sub}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </Section>
 
