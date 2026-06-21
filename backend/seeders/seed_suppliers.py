@@ -15,7 +15,7 @@ import uuid
 
 SUPPLIER_IDS = [
     uuid.UUID(f"00000000-0000-0000-0000-{str(i).zfill(12)}")
-    for i in range(1, 28)
+    for i in range(1, 35)
 ]
 
 SUPPLIERS = [
@@ -282,5 +282,57 @@ SUPPLIERS = [
         "category": "FMCG", "tier": 1,
         "reliability_score": 0.83, "lead_time_days": 8,
         "risk_zone": None, "latitude": 12.295, "longitude": 76.639,
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # TIER 1 — Historical / Resolved Suppliers (indices 27-32)
+    # ────────────────────────────────────────────────────────────────────
+    {
+        "id": SUPPLIER_IDS[27],
+        "name": "Bharat Spices & Extracts",
+        "city": "Hyderabad", "state": "Telangana", "region": "South",
+        "category": "FMCG", "tier": 1,
+        "reliability_score": 0.95, "lead_time_days": 4,
+        "risk_zone": None, "latitude": 17.385, "longitude": 78.486,
+    },
+    {
+        "id": SUPPLIER_IDS[28],
+        "name": "Himalayan Spring Waters",
+        "city": "Dehradun", "state": "Uttarakhand", "region": "North",
+        "category": "FMCG", "tier": 1,
+        "reliability_score": 0.88, "lead_time_days": 5,
+        "risk_zone": None, "latitude": 30.316, "longitude": 78.032,
+    },
+    {
+        "id": SUPPLIER_IDS[29],
+        "name": "Kaveri Agro Products",
+        "city": "Trichy", "state": "Tamil Nadu", "region": "South",
+        "category": "FMCG", "tier": 1,
+        "reliability_score": 0.92, "lead_time_days": 3,
+        "risk_zone": None, "latitude": 10.790, "longitude": 78.704,
+    },
+    {
+        "id": SUPPLIER_IDS[30],
+        "name": "Rajputana Grains",
+        "city": "Jaipur", "state": "Rajasthan", "region": "North",
+        "category": "FMCG", "tier": 1,
+        "reliability_score": 0.89, "lead_time_days": 6,
+        "risk_zone": None, "latitude": 26.912, "longitude": 75.787,
+    },
+    {
+        "id": SUPPLIER_IDS[31],
+        "name": "Deccan Edibles",
+        "city": "Vijayawada", "state": "Andhra Pradesh", "region": "South",
+        "category": "FMCG", "tier": 1,
+        "reliability_score": 0.94, "lead_time_days": 4,
+        "risk_zone": "cyclone_coastal", "latitude": 16.506, "longitude": 80.648,
+    },
+    {
+        "id": SUPPLIER_IDS[32],
+        "name": "Vidarbha Cotton & Oils",
+        "city": "Nagpur", "state": "Maharashtra", "region": "Central",
+        "category": "FMCG", "tier": 1,
+        "reliability_score": 0.91, "lead_time_days": 5,
+        "risk_zone": None, "latitude": 21.145, "longitude": 79.088,
     },
 ]

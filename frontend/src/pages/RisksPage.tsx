@@ -146,36 +146,31 @@ export default function RisksPage() {
 
   const resolvedSupplierIds = useMemo(() => {
     const cardsList = actionData?.action_cards ?? []
-    const bySupplier = new Map<string, { resolved: number; total: number }>()
+    const resolved = new Set<string>()
     for (const c of cardsList) {
-      if (!c.supplier_id) continue
-      const entry = bySupplier.get(c.supplier_id) ?? { resolved: 0, total: 0 }
-      entry.total++
-      if (c.is_resolved) entry.resolved++
-      bySupplier.set(c.supplier_id, entry)
+      if (c.supplier_id && c.is_resolved) {
+        resolved.add(c.supplier_id)
+      }
     }
-    return new Set(
-      [...bySupplier.entries()]
-        .filter(([, { resolved, total }]) => total > 0 && resolved === total)
-        .map(([id]) => id)
-    )
+    return resolved
   }, [actionData])
 
   const activeRisks = useMemo(() => riskList.filter(r => {
-    if (resolvedSupplierIds.has(r.supplier_id)) return false
     if (r.risk_level === 'low') return false
     const card = cardMap.get(r.supplier_id)
     if (!card || card.financial_exposure_inr === 0) return false
+    
+    // Also ensure they actually have an unresolved action card
+    const hasUnresolved = (actionData?.action_cards ?? []).some(c => c.supplier_id === r.supplier_id && !c.is_resolved)
+    if (!hasUnresolved) return false
+
     return true
-  }), [riskList, resolvedSupplierIds, cardMap])
+  }), [riskList, cardMap, actionData])
 
   const resolvedRisks = useMemo(() => riskList.filter(r => {
     if (!resolvedSupplierIds.has(r.supplier_id)) return false
-    if (r.risk_level === 'low') return false
-    const card = cardMap.get(r.supplier_id)
-    if (!card || card.financial_exposure_inr === 0) return false
     return true
-  }), [riskList, resolvedSupplierIds, cardMap])
+  }), [riskList, resolvedSupplierIds])
 
   const counts = useMemo(() => ({
     critical: activeRisks.filter(r => r.risk_level === 'critical').length,
@@ -456,7 +451,6 @@ export default function RisksPage() {
                 </thead>
                 <tbody>
                   {filteredResolved.map(r => {
-                    const card = cardMap.get(r.supplier_id)
                     const cardId = getResolvedCardId(r.supplier_id)
                     return (
                       <tr
@@ -478,7 +472,7 @@ export default function RisksPage() {
                             <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                               <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>{r.supplier_name}</div>
                               <div style={{ fontSize: '0.75rem', color: '#6B7280', textTransform: 'capitalize' }}>
-                                {card ? `${card.category} · ${card.region}` : 'Supplier'}
+                                Supplier
                               </div>
                             </div>
                           </div>
@@ -486,7 +480,7 @@ export default function RisksPage() {
                         <td style={{ padding: '0.875rem 1rem', verticalAlign: 'middle', borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
                           <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
                             <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827' }}>
-                              {card ? formatINR(card.financial_exposure_inr) : '—'}
+                              {formatINR((actionData?.action_cards ?? []).filter(c => c.supplier_id === r.supplier_id && c.is_resolved).reduce((acc, curr) => acc + (curr.estimated_impact_inr || 0), 0))}
                             </span>
                             <span style={{ fontSize: '0.75rem', color: '#6B7280' }}>Resolved</span>
                           </div>

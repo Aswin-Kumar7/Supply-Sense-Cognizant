@@ -107,6 +107,14 @@ SKU_TEMPLATES = [
     {"name": "Flavoured Lassi 200ml (6-pack)","supplier_idx": 6, "cost": 120.0, "demand": 150, "code": "NDB-001"},
     {"name": "Paneer Block 200g",             "supplier_idx": 6, "cost":  95.0, "demand": 130, "code": "NDB-002"},
     {"name": "Mango Drink 1L Tetra Pak",      "supplier_idx": 6, "cost":  65.0, "demand": 160, "code": "NDB-003"},
+
+    # Historical / Resolved SKUs (idx 27-32)
+    {"name": "Turmeric Powder 500g",          "supplier_idx": 27, "cost": 120.0, "demand": 90, "code": "BSE-001"},
+    {"name": "Mineral Water 1L (12-pack)",    "supplier_idx": 28, "cost": 180.0, "demand": 210, "code": "HSW-001"},
+    {"name": "Ponni Raw Rice 10kg",           "supplier_idx": 29, "cost": 450.0, "demand": 60, "code": "KAP-001"},
+    {"name": "Premium Besan 1kg",             "supplier_idx": 30, "cost": 85.0,  "demand": 120, "code": "RG-001"},
+    {"name": "Sunflower Oil 5L",              "supplier_idx": 31, "cost": 750.0, "demand": 40, "code": "DE-001"},
+    {"name": "Refined Cottonseed Oil 1L",     "supplier_idx": 32, "cost": 115.0, "demand": 80, "code": "VCO-001"},
 ]
 
 today = date.today()
@@ -346,18 +354,24 @@ ACTION_CARDS = [
      "desc":  "Malabar Ayur batch MK-2026-Q2-14 under FSSAI hold. Expedite corrective action and re-submission to release quarantined 4,200 units."},
 
     # ── Resolved ──
-    {"type": "expedite",             "priority": "low",      "supplier_idx": 3, "sku_idx": 9,  "impact":  22000,
-     "title": "Expedite Coconut Oil — customs re-inspection cleared [RESOLVED]",
-     "desc":  "Kandla port FSSAI re-inspection completed. Shipment cleared and in transit to Ahmedabad. No further action.", "resolved": True},
-    {"type": "reorder",              "priority": "low",      "supplier_idx": 4, "sku_idx": 12, "impact":  19000,
-     "title": "Reorder Masala Chai — lead time extension absorbed [RESOLVED]",
-     "desc":  "Jorhat Tea Estate first-flush backlog resolved. Safety stock buffer covered 9-day extension. Lead times restored.", "resolved": True},
-    {"type": "reorder",              "priority": "medium",   "supplier_idx": 2, "sku_idx": 7,  "impact":  37000,
-     "title": "Reorder Mustard Oil — duty revision impact mitigated [RESOLVED]",
-     "desc":  "Central excise duty hike on edible oil imports absorbed through renegotiated Ganga Agri procurement rate. New contract price locked.", "resolved": True},
-    {"type": "increase_safety_stock","priority": "low",      "supplier_idx": 2, "sku_idx": 8,  "impact":  14000,
-     "title": "Safety stock for Atta 10kg — dual-source packaging secured [RESOLVED]",
-     "desc":  "Howrah Paper sole-source concentration risk resolved. Second vendor in Cuttack contracted. Packaging lead time buffer adequate.", "resolved": True},
+    {"type": "expedite",             "priority": "low",      "supplier_idx": 27, "sku_idx": 21,  "impact":  22000,
+     "title": "Expedite Turmeric Powder — customs re-inspection cleared [RESOLVED]",
+     "desc":  "Routine FSSAI re-inspection completed. Shipment cleared and in transit to Hyderabad. No further action.", "resolved": True, "resolved_days_ago": 2},
+    {"type": "reorder",              "priority": "low",      "supplier_idx": 28, "sku_idx": 22, "impact":  19000,
+     "title": "Reorder Mineral Water — lead time extension absorbed [RESOLVED]",
+     "desc":  "Bottling plant backlog resolved. Safety stock buffer covered 9-day extension. Lead times restored.", "resolved": True, "resolved_days_ago": 8},
+    {"type": "reorder",              "priority": "medium",   "supplier_idx": 29, "sku_idx": 23,  "impact":  37000,
+     "title": "Reorder Ponni Raw Rice — duty revision impact mitigated [RESOLVED]",
+     "desc":  "Central excise duty hike absorbed through renegotiated procurement rate. New contract price locked.", "resolved": True, "resolved_days_ago": 15},
+    {"type": "increase_safety_stock","priority": "low",      "supplier_idx": 30, "sku_idx": 24,  "impact":  14000,
+     "title": "Safety stock for Premium Besan — dual-source packaging secured [RESOLVED]",
+     "desc":  "Sole-source concentration risk resolved. Second vendor contracted. Packaging lead time buffer adequate.", "resolved": True, "resolved_days_ago": 22},
+    {"type": "expedite",             "priority": "medium",   "supplier_idx": 31, "sku_idx": 25,  "impact":  28000,
+     "title": "Expedite Sunflower Oil — logistics strike bypass [RESOLVED]",
+     "desc":  "Transport strike bypassed using alternate rail freight. Stock delivered safely.", "resolved": True, "resolved_days_ago": 5},
+    {"type": "reorder",              "priority": "high",     "supplier_idx": 32, "sku_idx": 26,  "impact":  45000,
+     "title": "Reorder Refined Cottonseed Oil — supply chain secured [RESOLVED]",
+     "desc":  "Vendor capacity increased. Oil inventory levels restored to normal.", "resolved": True, "resolved_days_ago": 12},
 ]
 
 
@@ -387,7 +401,7 @@ async def seed_database():
 
     async with session_factory() as session:
         # ── [1/8] Suppliers ─────────────────────────────────────────────
-        print("[1/8] Seeding 27 suppliers (7 Tier-1, 14 Tier-2, 6 alternates)...")
+        print(f"[1/8] Seeding {len(SUPPLIERS)} suppliers...")
         for s in SUPPLIERS:
             session.add(Supplier(**s))
         await session.commit()
@@ -514,8 +528,16 @@ async def seed_database():
             S_ARYA:       0.86,   # critical (strike + very low stock)
             S_MALABAR:    0.68,   # high (quality audit hold)
             S_NARMADA:    0.42,   # medium (cold chain hiccup)
+            
+            # Historical suppliers
+            SUPPLIER_IDS[27]: 0.15,
+            SUPPLIER_IDS[28]: 0.20,
+            SUPPLIER_IDS[29]: 0.18,
+            SUPPLIER_IDS[30]: 0.12,
+            SUPPLIER_IDS[31]: 0.22,
+            SUPPLIER_IDS[32]: 0.10,
         }
-        for supplier in SUPPLIERS[:7]:
+        for supplier in SUPPLIERS[:7] + SUPPLIERS[27:33]:
             sid = supplier["id"]
             current = base_risks.get(sid, 0.45)
             for day_offset in range(30, -1, -1):
@@ -582,6 +604,11 @@ async def seed_database():
         print(f"[8/8] Seeding {len(ACTION_CARDS)} action cards...")
         for ac in ACTION_CARDS:
             sku_idx = ac["sku_idx"]
+            resolved = ac.get("resolved", False)
+            resolved_at = datetime.combine(today - timedelta(days=ac["resolved_days_ago"]), datetime.min.time()) if resolved and "resolved_days_ago" in ac else None
+            if resolved and resolved_at is None:
+                resolved_at = datetime.now()
+            
             session.add(ActionCard(
                 id=uuid.uuid4(),
                 title=ac["title"],
@@ -591,7 +618,8 @@ async def seed_database():
                 supplier_id=SUPPLIER_IDS[ac["supplier_idx"]],
                 sku_id=sku_ids[sku_idx] if sku_idx < len(sku_ids) else None,
                 estimated_impact_inr=float(ac["impact"]),
-                is_resolved=ac.get("resolved", False),
+                is_resolved=resolved,
+                resolved_at=resolved_at,
             ))
         await session.commit()
 
