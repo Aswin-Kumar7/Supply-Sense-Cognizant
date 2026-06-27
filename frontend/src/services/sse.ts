@@ -27,6 +27,7 @@ class SSEService {
   private status: ConnectionStatus = 'disconnected'
   private reconnectAttempts = 0
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private disconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   /**
    * Connect to the SSE stream. Idempotent - safe to call multiple times.
@@ -76,11 +77,21 @@ class SSEService {
    */
   subscribe(handler: EventHandler): () => void {
     this.handlers.add(handler)
+    // Cancel any pending grace-period disconnect
+    if (this.disconnectTimer) {
+      clearTimeout(this.disconnectTimer)
+      this.disconnectTimer = null
+    }
     // Auto-connect on first subscriber
     if (this.handlers.size === 1) this.connect()
     return () => {
       this.handlers.delete(handler)
-      if (this.handlers.size === 0) this.disconnect()
+      // Grace period: wait 3s before disconnecting in case a new page mounts
+      if (this.handlers.size === 0) {
+        this.disconnectTimer = setTimeout(() => {
+          if (this.handlers.size === 0) this.disconnect()
+        }, 3000)
+      }
     }
   }
 

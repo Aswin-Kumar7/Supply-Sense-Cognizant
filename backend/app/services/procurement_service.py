@@ -132,22 +132,34 @@ class ProcurementService:
             })
 
         # Step 4: Fire all AI calls in parallel — reduces N×T to ~T
-        ai_results = await asyncio.gather(*[
-            procurement_agent.generate_action_card(
-                supplier_name=inp["supplier"].name,
-                city=inp["supplier"].city,
-                state=inp["supplier"].state,
-                risk_score=inp["risk_score"],
-                risk_level=inp["risk_level"],
-                exposure_inr=inp["exposure_inr"],
-                days_to_stockout=inp["min_days"],
-                sku_count=inp["sku_count"],
-                disruption_context=inp["disruption_ctx"],
-                cascade_context=inp["cascade_ctx"],
-                action_type=inp["card"].action_type or "reorder",
+        # Hard cap: if all parallel AI calls don't finish in 18s, return ai_unavailable for each
+        _ai_unavailable = {
+            "generation_mode": "ai_unavailable", "ai_generated": False,
+            "ai_error": True, "ai_error_reason": "timeout",
+        }
+        try:
+            ai_results = await asyncio.wait_for(
+                asyncio.gather(*[
+                    procurement_agent.generate_action_card(
+                        supplier_name=inp["supplier"].name,
+                        city=inp["supplier"].city,
+                        state=inp["supplier"].state,
+                        risk_score=inp["risk_score"],
+                        risk_level=inp["risk_level"],
+                        exposure_inr=inp["exposure_inr"],
+                        days_to_stockout=inp["min_days"],
+                        sku_count=inp["sku_count"],
+                        disruption_context=inp["disruption_ctx"],
+                        cascade_context=inp["cascade_ctx"],
+                        action_type=inp["card"].action_type or "reorder",
+                    )
+                    for inp in card_inputs
+                ]),
+                timeout=18.0,
             )
-            for inp in card_inputs
-        ])
+        except asyncio.TimeoutError:
+            logger.warning("AI action card generation timed out after 18s — returning ai_unavailable for all cards")
+            ai_results = [dict(_ai_unavailable) for _ in card_inputs]
 
         # Step 5: Assemble final cards
         action_cards = []
