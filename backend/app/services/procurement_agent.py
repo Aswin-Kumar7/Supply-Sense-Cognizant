@@ -223,7 +223,7 @@ class ProcurementIntelligenceAgent:
             # which uses extra="forbid" to block any authoritative fields the model
             # might try to include (risk_score, priority, supplier_id, etc.).
             validated: ActionNarrative | None = await bedrock.invoke_typed(
-                SYSTEM_PROMPT, prompt, ActionNarrative
+                SYSTEM_PROMPT, prompt, ActionNarrative, repair_attempts=0
             )
 
             if validated is not None:

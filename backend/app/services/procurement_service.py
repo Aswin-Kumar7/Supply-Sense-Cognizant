@@ -10,6 +10,7 @@ Coordinates the full procurement intelligence pipeline:
 This is the main entry point for Module 5 API endpoints.
 """
 
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -84,8 +85,8 @@ class ProcurementService:
         # priority → approximate risk_score (used only to prompt the AI — never exposed to UI)
         _PRIORITY_SCORE = {"critical": 0.85, "high": 0.65, "medium": 0.45, "low": 0.2}
 
-        # Step 3: Overlay AI narratives on each canonical DB card
-        action_cards = []
+        # Step 3: Collect per-card inputs (DB queries — must stay sequential)
+        card_inputs = []
         for card in db_cards:
             if not card.supplier_id:
                 continue
@@ -117,19 +118,42 @@ class ProcurementService:
             risk_level = card.priority or "medium"
             risk_score = _PRIORITY_SCORE.get(risk_level, 0.45)
 
-            ai_card = await procurement_agent.generate_action_card(
-                supplier_name=supplier.name,
-                city=supplier.city,
-                state=supplier.state,
-                risk_score=risk_score,
-                risk_level=risk_level,
-                exposure_inr=exposure_inr,
-                days_to_stockout=min_days,
-                sku_count=sku_count,
-                disruption_context=disruption_ctx,
-                cascade_context=cascade_ctx,
-                action_type=card.action_type or "reorder",
+            card_inputs.append({
+                "supplier_id": supplier_id,
+                "supplier": supplier,
+                "card": card,
+                "exposure_inr": exposure_inr,
+                "min_days": min_days,
+                "sku_count": sku_count,
+                "risk_level": risk_level,
+                "risk_score": risk_score,
+                "disruption_ctx": disruption_ctx,
+                "cascade_ctx": cascade_ctx,
+            })
+
+        # Step 4: Fire all AI calls in parallel — reduces N×T to ~T
+        ai_results = await asyncio.gather(*[
+            procurement_agent.generate_action_card(
+                supplier_name=inp["supplier"].name,
+                city=inp["supplier"].city,
+                state=inp["supplier"].state,
+                risk_score=inp["risk_score"],
+                risk_level=inp["risk_level"],
+                exposure_inr=inp["exposure_inr"],
+                days_to_stockout=inp["min_days"],
+                sku_count=inp["sku_count"],
+                disruption_context=inp["disruption_ctx"],
+                cascade_context=inp["cascade_ctx"],
+                action_type=inp["card"].action_type or "reorder",
             )
+            for inp in card_inputs
+        ])
+
+        # Step 5: Assemble final cards
+        action_cards = []
+        for inp, ai_card in zip(card_inputs, ai_results):
+            supplier = inp["supplier"]
+            supplier_id = inp["supplier_id"]
 
             # Only pull narrative keys — AI must never overwrite authoritative fields.
             # Exclude None values so missing AI narratives leave fields absent (not null).
@@ -146,12 +170,12 @@ class ProcurementService:
                 "city": supplier.city,
                 "region": supplier.region,
                 "category": supplier.category,
-                "action_type": card.action_type or "reorder",
-                "priority": risk_level,
-                "financial_exposure_inr": exposure_inr,
-                "days_to_stockout": min_days,
-                "affected_skus": sku_count,
-                "is_resolved": card.is_resolved,
+                "action_type": inp["card"].action_type or "reorder",
+                "priority": inp["risk_level"],
+                "financial_exposure_inr": inp["exposure_inr"],
+                "days_to_stockout": inp["min_days"],
+                "affected_skus": inp["sku_count"],
+                "is_resolved": inp["card"].is_resolved,
                 # AI narrative overlay (omitted keys mean AI did not produce them)
                 **ai_narratives,
                 # AI status metadata — always present

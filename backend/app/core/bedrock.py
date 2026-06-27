@@ -38,10 +38,24 @@ class BedrockInference:
         if not BEDROCK_AVAILABLE:
             return
         try:
-            self._client = boto3.client(
-                "bedrock-runtime",
-                region_name=settings.aws_region,
-            )
+            import urllib3
+            from botocore.config import Config
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            client_kwargs = {
+                "region_name": settings.aws_region,
+                "verify": False,
+                # Hard network timeout so boto3 threads don't linger after asyncio cancels
+                "config": Config(
+                    read_timeout=12,
+                    connect_timeout=5,
+                    retries={"max_attempts": 0},
+                ),
+            }
+            if settings.aws_access_key_id:
+                client_kwargs["aws_access_key_id"] = settings.aws_access_key_id
+            if settings.aws_secret_access_key:
+                client_kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+            self._client = boto3.client("bedrock-runtime", **client_kwargs)
             self._available = True
             logger.info(f"Bedrock client initialized: {settings.bedrock_model_id}")
         except Exception as e:
@@ -75,16 +89,28 @@ class BedrockInference:
         max_tokens = max_tokens or settings.bedrock_max_tokens
         temperature = temperature if temperature is not None else settings.bedrock_temperature
 
-        body = json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_prompt}],
-        })
+        model_id = settings.bedrock_model_id
+        is_nova = "nova" in model_id or model_id.startswith("amazon.")
+
+        if is_nova:
+            # Amazon Nova uses the Converse-style body format
+            body = json.dumps({
+                "messages": [{"role": "user", "content": [{"text": user_prompt}]}],
+                "system": [{"text": system_prompt}],
+                "inferenceConfig": {"maxTokens": max_tokens, "temperature": temperature},
+            })
+        else:
+            # Anthropic Claude on Bedrock
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_prompt}],
+            })
 
         invoke_kwargs: dict[str, Any] = {
-            "modelId": settings.bedrock_model_id,
+            "modelId": model_id,
             "body": body,
             "contentType": "application/json",
             "accept": "application/json",
@@ -98,11 +124,8 @@ class BedrockInference:
         import time
         t0 = time.monotonic()
         try:
-            # Run synchronous boto3 call in thread pool with 12s timeout
-            response = await asyncio.wait_for(
-                asyncio.to_thread(self._client.invoke_model, **invoke_kwargs),
-                timeout=12.0,
-            )
+            # Run synchronous boto3 call in thread pool — boto3 read_timeout=12s enforces the hard limit
+            response = await asyncio.to_thread(self._client.invoke_model, **invoke_kwargs)
             result = json.loads(response["body"].read())
             duration_ms = (time.monotonic() - t0) * 1000
             try:
@@ -110,15 +133,10 @@ class BedrockInference:
                 metrics_store.record_bedrock_call(duration_ms)
             except Exception:
                 pass
+            # Parse response based on model family
+            if is_nova:
+                return result["output"]["message"]["content"][0]["text"]
             return result["content"][0]["text"]
-        except asyncio.TimeoutError:
-            logger.warning("Bedrock call timed out after 12s — using fallback")
-            try:
-                from app.core.metrics import metrics_store
-                metrics_store.record_bedrock_call(0, fallback=True)
-            except Exception:
-                pass
-            return ""
         except Exception as e:
             logger.error(f"Bedrock invocation failed: {e}")
             try:

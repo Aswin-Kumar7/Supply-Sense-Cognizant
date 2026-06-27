@@ -172,9 +172,9 @@ def _make_bedrock_model() -> Any | None:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         boto_session = boto3.Session(
-            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
-            region_name=os.environ.get("AWS_REGION", settings.aws_region),
+            aws_access_key_id=settings.aws_access_key_id or os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=settings.aws_secret_access_key or os.environ.get("AWS_SECRET_ACCESS_KEY"),
+            region_name=settings.aws_region,
         )
         # verify=False bypasses corporate SSL proxy cert inspection on dev machines.
         # Strands BedrockModel accepts boto_client_config kwargs passed through.
