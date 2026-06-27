@@ -29,7 +29,7 @@ def build_cache_key(
     evidence_hash: str,
     risk_policy_version: int,
     financial_policy_version: int,
-    model_version: str = "anthropic.claude-haiku-4-5-20251001-v1:0",
+    model_version: str = "anthropic.claude-3-haiku-20240307-v1:0",
     prompt_version: str = PROMPT_VERSION,
 ) -> str:
     """
