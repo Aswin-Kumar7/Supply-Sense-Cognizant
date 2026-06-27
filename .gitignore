@@ -59,6 +59,7 @@ desktop.ini
 *.log
 logs/
 *.log.*
+projectinfo/
 
 # ── Docker volumes ────────────────────────────────────────────────────────
 postgres_data/
