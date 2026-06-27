@@ -2,6 +2,7 @@
 Supplier API endpoints.
 """
 
+from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
@@ -37,9 +38,24 @@ async def get_all_dependencies(
 @router.get("/alternate-detail/{alt_supplier_id}")
 async def get_alternate_supplier_detail(
     alt_supplier_id: UUID,
-    primary_supplier_id: UUID = Query(...),
+    primary_supplier_id: Optional[UUID] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
+    if primary_supplier_id is None:
+        # Find the first primary supplier associated with this alternate supplier
+        res = await db.execute(text("""
+            SELECT DISTINCT sk.supplier_id
+            FROM alternate_suppliers als
+            JOIN skus sk ON sk.id = als.sku_id
+            WHERE als.supplier_id = :alt_id
+            LIMIT 1
+        """), {"alt_id": str(alt_supplier_id)})
+        row = res.fetchone()
+        if not row:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Alternate supplier has no associated primary suppliers")
+        primary_supplier_id = row[0]
+
     """
     Return full detail for a specific alternate supplier:
     - Supplier profile (name, city, region, reliability, lead time)
@@ -121,12 +137,17 @@ async def get_alternate_supplier_detail(
         for s in skus
     )
 
+    primary_name_res = await db.execute(text("SELECT name FROM suppliers WHERE id = :primary_id"), {"primary_id": str(primary_supplier_id)})
+    primary_name_row = primary_name_res.fetchone()
+    primary_supplier_name = primary_name_row[0] if primary_name_row else "Primary Supplier"
+
     return {
         "supplier": supplier,
         "skus_covered": skus,
         "skus_count": len(skus),
         "estimated_order_value_inr": round(total_order_value, 2),
         "primary_supplier_id": str(primary_supplier_id),
+        "primary_supplier_name": primary_supplier_name,
     }
 
 

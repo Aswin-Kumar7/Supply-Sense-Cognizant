@@ -399,7 +399,7 @@ export default function ResolvedActionDetailPage() {
 
   /* ── Main render ─────────────────────────────────────────────────────── */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '960px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '960px', margin: '0 auto', width: '100%' }}>
 
       {/* Back */}
       <button onClick={() => navigate('/activity')} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: '0.8125rem', fontFamily: 'inherit', padding: '4px 0', width: 'fit-content' }}>

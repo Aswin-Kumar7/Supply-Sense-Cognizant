@@ -49,8 +49,8 @@ export const api = {
     request<SupplierListResponse>(`/suppliers?limit=${limit}&offset=${offset}`),
   getAlternateSuppliersDirect: (supplierId: string) =>
     request<AlternateSuppliersResponse>(`/suppliers/${supplierId}/alternate-suppliers`),
-  getAlternateSupplierDetail: (altSupplierId: string, primarySupplierId: string) =>
-    request<any>(`/suppliers/alternate-detail/${altSupplierId}?primary_supplier_id=${primarySupplierId}`),
+  getAlternateSupplierDetail: (altSupplierId: string, primarySupplierId?: string) =>
+    request<any>(`/suppliers/alternate-detail/${altSupplierId}${primarySupplierId ? `?primary_supplier_id=${primarySupplierId}` : ''}`),
 
   // SKUs
   getSKUs: (limit = 100, offset = 0) =>

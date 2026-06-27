@@ -286,21 +286,13 @@ export default function AlternateSupplierDetailPage() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['alt-detail', altId, primarySupplierId],
-    queryFn: () => api.getAlternateSupplierDetail(altId!, primarySupplierId!),
-    enabled: !!altId && !!primarySupplierId,
+    queryFn: () => api.getAlternateSupplierDetail(altId!, primarySupplierId),
+    enabled: !!altId,
   })
-
-  if (!primarySupplierId) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
-        Missing context. Please navigate here from a supplier page.
-      </div>
-    )
-  }
 
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
         {[160, 220, 300, 200].map(h => (
           <div key={h} className="skeleton" style={{ height: h, borderRadius: '0.5rem' }} />
         ))}
@@ -310,42 +302,64 @@ export default function AlternateSupplierDetailPage() {
 
   if (isError || !data) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: '#DC2626', fontSize: '0.875rem' }}>
+      <div style={{ padding: '2rem', textAlign: 'center', color: '#DC2626', fontSize: '0.875rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
         Could not load alternate supplier details.
       </div>
     )
   }
 
-  const { supplier, skus_covered, estimated_order_value_inr } = data
+  const { supplier, skus_covered, estimated_order_value_inr, primary_supplier_id: apiPrimarySupplierId } = data
+  const resolvedPrimarySupplierId = primarySupplierId || apiPrimarySupplierId
   const contact = generateContactInfo(supplier.supplier_name, supplier.state, supplier.category)
   const reliabilityColor = supplier.reliability_score >= 0.8 ? '#059669' : supplier.reliability_score >= 0.6 ? '#D29729' : '#DC2626'
   const qualityColor = supplier.quality_score >= 0.85 ? '#059669' : supplier.quality_score >= 0.7 ? '#D29729' : '#DC2626'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', maxWidth: '900px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
       {orderOpen && (
         <OrderModal
           supplier={supplier}
           skus={skus_covered}
           contact={contact}
-          primarySupplierId={primarySupplierId}
+          primarySupplierId={resolvedPrimarySupplierId}
           actionCardId={actionCardId}
           onClose={() => setOrderOpen(false)}
         />
       )}
 
       {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 600, color: '#64748B' }}>
         <button
-          onClick={() => navigate(-1)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--ink-3)', fontSize: '0.8125rem', fontFamily: 'inherit', padding: '4px 0' }}
+          onClick={() => resolvedPrimarySupplierId ? navigate(`/companies/${resolvedPrimarySupplierId}`) : navigate(-1)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--ink-3)', fontSize: '0.8125rem', fontFamily: 'inherit', padding: '4px 0', marginRight: '0.5rem' }}
         >
           <ChevronLeft size={14} /> Back
         </button>
-        <span style={{ color: 'var(--ink-4)', fontSize: '0.75rem' }}>/</span>
-        <span style={{ fontSize: '0.75rem', color: 'var(--ink-3)' }}>Alternate Supplier</span>
-        <span style={{ color: 'var(--ink-4)', fontSize: '0.75rem' }}>/</span>
-        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#000' }}>{supplier.supplier_name}</span>
+        <span 
+          onClick={() => navigate('/companies')} 
+          style={{ cursor: 'pointer', transition: 'color 150ms ease' }}
+          onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+          onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+        >
+          Suppliers
+        </span>
+        <span>/</span>
+        {data.primary_supplier_name && resolvedPrimarySupplierId && (
+          <>
+            <span 
+              onClick={() => navigate(`/companies/${resolvedPrimarySupplierId}`)} 
+              style={{ cursor: 'pointer', transition: 'color 150ms ease' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+              onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+            >
+              {data.primary_supplier_name}
+            </span>
+            <span>/</span>
+          </>
+        )}
+        <span style={{ color: 'var(--ink-4)' }}>Alternate Supplier</span>
+        <span>/</span>
+        <span style={{ fontWeight: 700, color: '#0F172A' }}>{supplier.supplier_name}</span>
       </div>
 
       {/* Profile + Contact — two column layout */}
