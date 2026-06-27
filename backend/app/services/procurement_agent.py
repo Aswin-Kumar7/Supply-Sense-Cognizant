@@ -131,67 +131,34 @@ Generate a JSON response with ONLY these fields:
 }}}}""".format(data_open=_DATA_OPEN, data_close=_DATA_CLOSE)
 
 
-# ============ FALLBACK GENERATORS (when Bedrock unavailable) ============
-
-def _fallback_action_card(
-    supplier_name: str, risk_level: str, exposure_inr: float,
-    days_to_stockout: int, action_type: str,
-) -> dict:
-    """Rule-based fallback when AI is unavailable. No arithmetic on exposure_inr."""
-    urgency = "immediate" if days_to_stockout <= 3 else "within 48 hours" if days_to_stockout <= 7 else "this week"
-
-    titles = {
-        "reorder": f"Emergency reorder required: {supplier_name} supply at risk",
-        "switch_supplier": f"Activate alternate supplier: {supplier_name} disrupted",
-        "expedite": f"Expedite shipments from {supplier_name}: stockout in {days_to_stockout}d",
-        "increase_stock": f"Increase safety stock: {supplier_name} reliability degraded",
-    }
-
+def _ai_unavailable_action_card(reason: str = "bedrock_unavailable") -> dict:
+    """Marker returned when AI is genuinely unavailable — no fabricated text."""
     return {
-        "title": titles.get(action_type, f"Action required: {supplier_name}"),
-        "executive_summary": (
-            f"{supplier_name} is at {risk_level} risk with ₹{exposure_inr:,.0f} exposure. "
-            f"{days_to_stockout} days until stockout."
-        ),
-        "reasoning": (
-            f"Supplier risk score indicates {risk_level} severity. "
-            f"Financial exposure of ₹{exposure_inr:,.0f} requires {urgency} action to prevent revenue loss."
-        ),
-        "urgency_narrative": (
-            f"Action needed {urgency}. SLA penalties and stockout costs are accruing — "
-            f"review the financial engine breakdown for the precise daily cost."
-        ),
-        "cost_of_delay_narrative": (
-            "Each day of inaction increases SLA penalties and lost-sales risk. "
-            "Exact delay cost is available in the financial exposure breakdown."
-        ),
-        "recommended_action": f"Initiate {action_type.replace('_', ' ')} process for {supplier_name} immediately.",
-        "escalation_window": urgency,
-        "alternate_supplier_rationale": (
-            "Geographic diversification reduces single-point-of-failure risk."
-            if action_type == "switch_supplier" else ""
-        ),
+        "title": None,
+        "executive_summary": None,
+        "reasoning": None,
+        "urgency_narrative": None,
+        "cost_of_delay_narrative": None,
+        "recommended_action": None,
+        "escalation_window": None,
+        "alternate_supplier_rationale": None,
+        "generation_mode": "ai_unavailable",
+        "ai_generated": False,
+        "ai_error": True,
+        "ai_error_reason": reason,
     }
 
 
-def _fallback_executive_brief(
-    at_risk_count: int, total_exposure: float,
-    critical_stockouts: int, top_suppliers: list[str],
-) -> dict:
-    """Rule-based executive brief fallback."""
+def _ai_unavailable_executive_brief(reason: str = "bedrock_unavailable") -> dict:
+    """Marker returned when AI is unavailable for the executive brief."""
     return {
-        "summary": (
-            f"Supply chain alert: {at_risk_count} suppliers at elevated risk with "
-            f"₹{total_exposure:,.0f} total financial exposure. "
-            f"{critical_stockouts} SKUs face critical stockout within 3 days. "
-            "Immediate procurement action required."
-        ),
-        "top_risks": [f"{s} — elevated risk" for s in top_suppliers[:3]],
-        "immediate_actions": [
-            f"Activate alternate suppliers for {critical_stockouts} critical SKUs",
-            f"Expedite pending orders from top {min(3, at_risk_count)} risk suppliers",
-            "Increase safety stock for festival-sensitive categories",
-        ],
+        "summary": None,
+        "top_risks": [],
+        "immediate_actions": [],
+        "generation_mode": "ai_unavailable",
+        "ai_generated": False,
+        "ai_error": True,
+        "ai_error_reason": reason,
     }
 
 
@@ -273,22 +240,22 @@ class ProcurementIntelligenceAgent:
                         f"Grounding violations in action card for {supplier_name}: "
                         f"{grounding.violations}"
                     )
-                    # Fall through to deterministic fallback on grounding failure
+                    marker = _ai_unavailable_action_card("grounding_violation")
+                    marker["evidence_snapshot_id"] = evidence.snapshot_id
+                    return marker
                 else:
                     result["grounding_status"] = grounding.grounding_status
                     result["evidence_snapshot_id"] = evidence.snapshot_id
                     result["generation_mode"] = "ai_generated"
+                    result["ai_generated"] = True
+                    result["ai_error"] = False
                     return result
 
-        # Deterministic fallback (Bedrock unavailable or grounding failure)
-        logger.info(f"Using fallback action card generation for {supplier_name}")
-        fallback = _fallback_action_card(
-            supplier_name, risk_level, exposure_inr, days_to_stockout, action_type
-        )
-        fallback["grounding_status"] = "grounded"  # template references only known amounts
-        fallback["evidence_snapshot_id"] = evidence.snapshot_id
-        fallback["generation_mode"] = "deterministic_fallback"
-        return fallback
+        # Bedrock unavailable — return explicit error marker, no fabricated text
+        logger.warning(f"Bedrock unavailable for action card: {supplier_name}")
+        marker = _ai_unavailable_action_card("bedrock_unavailable")
+        marker["evidence_snapshot_id"] = evidence.snapshot_id
+        return marker
 
     async def generate_executive_brief(
         self,
@@ -336,15 +303,14 @@ class ProcurementIntelligenceAgent:
                 if grounding.passed:
                     result["grounding_status"] = "grounded"
                     result["generation_mode"] = "ai_generated"
+                    result["ai_generated"] = True
+                    result["ai_error"] = False
                     return result
                 logger.warning(f"Executive brief grounding violations: {grounding.violations}")
+                return _ai_unavailable_executive_brief("grounding_violation")
 
-        result = _fallback_executive_brief(
-            at_risk_count, total_exposure, critical_stockouts, top_suppliers
-        )
-        result["grounding_status"] = "grounded"
-        result["generation_mode"] = "deterministic_fallback"
-        return result
+        logger.warning("Bedrock unavailable for executive brief")
+        return _ai_unavailable_executive_brief("bedrock_unavailable")
 
     async def evaluate_alternate_suppliers(
         self,
@@ -380,26 +346,22 @@ class ProcurementIntelligenceAgent:
             )
 
             if validated is not None:
-                return validated.model_dump()
+                result = validated.model_dump()
+                result["ai_generated"] = True
+                result["ai_error"] = False
+                result["generation_mode"] = "ai_generated"
+                return result
 
-        # Fallback: pick highest reliability alternate
-        if alternates:
-            best = max(alternates, key=lambda a: a["reliability"])
-            return {
-                "recommended_alternate": best["name"],
-                "rationale": (
-                    f"{best['name']} offers {best['reliability']:.0%} reliability with "
-                    f"{best['lead_time']}d lead time. Geographic diversification from "
-                    f"{best['city']} reduces concentration risk."
-                ),
-                "trade_offs": f"{best['cost_premium']:.0%} cost premium vs primary supplier.",
-                "transition_timeline": f"{best['lead_time'] + 3} days",
-            }
+        logger.warning(f"Bedrock unavailable for alternate supplier evaluation: {primary_name}")
         return {
-            "recommended_alternate": "None available",
-            "rationale": "No alternates configured.",
-            "trade_offs": "",
-            "transition_timeline": "N/A",
+            "recommended_alternate": None,
+            "rationale": None,
+            "trade_offs": None,
+            "transition_timeline": None,
+            "generation_mode": "ai_unavailable",
+            "ai_generated": False,
+            "ai_error": True,
+            "ai_error_reason": "bedrock_unavailable",
         }
 
 

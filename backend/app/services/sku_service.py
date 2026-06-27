@@ -11,6 +11,7 @@ from app.models.sku import SKU
 from app.models.supplier import Supplier
 from app.schemas.sku import SKURiskResponse, SKUListResponse
 from app.core.exceptions import NotFoundError
+from app.services.stockout_engine import stockout_engine
 
 
 class SKUService:
@@ -39,8 +40,22 @@ class SKUService:
                 else 999
             )
 
-            # Determine risk level
-            stockout_risk = self._compute_stockout_risk(sku, days_of_stock)
+            # Delegate risk labeling to the canonical stockout_engine so both
+            # /skus and /risk/stockout endpoints use the same thresholds.
+            lead_time = getattr(sku, "lead_time_days", None) or 7
+            forecast = stockout_engine.forecast_sku(
+                sku_id=str(sku.id),
+                sku_code=sku.sku_code,
+                sku_name=sku.name,
+                supplier_name=supplier_name,
+                category=sku.category,
+                current_stock=sku.current_stock,
+                daily_demand=sku.daily_demand_avg,
+                unit_cost_inr=float(sku.unit_cost_inr or 0),
+                is_critical=bool(sku.is_critical),
+                lead_time_days=lead_time,
+            )
+            stockout_risk = forecast.risk_level
 
             risk_skus.append(
                 SKURiskResponse(
@@ -60,11 +75,3 @@ class SKUService:
 
         return SKUListResponse(skus=risk_skus, total=total)
 
-    def _compute_stockout_risk(self, sku: SKU, days_of_stock: int) -> str:
-        if days_of_stock <= 3:
-            return "critical"
-        elif days_of_stock <= 7:
-            return "high"
-        elif days_of_stock <= 14:
-            return "medium"
-        return "low"

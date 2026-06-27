@@ -161,3 +161,26 @@ class ActionProposalNarrative(BaseModel):
     urgency_narrative: str = Field(max_length=400)
     recommended_action: str = Field(max_length=400)
     alternate_supplier_rationale: str = Field(default="", max_length=400)
+
+
+# ── Disruption event classification ──────────────────────────────────────────
+
+DisruptionEventType = Literal["weather", "geopolitical", "logistics", "labor", "infrastructure"]
+
+
+class DisruptionClassification(BaseModel):
+    """Typed output for _classify_event_impl — replaces invoke_structured call."""
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: DisruptionEventType
+    severity: SeverityLevel
+    confidence: float = Field(ge=0.0, le=1.0)
+    affected_region: str = Field(max_length=100)
+    estimated_duration_days: int = Field(ge=0, le=365)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def clamp_confidence(cls, v: object) -> object:
+        if isinstance(v, (int, float)):
+            return max(0.0, min(1.0, float(v)))
+        return v

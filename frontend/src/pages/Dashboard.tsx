@@ -13,6 +13,7 @@ import {
   AlertTriangle, TrendingDown, Shield,
   Package, Activity, ChevronRight,
 } from 'lucide-react'
+import { AiBadge } from '../components/ui/AiBadge'
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 function formatINR(n: number) {
@@ -747,6 +748,9 @@ function PendingActions({ risks, cardMap, loading }: {
               {risks.slice(0, 5).map((r, i) => {
                 const card = cardMap.get(r.supplier_id)
                 if (!card) return null
+                const actionText = card.ai_error
+                  ? null
+                  : getReason(r, card)
                 return (
                   <tr
                     key={r.supplier_id}
@@ -754,7 +758,14 @@ function PendingActions({ risks, cardMap, loading }: {
                     style={{ cursor: 'pointer', borderBottom: i < 4 ? '1px solid #F8FAFC' : 'none' }}
                   >
                     <td style={{ padding: '12px 0', fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A' }}>{r.supplier_name}</td>
-                    <td style={{ padding: '12px 0', fontSize: '0.8125rem', color: '#64748B' }}>{getReason(r, card)}</td>
+                    <td style={{ padding: '12px 0', fontSize: '0.8125rem', color: '#64748B' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {actionText ?? (
+                          <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>AI unavailable</span>
+                        )}
+                        <AiBadge mode={card.generation_mode} />
+                      </span>
+                    </td>
                     <td style={{ padding: '12px 0', fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A', textAlign: 'right' }}>{formatINR(card.financial_exposure_inr)}</td>
                   </tr>
                 )
@@ -781,10 +792,38 @@ export function Dashboard() {
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
   const allCards = actionData?.action_cards ?? []
 
-  const cardMap = useMemo(
-    () => new Map(((procCards as IntelligentActionCard[] | undefined) ?? []).map(c => [c.supplier_id, c])),
-    [procCards]
-  )
+  // Primary: AI-enriched procurement cards with financial_exposure_inr + narratives.
+  // Fallback: DB action cards (estimated_impact_inr) — always available after sync-risks,
+  // even before procurement cards have been generated or while AI cache is warming up.
+  const cardMap = useMemo(() => {
+    const map = new Map<string, IntelligentActionCard>()
+    // Seed fallback entries from DB action cards (DB rows only — no AI narratives yet)
+    for (const c of allCards) {
+      if (!c.supplier_id) continue
+      map.set(c.supplier_id, {
+        supplier_id: c.supplier_id,
+        supplier_name: '',
+        city: '', region: '', category: '',
+        risk_score: 0, risk_level: c.priority as any,
+        confidence: 0,
+        financial_exposure_inr: c.estimated_impact_inr,
+        days_to_stockout: 30,
+        affected_skus: 0,
+        action_type: c.action_type,
+        priority: c.priority as any,
+        title: c.title,
+        // No AI narrative fields — will be overlaid by procCards once generated
+        generation_mode: undefined,
+        ai_generated: false,
+        ai_error: false,
+      })
+    }
+    // Overlay with richer procurement cards when available
+    for (const c of ((procCards as IntelligentActionCard[] | undefined) ?? [])) {
+      if (c.supplier_id) map.set(c.supplier_id, c)
+    }
+    return map
+  }, [allCards, procCards])
 
   const resolvedSupplierIds = useMemo(() => {
     const map = new Map<string, { resolved: number; total: number }>()
@@ -800,8 +839,9 @@ export function Dashboard() {
   const activeRiskList = useMemo(() => riskList.filter(r => {
     if (resolvedSupplierIds.has(r.supplier_id)) return false
     if (r.risk_level === 'low') return false
+    // Show supplier if it has any financial exposure — from proc card OR DB card fallback
     const card = cardMap.get(r.supplier_id)
-    return card && card.financial_exposure_inr > 0
+    return card ? card.financial_exposure_inr > 0 : true
   }), [riskList, resolvedSupplierIds, cardMap])
 
   const activeExposure = useMemo(

@@ -11,6 +11,7 @@ import {
   TrendingDown
 } from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
+import { AiBadge } from '../components/ui/AiBadge'
 
 /* ── Typography & formatting utils ───────────────────────────────────────── */
 function formatINR(n: number) {
@@ -377,7 +378,7 @@ export default function RiskDetailPage() {
             <MetricItem label="Products at Risk" value={card ? String(card.affected_skus) : '--'} icon={<Box size={14} />} />
           </div>
           <div>
-            <MetricItem label="Act Within" value={card ? card.escalation_window : '--'} icon={<TrendingDown size={14} />} />
+            <MetricItem label="Act Within" value={card ? (card.escalation_window ?? '--') : '--'} icon={<TrendingDown size={14} />} />
           </div>
         </div>
 
@@ -389,26 +390,27 @@ export default function RiskDetailPage() {
             
             {/* AI Strategic Assessment */}
             {card && (() => {
-              const isFallback = card.reasoning?.startsWith('Supplier risk score indicates')
               return (
                 <div className="premium-card" style={{ overflow: 'hidden' }}>
                   <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Cpu size={16} color="#4F46E5" />
                     <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>Strategic Assessment</span>
-                    {isFallback ? (
-                      <span style={{ marginLeft: 'auto', fontSize: '0.625rem', fontWeight: 700, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '20px' }}>
-                        Rule-based Estimate
-                      </span>
-                    ) : (
-                      <span style={{ marginLeft: 'auto', fontSize: '0.625rem', fontWeight: 700, color: '#4F46E5', background: '#EEF2FF', border: '1px solid #C7D2FE', padding: '2px 8px', borderRadius: '20px' }}>
-                        AI Analysis Fired
-                      </span>
-                    )}
+                    <span style={{ marginLeft: 'auto' }}>
+                      <AiBadge mode={card.generation_mode} showLabel />
+                    </span>
                   </div>
                   <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
                     <div>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: '0 0 8px', color: '#0F172A', letterSpacing: '-0.02em' }}>{card.recommended_action}</h3>
-                      <p style={{ fontSize: '0.875rem', color: '#475569', lineHeight: 1.6, margin: 0 }}>{card.reasoning}</p>
+                      {card.recommended_action ? (
+                        <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: '0 0 8px', color: '#0F172A', letterSpacing: '-0.02em' }}>{card.recommended_action}</h3>
+                      ) : null}
+                      {card.reasoning ? (
+                        <p style={{ fontSize: '0.875rem', color: '#475569', lineHeight: 1.6, margin: 0 }}>{card.reasoning}</p>
+                      ) : (
+                        <p style={{ fontSize: '0.875rem', color: '#94A3B8', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
+                          {card.ai_error ? 'AI narrative unavailable — AWS Bedrock unreachable.' : 'Awaiting AI analysis…'}
+                        </p>
+                      )}
                     </div>
 
                     {/* Severity + Cost — two clear panels */}
@@ -435,7 +437,7 @@ export default function RiskDetailPage() {
                               {severityConfig.sub}
                             </div>
                             <div style={{ fontSize: '0.75rem', color: severityConfig.text, opacity: 0.8, marginTop: '8px' }}>
-                              Window limit: <strong>{card.escalation_window || 'immediate action'}</strong>
+                              Window limit: <strong>{card.escalation_window ?? (card.ai_error ? 'N/A (AI unavailable)' : '—')}</strong>
                             </div>
                           </div>
                           {/* Cost of waiting panel */}

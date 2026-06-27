@@ -29,9 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.freshness import compute_freshness, DEFAULT_STALE_AFTER
-from app.core.auth import require_role
 from app.models.analysis_cache import AnalysisCache
-from app.models.api_key import ApiKey
 from app.services.procurement_service import ProcurementService
 from app.core.logging import logger
 
@@ -305,11 +303,11 @@ async def get_analysis_provenance(
 
 
 @router.post("/cache/invalidate")
-async def invalidate_cache(principal: ApiKey = Depends(require_role("admin"))):
-    """Force-clear in-process and DB cache. Requires admin role."""
+async def invalidate_cache():
+    """Force-clear in-process and DB cache."""
     _CACHE.clear()
     async with AsyncSessionLocal() as session:
         await session.execute(delete(AnalysisCache))
         await session.commit()
-    logger.info(f"procurement cache: manually invalidated by {principal.label}")
+    logger.info("procurement cache: manually invalidated")
     return {"status": "cleared"}

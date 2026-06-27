@@ -96,10 +96,11 @@ class StockoutForecastingEngine:
         # Risk level based on days remaining vs lead time
         risk_level = self._compute_risk_level(days_to_stockout, lead_time_days)
 
-        # Revenue at risk: units that won't be sold × unit cost × margin multiplier
-        # Using 1.5x cost as revenue proxy (lost sales + partial brand damage)
+        # Revenue at risk: units that won't be sold × unit cost × stockout multiplier.
+        # Must match FinancialExposureEngine.STOCKOUT_MULTIPLIER (2.5) so both engines
+        # report consistent exposure for the same SKU/supplier context.
         days_of_lost_sales = max(0, lead_time_days - days_to_stockout)
-        revenue_at_risk = days_of_lost_sales * adjusted_demand * unit_cost_inr * 1.5
+        revenue_at_risk = days_of_lost_sales * adjusted_demand * unit_cost_inr * 2.5
 
         demand_factors = {
             "base_demand": daily_demand,

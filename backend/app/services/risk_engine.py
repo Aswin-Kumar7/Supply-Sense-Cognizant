@@ -236,7 +236,13 @@ class RiskScoringEngine:
         """Aggregate active disruption severity into single risk score."""
         if not disruptions:
             return 0.0
-        max_impact = max(d.get("impact_score", 0.5) for d in disruptions)
+        # Apply severity multiplier so label semantics affect the score
+        def _weighted_impact(d: dict) -> float:
+            raw = float(d.get("impact_score", 0.5))
+            sev = str(d.get("severity", "medium")).lower()
+            return raw * SEVERITY_MULTIPLIERS.get(sev, 0.5)
+
+        max_impact = max(_weighted_impact(d) for d in disruptions)
         count_factor = min(1.0, len(disruptions) * 0.25)
         return min(1.0, max_impact * 0.7 + count_factor * 0.3)
 
@@ -307,7 +313,18 @@ class RiskScoringEngine:
         if dependency_exposure > 0.3:
             active_signals.append("dependency_exposure")
 
-        total = len(SIGNAL_WEIGHTS)
+        # Denominator: count only signals for which we actually have data.
+        # delivery_declining requires delivery history; dependency_exposure requires
+        # an upstream graph. If inputs are empty/zero those dimensions shouldn't
+        # count against the confidence fraction.
+        total = sum([
+            1,  # active_disruption is always checkable
+            1 if delivery_stats else 0,
+            1 if inventory_pressure is not None else 0,
+            1 if festival_proximity is not None else 0,
+            1 if dependency_exposure is not None else 0,
+        ])
+        total = max(total, 1)
         agreeing = len(active_signals)
 
         if agreeing == 0:

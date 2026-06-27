@@ -278,11 +278,11 @@ async def sync_action_cards_with_risks(db: AsyncSession = Depends(get_db)):
 
     actionable = [r for r in all_risks if r["risk_level"] in ("critical", "high", "medium")]
 
-    # Skip any supplier that has EVER had a card (resolved or not).
-    # Only create cards for suppliers with zero history — this prevents re-adding
-    # suppliers the user has already resolved.
+    # Skip suppliers that already have an UNRESOLVED card.
+    # Resolved cards no longer count as coverage — if risk re-escalates after
+    # resolution, a fresh card must be created.
     all_cards = (await db.execute(select(ActionCard))).scalars().all()
-    covered = {str(c.supplier_id) for c in all_cards if c.supplier_id}
+    covered = {str(c.supplier_id) for c in all_cards if c.supplier_id and not c.is_resolved}
 
     created = []
     for risk in actionable:
@@ -325,6 +325,14 @@ async def sync_action_cards_with_risks(db: AsyncSession = Depends(get_db)):
 
     if created:
         await db.commit()
+        # New cards were written — bust the procurement in-process cache so the next
+        # GET /procurement/action-cards re-generates with the fresh DB rows instead of
+        # serving a stale empty result cached before sync-risks ran.
+        try:
+            from app.routers.procurement import _CACHE
+            _CACHE.pop("action_cards:rp1:fp1", None)
+        except Exception:
+            pass
 
     return {"synced": len(created), "already_covered": len(actionable) - len(created)}
 

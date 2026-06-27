@@ -1,9 +1,14 @@
-"""API endpoints for managing Strands fallback approvals."""
+"""
+Fallback approval endpoints — removed.
 
-from fastapi import APIRouter, HTTPException
+The human-in-the-loop fallback approval flow was dead code: fallback_manager.py
+was never called by any agent, and FallbackApprovalBanner.tsx could never fire.
+Agents now fail-fast with explicit error dicts (status: "error") instead of
+presenting a fake approval UI. These stubs keep existing API clients from 500ing.
+"""
+
+from fastapi import APIRouter
 from pydantic import BaseModel
-
-from app.core.fallback_manager import approve_fallback, get_pending_requests
 
 router = APIRouter(prefix="/agents", tags=["Agent Fallback"])
 
@@ -15,15 +20,11 @@ class FallbackApprovalRequest(BaseModel):
 
 @router.post("/fallback/approve")
 async def approve_agent_fallback(request: FallbackApprovalRequest):
-    """Approve or deny a Strands fallback request."""
-    success = approve_fallback(request.request_id, request.approved)
-    if not success:
-        raise HTTPException(status_code=404, detail="Request not found or already resolved")
-    action = "approved" if request.approved else "denied"
-    return {"status": action, "request_id": request.request_id}
+    """Removed — fallback approval flow was dead code."""
+    return {"status": "removed", "detail": "Fallback approval flow has been removed. Agents fail-fast with error status instead."}
 
 
 @router.get("/fallback/pending")
 async def get_pending_fallbacks():
-    """Get list of pending fallback approval requests."""
-    return {"pending": get_pending_requests()}
+    """Removed — no pending fallback requests are ever queued."""
+    return {"pending": []}

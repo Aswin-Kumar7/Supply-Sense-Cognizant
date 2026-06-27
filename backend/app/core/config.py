@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # AWS Bedrock
     aws_region: str = "us-east-1"
-    bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    bedrock_model_id: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     bedrock_max_tokens: int = 2048
     bedrock_temperature: float = 0.3
     # Guardrail ID — optional. When set, attached to every Bedrock invocation.

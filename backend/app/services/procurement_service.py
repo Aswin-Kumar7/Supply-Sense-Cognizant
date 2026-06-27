@@ -12,19 +12,15 @@ This is the main entry point for Module 5 API endpoints.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.supplier import Supplier
-from app.models.sku import SKU
 from app.models.disruption import Disruption
+from app.models.action_card import ActionCard
 from app.services.risk_intelligence import RiskIntelligenceService
 from app.services.procurement_agent import procurement_agent
 from app.core.logging import logger
-from app.core.evidence import build_evidence_package
-from app.services.snapshot_service import save_snapshot as _save_snapshot
-
-_MODEL_VERSION = "anthropic.claude-opus-4-6-v1"
 
 # Permitted AI-generated narrative fields — AI must never overwrite these with
 # authoritative values like risk_score, financial_exposure_inr, or priority.
@@ -48,154 +44,127 @@ class ProcurementService:
 
     async def generate_action_cards(self) -> list[dict]:
         """
-        Generate AI-enhanced ActionCards for all at-risk suppliers.
-        Combines deterministic risk data with AI reasoning.
+        AI-enhance canonical ActionCard rows from the DB.
+
+        sync-risks (action_cards router) is the single source of truth for
+        which suppliers need action and what their priority/action_type is.
+        This method reads those unresolved DB rows and overlays AI narratives
+        on top, ensuring the procurement view is always in sync with the risk
+        view instead of independently recomputing a divergent card set.
         """
-        # Step 1: Get all supplier risks
-        risks = await self.risk_service.compute_all_supplier_risks()
+        # Step 1: Read canonical unresolved cards (created by sync-risks)
+        cards_q = await self.db.execute(
+            select(ActionCard).where(ActionCard.is_resolved == False)
+        )
+        db_cards = cards_q.scalars().all()
+        if not db_cards:
+            return []
 
-        # Step 2: Get stockout forecasts
-        stockout_summary = await self.risk_service.get_stockout_forecasts()
-        stockout_by_supplier: dict = {}
-        for f in stockout_summary.forecasts:
-            if f.supplier_name not in stockout_by_supplier:
-                stockout_by_supplier[f.supplier_name] = []
-            stockout_by_supplier[f.supplier_name].append(f)
-
-        # Step 3: Get financial exposure
+        # Step 2: Fetch supplementary data once (outside the per-card loop)
         financial = await self.risk_service.get_financial_summary()
         exposure_map = {e["supplier_id"]: e for e in financial["top_exposures"]}
 
-        # Step 4: Get active disruptions context
+        stockout_summary = await self.risk_service.get_stockout_forecasts()
+        stockout_by_supplier: dict = {}
+        for f in stockout_summary.forecasts:
+            stockout_by_supplier.setdefault(f.supplier_name, []).append(f)
+
         disruptions_q = await self.db.execute(
             select(Disruption).where(Disruption.is_active == True)
         )
-        active_disruptions = disruptions_q.scalars().all()
         disruption_by_supplier = {}
-        for d in active_disruptions:
+        for d in disruptions_q.scalars().all():
             sid = str(d.supplier_id) if d.supplier_id else None
             if sid:
                 disruption_by_supplier[sid] = f"{d.disruption_type}: {d.title} (severity: {d.severity})"
 
-        # Step 5: Get cascade data
         cascades = await self.risk_service.get_all_cascades()
         cascade_map = {c["source_supplier_id"]: c for c in cascades}
 
-        # Step 6: Generate ActionCards for suppliers above threshold
+        # priority → approximate risk_score (used only to prompt the AI — never exposed to UI)
+        _PRIORITY_SCORE = {"critical": 0.85, "high": 0.65, "medium": 0.45, "low": 0.2}
+
+        # Step 3: Overlay AI narratives on each canonical DB card
         action_cards = []
-        for risk in risks:
-            if risk["overall_score"] < 0.12:  # Skip very low risk
+        for card in db_cards:
+            if not card.supplier_id:
                 continue
 
-            supplier_id = risk["supplier_id"]
-            supplier_name = risk["supplier_name"]
-
-            # Get supplier details
+            supplier_id = str(card.supplier_id)
             supplier = (await self.db.execute(
-                select(Supplier).where(Supplier.id == supplier_id)
+                select(Supplier).where(Supplier.id == card.supplier_id)
             )).scalar_one_or_none()
             if not supplier:
                 continue
 
-            # Determine action type based on risk factors
-            action_type = self._determine_action_type(risk, supplier_id, disruption_by_supplier)
-
-            # Get stockout info
-            supplier_stockouts = stockout_by_supplier.get(supplier_name, [])
-            min_days = min((s.days_to_stockout for s in supplier_stockouts), default=30)
-            sku_count = len(supplier_stockouts)
-
-            # Get exposure
             exposure = exposure_map.get(supplier_id, {})
-            exposure_inr = exposure.get("total_exposure_inr", 0)
-
-            # No financial stake — SKU cost data missing or stock is healthy enough.
-            # Skip so ₹0 rows never appear on the Risks page.
+            exposure_inr = exposure.get("total_exposure_inr", card.estimated_impact_inr or 0)
             if exposure_inr == 0:
                 continue
 
-            # Get disruption context
+            supplier_stockouts = stockout_by_supplier.get(supplier.name, [])
+            min_days = min((s.days_to_stockout for s in supplier_stockouts), default=30)
+            sku_count = len(supplier_stockouts) or 1
+
             disruption_ctx = disruption_by_supplier.get(supplier_id, "No active disruption")
-
-            # Get cascade context
             cascade = cascade_map.get(supplier_id)
-            cascade_ctx = f"{cascade['total_affected']} downstream suppliers affected, propagated impact: {cascade['total_propagated_impact']:.2f}" if cascade else "No cascade detected"
-
-            # Build evidence package — immutable snapshot of deterministic facts.
-            # Persist to DB so results can be replayed from evidence + policy versions.
-            pkg = build_evidence_package(
-                supplier_id=supplier_id,
-                supplier_name=supplier_name,
-                risk_score=risk["overall_score"],
-                risk_level=risk["risk_level"],
-                exposure_inr=exposure_inr,
-                days_to_stockout=min_days,
-                sku_count=sku_count,
+            cascade_ctx = (
+                f"{cascade['total_affected']} downstream suppliers affected, "
+                f"propagated impact: {cascade['total_propagated_impact']:.2f}"
+                if cascade else "No cascade detected"
             )
-            snapshot_id = None
-            try:
-                snap = await _save_snapshot(
-                    self.db,
-                    supplier_id=supplier_id,
-                    evidence_hash=pkg.facts_hash,
-                    evidence_json=pkg.to_dict(),
-                    risk_policy_version=1,
-                    financial_policy_version=1,
-                    model_version=_MODEL_VERSION,
-                )
-                snapshot_id = str(snap.id)
-            except Exception as exc:
-                logger.warning(f"snapshot: persist failed for {supplier_id}: {exc}")
 
-            # Generate AI-enhanced card
+            risk_level = card.priority or "medium"
+            risk_score = _PRIORITY_SCORE.get(risk_level, 0.45)
+
             ai_card = await procurement_agent.generate_action_card(
-                supplier_name=supplier_name,
+                supplier_name=supplier.name,
                 city=supplier.city,
                 state=supplier.state,
-                risk_score=risk["overall_score"],
-                risk_level=risk["risk_level"],
+                risk_score=risk_score,
+                risk_level=risk_level,
                 exposure_inr=exposure_inr,
                 days_to_stockout=min_days,
                 sku_count=sku_count,
                 disruption_context=disruption_ctx,
                 cascade_context=cascade_ctx,
-                action_type=action_type,
+                action_type=card.action_type or "reorder",
             )
 
-            # Extract only permitted narrative keys from AI response.
-            # This prevents AI from overwriting trusted deterministic values
-            # even if the model output contains fields like risk_score or priority.
-            ai_narratives = {k: v for k, v in ai_card.items() if k in _ACTION_CARD_NARRATIVE_KEYS}
+            # Only pull narrative keys — AI must never overwrite authoritative fields.
+            # Exclude None values so missing AI narratives leave fields absent (not null).
+            ai_narratives = {
+                k: v for k, v in ai_card.items()
+                if k in _ACTION_CARD_NARRATIVE_KEYS and v is not None
+            }
 
             action_cards.append({
-                # Deterministic data — always set AFTER ai_narratives to enforce trust boundary
+                # Canonical DB identity and state (always set last so AI cannot override)
+                "id": supplier_id,
                 "supplier_id": supplier_id,
-                "supplier_name": supplier_name,
+                "supplier_name": supplier.name,
                 "city": supplier.city,
                 "region": supplier.region,
                 "category": supplier.category,
-                "risk_score": risk["overall_score"],
-                "risk_level": risk["risk_level"],
-                "confidence": risk["confidence"],
+                "action_type": card.action_type or "reorder",
+                "priority": risk_level,
                 "financial_exposure_inr": exposure_inr,
                 "days_to_stockout": min_days,
                 "affected_skus": sku_count,
-                "action_type": action_type,
-                "priority": self._compute_priority(risk["overall_score"], min_days, exposure_inr),
-                # Metadata
-                "generation_mode": "ai_generated" if ai_card.get("title") else "deterministic_fallback",
-                "validation_status": "narrative_filtered",
-                "evidence_snapshot_id": snapshot_id,
-                "risk_policy_version": 1,
-                "financial_policy_version": 1,
-                # AI-generated narrative fields only (trust-boundary enforced above)
+                "is_resolved": card.is_resolved,
+                # AI narrative overlay (omitted keys mean AI did not produce them)
                 **ai_narratives,
+                # AI status metadata — always present
+                "generation_mode": ai_card.get("generation_mode", "ai_unavailable"),
+                "ai_generated": ai_card.get("ai_generated", False),
+                "ai_error": ai_card.get("ai_error", False),
+                "ai_error_reason": ai_card.get("ai_error_reason"),
+                "evidence_snapshot_id": ai_card.get("evidence_snapshot_id"),
+                "validation_status": "narrative_filtered",
             })
 
-        # Sort by priority
         priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         action_cards.sort(key=lambda c: (priority_order.get(c["priority"], 4), -c["financial_exposure_inr"]))
-
         return action_cards
 
     async def generate_executive_brief(self) -> dict:
@@ -219,7 +188,10 @@ class ProcurementService:
             top_suppliers=top_suppliers,
         )
 
-        brief_narratives = {k: v for k, v in brief.items() if k in _EXEC_BRIEF_NARRATIVE_KEYS}
+        brief_narratives = {
+            k: v for k, v in brief.items()
+            if k in _EXEC_BRIEF_NARRATIVE_KEYS and v is not None
+        }
 
         return {
             # Deterministic metrics — always set last so AI cannot overwrite them
@@ -229,9 +201,13 @@ class ProcurementService:
             "high_stockouts": stockout.high_count,
             "cascade_count": len(cascades),
             "avg_days_to_stockout": stockout.avg_days_to_stockout,
-            # AI-generated narrative fields only
+            # AI-generated narrative fields only (absent if AI unavailable)
             **brief_narratives,
-            "generation_mode": "ai_generated" if brief_narratives.get("summary") else "deterministic_fallback",
+            # AI status metadata
+            "generation_mode": brief.get("generation_mode", "ai_unavailable"),
+            "ai_generated": brief.get("ai_generated", False),
+            "ai_error": brief.get("ai_error", False),
+            "ai_error_reason": brief.get("ai_error_reason"),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -297,34 +273,3 @@ class ProcurementService:
             **alternate_narratives,
         }
 
-    def _determine_action_type(self, risk: dict, supplier_id: str, disruptions: dict) -> str:
-        """Determine recommended action type from risk profile."""
-        has_disruption = supplier_id in disruptions
-        high_inventory_pressure = risk["factors"].get("inventory_pressure", {}).get("value", 0) > 0.5
-        high_dependency = risk["factors"].get("dependency_exposure", {}).get("value", 0) > 0.5
-
-        if has_disruption and risk["overall_score"] >= 0.3:
-            return "switch_supplier"
-        elif high_inventory_pressure:
-            return "reorder"
-        elif high_dependency:
-            return "expedite"
-        else:
-            return "increase_stock"
-
-    def _compute_priority(self, risk_score: float, days_to_stockout: int, exposure_inr: float) -> str:
-        """Compute action priority from multiple signals."""
-        # Critical: any one extreme condition
-        if days_to_stockout <= 3 or risk_score >= 0.7 or exposure_inr >= 500000:
-            return "critical"
-        # High: multiple elevated conditions
-        signals = sum([
-            days_to_stockout <= 7,
-            risk_score >= 0.4,
-            exposure_inr >= 200000,
-        ])
-        if signals >= 2:
-            return "high"
-        elif signals >= 1:
-            return "medium"
-        return "low"

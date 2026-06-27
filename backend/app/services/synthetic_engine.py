@@ -9,6 +9,7 @@ from datetime import datetime
 
 from app.core.event_bus import event_bus, SupplyChainEvent
 from app.core.logging import logger
+from app.core.database import AsyncSessionLocal
 
 # Deterministic seed for repeatable demo sequences
 _rng = random.Random(42)
@@ -213,7 +214,13 @@ class SyntheticEngine:
                     event = self._apply_scenario_bias(event)
 
                 await event_bus.publish(event)
-                
+
+                # For critical disruption_alert events, run the full Strands
+                # supervisor pipeline so risk scores and action cards update in
+                # real time — not just cosmetic SSE noise.
+                if event.severity == "critical" and event.event_type == "disruption_alert":
+                    asyncio.create_task(self._trigger_supervisor(event))
+
                 # Record metric
                 try:
                     from app.core.metrics import metrics_store
@@ -230,16 +237,45 @@ class SyntheticEngine:
                 logger.error(f"Synthetic engine error: {e}")
                 await asyncio.sleep(5)
 
+    async def _trigger_supervisor(self, event: SupplyChainEvent):
+        """Run the full Strands supervisor pipeline for a critical synthetic event."""
+        try:
+            from app.agents.strands_agents import SupervisorAgent
+            async with AsyncSessionLocal() as db:
+                supervisor = SupervisorAgent(db)
+                disruption_event = {
+                    "supplier_id": "",
+                    "supplier_name": event.data.get("supplier", "Unknown Supplier"),
+                    "severity": event.severity,
+                    "disruption_type": event.event_type,
+                    "region": event.data.get("region", ""),
+                    "city": event.data.get("city", ""),
+                    "state": "",
+                    "estimated_impact_inr": 0,
+                    "days_to_stockout": 7,
+                    "sku_count": 1,
+                    "description": event.message,
+                }
+                await supervisor.process_disruption_event(disruption_event)
+        except Exception as exc:
+            logger.warning(f"Supervisor pipeline failed for synthetic critical event: {exc}")
+
     def set_interval(self, min_seconds: float, max_seconds: float):
         """Adjust event generation frequency (for demo acceleration)."""
         self._interval_range = (min_seconds, max_seconds)
 
+    # Router keys → engine keys (keeps the API contract stable without renaming SCENARIO_CONFIGS)
+    _SCENARIO_ALIASES: dict[str, str] = {
+        "strike_maharashtra": "strike_north",
+        "flood_kolkata": "flood_east",
+    }
+
     def activate_scenario(self, scenario_name: str):
         """Bias event generation toward a specific scenario."""
-        self._scenario_active = scenario_name
-        # Speed up events during active scenario
+        resolved = self._SCENARIO_ALIASES.get(scenario_name, scenario_name)
+        self._scenario_active = resolved
         self._interval_range = (1.0, 3.0)
-        logger.info(f"Scenario activated: {scenario_name}")
+        logger.info(f"Scenario activated: {scenario_name} (resolved → {resolved})")
 
     def deactivate_scenario(self):
         """Return to normal event generation."""

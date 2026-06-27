@@ -105,8 +105,10 @@ class RiskIntelligenceService:
         # Compute dependency exposure
         dependency_exposure = await self._compute_dependency_exposure(supplier.id)
 
-        # Compute festival proximity
-        festival_proximity = await self._compute_festival_proximity(supplier.category)
+        # Compute festival proximity — pass region so results match supplier_service
+        festival_proximity = await self._compute_festival_proximity(
+            supplier.category, region=supplier.region or ""
+        )
 
         return risk_engine.compute_supplier_risk(
             supplier_id=supplier.id,
@@ -189,9 +191,9 @@ class RiskIntelligenceService:
         """), {"sid": str(supplier_id)})
         return float(result.scalar() or 0.0)
 
-    async def _compute_festival_proximity(self, category: str) -> float:
-        """Return 0–1 proximity score. Calls _get_festival_multiplier (30-day window) and normalizes."""
-        multiplier = await self._get_festival_multiplier(category)
+    async def _compute_festival_proximity(self, category: str, region: str = "") -> float:
+        """Return 0–1 proximity score using both category and region (30-day window)."""
+        multiplier = await self._get_festival_multiplier(category, region=region)
         # Normalize: multiplier of 1.0 → 0.0, multiplier of 3.5 → 1.0
         return min(1.0, max(0.0, (multiplier - 1.0) / 2.5))
 
@@ -413,8 +415,12 @@ class RiskIntelligenceService:
             supplier_lead_time_days=supplier.lead_time_days,
         )
 
-    async def _get_festival_multiplier(self, category: str) -> float:
-        """Return the highest active festival demand multiplier for a category (next 30 days)."""
+    async def _get_festival_multiplier(self, category: str, region: str = "") -> float:
+        """Return the highest active festival demand multiplier for a category (next 30 days).
+
+        When region is provided, also matches festivals scoped to that region or All India.
+        This aligns with supplier_service._compute_festival_proximity which uses both dimensions.
+        """
         today = date.today()
         window = today + timedelta(days=30)
         result = await self.db.execute(text("""
@@ -422,7 +428,19 @@ class RiskIntelligenceService:
             FROM festival_calendar
             WHERE start_date <= :window AND end_date >= :today
             AND (affected_categories LIKE :cat OR affected_categories LIKE '%All%')
-        """), {"today": today, "window": window, "cat": f"%{category}%"})
+            AND (
+                :region = ''
+                OR region IS NULL
+                OR region LIKE '%All%'
+                OR region ILIKE :region_pat
+            )
+        """), {
+            "today": today,
+            "window": window,
+            "cat": f"%{category}%",
+            "region": region,
+            "region_pat": f"%{region}%",
+        })
         return float(result.scalar() or 1.0)
 
     async def _compute_supplier_exposure_by_id(self, supplier_id: UUID) -> SupplierExposure | None:

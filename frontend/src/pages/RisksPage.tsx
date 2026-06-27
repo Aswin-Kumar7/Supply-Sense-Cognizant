@@ -159,13 +159,20 @@ export default function RisksPage() {
     [cards]
   )
 
+  // A supplier is "resolved" only when ALL of its action cards are resolved.
+  // Using ANY-resolved caused split-brain: supplier appeared in both Active
+  // and Resolved lists when it had mixed resolved/unresolved cards.
   const resolvedSupplierIds = useMemo(() => {
     const cardsList = actionData?.action_cards ?? []
-    const resolved = new Set<string>()
+    const bySupplier = new Map<string, boolean[]>()
     for (const c of cardsList) {
-      if (c.supplier_id && c.is_resolved) {
-        resolved.add(c.supplier_id)
-      }
+      if (!c.supplier_id) continue
+      if (!bySupplier.has(c.supplier_id)) bySupplier.set(c.supplier_id, [])
+      bySupplier.get(c.supplier_id)!.push(c.is_resolved)
+    }
+    const resolved = new Set<string>()
+    for (const [sid, statuses] of bySupplier) {
+      if (statuses.length > 0 && statuses.every(s => s)) resolved.add(sid)
     }
     return resolved
   }, [actionData])

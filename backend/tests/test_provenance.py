@@ -85,7 +85,7 @@ class TestCacheKeyGeneration:
         evidence_hash="abc123def456abc1",
         risk_policy_version=1,
         financial_policy_version=1,
-        model_version="anthropic.claude-opus-4-6-v1",
+        model_version="anthropic.claude-haiku-4-5-20251001-v1:0",
         prompt_version="1",
     )
 
@@ -231,7 +231,7 @@ class TestSnapshotServiceAsync:
                 evidence_json={"supplier_id": "sup-001"},
                 risk_policy_version=1,
                 financial_policy_version=1,
-                model_version="anthropic.claude-opus-4-6-v1",
+                model_version="anthropic.claude-haiku-4-5-20251001-v1:0",
             )
         )
         assert snap.id is not None
@@ -250,14 +250,14 @@ class TestSnapshotServiceAsync:
                 evidence_json={},
                 risk_policy_version=1,
                 financial_policy_version=1,
-                model_version="anthropic.claude-opus-4-6-v1",
+                model_version="anthropic.claude-haiku-4-5-20251001-v1:0",
             )
         )
         expected_key = build_cache_key(
             evidence_hash=evidence_hash,
             risk_policy_version=1,
             financial_policy_version=1,
-            model_version="anthropic.claude-opus-4-6-v1",
+            model_version="anthropic.claude-haiku-4-5-20251001-v1:0",
         )
         assert snap.cache_key == expected_key
 
@@ -387,13 +387,13 @@ class TestEvidenceProvenanceIntegration:
             evidence_hash=pkg1.facts_hash,
             risk_policy_version=1,
             financial_policy_version=1,
-            model_version="anthropic.claude-opus-4-6-v1",
+            model_version="anthropic.claude-haiku-4-5-20251001-v1:0",
         )
         k2 = build_cache_key(
             evidence_hash=pkg2.facts_hash,
             risk_policy_version=1,
             financial_policy_version=1,
-            model_version="anthropic.claude-opus-4-6-v1",
+            model_version="anthropic.claude-haiku-4-5-20251001-v1:0",
         )
         assert k1 != k2
 
@@ -403,12 +403,12 @@ class TestEvidenceProvenanceIntegration:
             evidence_hash=pkg.facts_hash,
             risk_policy_version=1,
             financial_policy_version=1,
-            model_version="anthropic.claude-opus-4-6-v1",
+            model_version="anthropic.claude-haiku-4-5-20251001-v1:0",
         )
         k2 = build_cache_key(
             evidence_hash=pkg.facts_hash,
             risk_policy_version=2,  # new policy version
             financial_policy_version=1,
-            model_version="anthropic.claude-opus-4-6-v1",
+            model_version="anthropic.claude-haiku-4-5-20251001-v1:0",
         )
         assert k1 != k2

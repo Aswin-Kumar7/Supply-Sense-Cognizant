@@ -21,6 +21,7 @@ import {
   Scale,
   FileText,
 } from 'lucide-react'
+import { AiBadge } from '../components/ui/AiBadge'
 import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
 import { useProcurementCards, useActionCards } from '../hooks/useQueries'
@@ -835,10 +836,19 @@ export default function RiskMitigationPlan() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
               <ShieldCheck size={14} color="#4F46E5" />
               <span style={{ fontSize: '0.6875rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748B' }}>Why This Matters</span>
+              {card && <AiBadge mode={card.generation_mode} showLabel />}
             </div>
-            <p style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: '#334155', fontWeight: 500, margin: 0 }}>
-              {card?.executive_summary ?? 'Executing strategic alignment with secondary supply chain networks to neutralize upstream volatility.'}
-            </p>
+            {card?.executive_summary ? (
+              <p style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: '#334155', fontWeight: 500, margin: 0 }}>
+                {card.executive_summary}
+              </p>
+            ) : (
+              <p style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: '#94A3B8', fontStyle: 'italic', margin: 0 }}>
+                {card?.ai_error
+                  ? 'AI analysis unavailable — AWS Bedrock could not be reached. All financial figures above are computed from live DB data.'
+                  : card ? 'Awaiting AI analysis…' : 'Loading…'}
+              </p>
+            )}
           </div>
         </div>
       </div>

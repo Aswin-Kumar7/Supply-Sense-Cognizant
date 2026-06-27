@@ -296,14 +296,20 @@ export interface IntelligentActionCard {
   affected_skus: number
   action_type: string
   priority: RiskLevel
-  title: string
-  executive_summary: string
-  reasoning: string
-  urgency_narrative: string
-  cost_of_delay_narrative: string
-  recommended_action: string
-  escalation_window: string
-  alternate_supplier_rationale: string
+  title?: string | null
+  executive_summary?: string | null
+  reasoning?: string | null
+  urgency_narrative?: string | null
+  cost_of_delay_narrative?: string | null
+  recommended_action?: string | null
+  escalation_window?: string | null
+  alternate_supplier_rationale?: string | null
+  // AI status indicators
+  generation_mode?: 'ai_generated' | 'ai_unavailable' | 'signal_only' | 'deterministic_fallback'
+  ai_generated?: boolean
+  ai_error?: boolean
+  ai_error_reason?: string | null
+  evidence_snapshot_id?: string | null
 }
 
 export interface ExecutiveBrief {
@@ -313,10 +319,14 @@ export interface ExecutiveBrief {
   high_stockouts: number
   cascade_count: number
   avg_days_to_stockout: number
-  summary: string
-  top_risks: string[]
-  immediate_actions: string[]
+  summary?: string | null
+  top_risks?: string[]
+  immediate_actions?: string[]
   generated_at: string
+  generation_mode?: 'ai_generated' | 'ai_unavailable' | 'deterministic_fallback'
+  ai_generated?: boolean
+  ai_error?: boolean
+  ai_error_reason?: string | null
 }
 
 // ============ Chat ============

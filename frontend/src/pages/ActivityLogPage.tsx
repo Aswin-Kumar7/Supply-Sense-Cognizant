@@ -624,7 +624,7 @@ export default function ActivityLogPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ padding: '60px 20px', textAlign: 'center', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '16px' }}>
-          <History size={32} color="#94A3B8" style={{ marginBottom: '12px', opacity: 0.5 }} />
+          <History size={32} color="#94A3B8" style={{ display: 'block', margin: '0 auto 12px', opacity: 0.5 }} />
           <div style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#0F172A', marginBottom: '4px' }}>No resolved actions yet</div>
           <div style={{ fontSize: '0.8125rem', color: '#64748B', fontWeight: 500 }}>
             {filter !== 'all' ? `No actions resolved in this period — try "All Time"` : 'Resolved actions will appear here once you mark issues as done'}

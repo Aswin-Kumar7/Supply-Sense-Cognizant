@@ -19,8 +19,23 @@ import asyncio
 import contextvars
 import json
 import os
+import ssl
 import time
+import urllib3
 from collections import deque
+
+# Patch boto3.Session.client so every bedrock-runtime client is created with
+# verify=False. Corporate SSL proxy intercepts AWS HTTPS with its own cert that
+# Python's ssl module doesn't trust. This patch is applied once at import time
+# and affects Strands' internally created clients too.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import boto3 as _boto3
+_orig_session_client = _boto3.Session.client
+def _patched_session_client(self, service_name, *args, **kwargs):
+    if service_name == "bedrock-runtime":
+        kwargs.setdefault("verify", False)
+    return _orig_session_client(self, service_name, *args, **kwargs)
+_boto3.Session.client = _patched_session_client
 from datetime import date, timedelta
 from typing import Any
 
@@ -128,6 +143,8 @@ def _make_callback_handler(agent_name: str):
 
 
 # ── Bedrock model shared across all agents ─────────────────────────────────
+_CACHED_BEDROCK_MODEL: Any = None  # module-level singleton — avoids rebuilding boto3 client per request
+
 _AGENT_SYSTEM_SUFFIX = (
     "\n\nCRITICAL RULES:\n"
     "- NEVER invent financial numbers. All rupee figures must come from tool outputs.\n"
@@ -138,26 +155,36 @@ _AGENT_SYSTEM_SUFFIX = (
 
 
 def _make_bedrock_model() -> Any | None:
-    """Return a BedrockModel backed by an explicit boto3 Session so credentials
-    from the environment (.env → AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) are
-    used directly instead of relying on Strands' implicit credential chain.
+    """Return a cached BedrockModel backed by an explicit boto3 Session.
 
-    NOTE: boto_session and region_name are mutually exclusive in BedrockModel;
-    the region is embedded in the Session object.
+    Cached at module level so the boto3 client is created once per process,
+    not once per request. Safe to share across async tasks (boto3 clients
+    are thread-safe for reads).
     """
+    global _CACHED_BEDROCK_MODEL
+    if _CACHED_BEDROCK_MODEL is not None:
+        return _CACHED_BEDROCK_MODEL
     if not STRANDS_AVAILABLE:
         return None
     try:
         import boto3
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
         boto_session = boto3.Session(
             aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
             region_name=os.environ.get("AWS_REGION", settings.aws_region),
         )
-        return BedrockModel(
+        # verify=False bypasses corporate SSL proxy cert inspection on dev machines.
+        # Strands BedrockModel accepts boto_client_config kwargs passed through.
+        model = BedrockModel(
             model_id=settings.bedrock_model_id,
             boto_session=boto_session,
         )
+        _CACHED_BEDROCK_MODEL = model
+        logger.info(f"BedrockModel initialised: {settings.bedrock_model_id} in {os.environ.get('AWS_REGION', settings.aws_region)}")
+        return _CACHED_BEDROCK_MODEL
     except Exception as exc:
         logger.warning(f"BedrockModel init failed: {exc}")
         return None
@@ -455,11 +482,25 @@ async def _calculate_tfe_impl(
         for d in disruptions_q.scalars().all()
     ]
 
+    # Query actual 90-day delivery stats instead of hardcoded values so TFE
+    # figures in chat/scenarios match those shown on the dashboard.
+    delivery_result = await db.execute(text("""
+        SELECT
+            COUNT(*)                                     AS total,
+            COALESCE(AVG(delay_days), 0)                 AS avg_delay,
+            COUNT(*) FILTER (WHERE delay_days > 0)
+                / NULLIF(COUNT(*), 0)::float             AS late_pct,
+            COALESCE(SUM(sla_penalty_inr), 0)            AS total_penalties
+        FROM delivery_records
+        WHERE supplier_id = :sid
+          AND order_date >= CURRENT_DATE - INTERVAL '90 days'
+    """), {"sid": supplier_id})
+    dr = delivery_result.fetchone()
     delivery_stats = {
-        "total_deliveries": 30,
-        "late_pct": 0.15,
-        "avg_delay_days": days_to_stockout / max(1, len(skus)),
-        "total_penalties_inr": sla_penalty_per_day * days_to_stockout,
+        "total_deliveries": int(dr[0] or 0),
+        "avg_delay_days": float(dr[1] or 0),
+        "late_pct": float(dr[2] or 0),
+        "total_penalties_inr": float(dr[3] or sla_penalty_per_day * days_to_stockout),
     }
 
     exposure = financial_engine.compute_supplier_exposure(
@@ -825,13 +866,21 @@ class ConversationalAdvisorAgent:
         session_id: str | None = None,
     ) -> dict:
         """
-        Process a conversational message via Strands. Returns error immediately on failure — no fallback.
+        Process a conversational message via Strands.
         history: list of {"role": "user"|"assistant", "content": "..."}
         session_id: used to thread tool call history across turns
         """
+        # Lazy retry: if agent failed to init at construction time (e.g. creds
+        # not yet in env), try once more now that creds may have been loaded.
+        if self._strands_agent is None:
+            self._init_agent()
         if self._strands_agent is None:
             return {
-                "answer": "AI advisor is unavailable — Strands SDK or Bedrock model could not be initialised. Check AWS credentials and region configuration.",
+                "answer": (
+                    "AI advisor is unavailable — Bedrock model could not be initialised. "
+                    f"Check AWS credentials and that model '{settings.bedrock_model_id}' is enabled "
+                    f"in region '{os.environ.get('AWS_REGION', settings.aws_region)}'."
+                ),
                 "sources": [],
                 "agent": "unavailable",
                 "status": "error",
@@ -877,9 +926,15 @@ class ConversationalAdvisorAgent:
             finally:
                 _current_session_id.reset(token)
 
+            # Derive sources from which tools were actually called this turn
+            tools_called = []
+            if session_id and session_id in _SESSION_TOOL_HISTORY:
+                tools_called = [t["tool"] for t in _SESSION_TOOL_HISTORY[session_id]]
+            sources = list(dict.fromkeys(tools_called)) if tools_called else ["risk_engine"]
+
             return {
                 "answer": str(response),
-                "sources": ["risk_engine", "financial_engine", "live_database"],
+                "sources": sources,
                 "agent": "conversational_advisor",
             }
         except Exception as exc:
@@ -910,17 +965,28 @@ _SIGNAL_INTEL_SYSTEM = (
 
 async def _classify_event_impl(event: dict) -> dict:
     """
-    Tool implementation: classify a disruption event.
-    Uses Bedrock as a fallback classification source (only called after Strands
-    approval has been granted). If Bedrock is unavailable, falls back to rule-based.
-    Returns event_type, severity, confidence, affected_region, estimated_duration_days.
+    Tool implementation: classify a disruption event via Bedrock (Claude Haiku).
+    Called after Strands approval has been granted.
+    Returns an error dict if Bedrock is unavailable — no rule-based fabrication.
     """
     from app.core.bedrock import bedrock
-    from app.core.fallback_manager import request_fallback_approval
 
     event_description = event.get("description", event.get("disruption_type", "unknown"))
     region = event.get("region", "unknown")
     severity_hint = event.get("severity", "")
+
+    if not bedrock.is_available:
+        logger.warning("_classify_event_impl: Bedrock unavailable — cannot classify disruption event")
+        return {
+            "error": "bedrock_unavailable",
+            "event_type": None,
+            "severity": None,
+            "confidence": None,
+            "affected_region": region,
+            "estimated_duration_days": None,
+        }
+
+    from app.schemas.ai_contracts import DisruptionClassification
 
     system_prompt = (
         "You are a supply chain disruption classifier. "
@@ -932,56 +998,29 @@ async def _classify_event_impl(event: dict) -> dict:
         f"Description: {event_description}\n"
         f"Region: {region}\n"
         f"Severity hint: {severity_hint}\n\n"
-        f"Return JSON with: event_type, severity, confidence, affected_region, estimated_duration_days"
+        f"Return JSON with exactly these keys: event_type, severity, confidence, affected_region, estimated_duration_days"
     )
 
-    result = await bedrock.invoke_structured(system_prompt, user_prompt)
+    validated = await bedrock.invoke_typed(system_prompt, user_prompt, DisruptionClassification)
 
-    if not result:
-        # Bedrock unavailable — use rule-based classification
-        type_mapping = {
-            "cyclone": "weather",
-            "flood": "weather",
-            "storm": "weather",
-            "earthquake": "weather",
-            "drought": "weather",
-            "strike": "labor",
-            "protest": "geopolitical",
-            "war": "geopolitical",
-            "sanctions": "geopolitical",
-            "port_congestion": "logistics",
-            "shipping_delay": "logistics",
-            "transport": "logistics",
-            "power_outage": "infrastructure",
-            "road_closure": "infrastructure",
-            "bridge_collapse": "infrastructure",
-        }
-        disruption_type = event.get("disruption_type", "").lower()
-        event_type = "logistics"  # default
-        for key, val in type_mapping.items():
-            if key in disruption_type:
-                event_type = val
-                break
-
-        severity_mapping = {"critical": "critical", "high": "high", "medium": "medium", "low": "low"}
-        severity = severity_mapping.get(severity_hint, "medium")
-
-        duration_mapping = {"weather": 5, "geopolitical": 14, "logistics": 3, "labor": 7, "infrastructure": 10}
-
-        result = {
-            "event_type": event_type,
-            "severity": severity,
-            "confidence": 0.6,
+    if validated is None:
+        logger.warning("_classify_event_impl: Bedrock returned no valid classification")
+        return {
+            "error": "bedrock_invalid_response",
+            "event_type": None,
+            "severity": None,
+            "confidence": None,
             "affected_region": region,
-            "estimated_duration_days": duration_mapping.get(event_type, 7),
+            "estimated_duration_days": None,
         }
 
+    result = validated.model_dump()
     return {
-        "event_type": result.get("event_type", "logistics"),
-        "severity": result.get("severity", "medium"),
-        "confidence": float(result.get("confidence", 0.5)),
+        "event_type": result["event_type"],
+        "severity": result["severity"],
+        "confidence": float(result["confidence"]),
         "affected_region": result.get("affected_region", region),
-        "estimated_duration_days": int(result.get("estimated_duration_days", 7)),
+        "estimated_duration_days": int(result["estimated_duration_days"]),
     }
 
 
@@ -1141,13 +1180,27 @@ class SupervisorAgent:
         self.risk_agent = RiskAssessmentAgent(db)
         self.action_agent = PrescriptiveActionAgent(db)
 
+    # Conditional subflow policy:
+    #   "classify_only"            → low severity or very low confidence: SignalIntel only
+    #   "classify_risk"            → medium severity or moderate confidence
+    #   "classify_risk_action"     → high/critical with known supplier_id
+    #   "human_review"             → confidence < 0.3 after classification
+    _SUBFLOW_POLICY = {
+        "low":      "classify_only",
+        "medium":   "classify_risk",
+        "high":     "classify_risk_action",
+        "critical": "classify_risk_action",
+    }
+
     async def process_disruption_event(self, event: dict) -> dict:
         """
-        Process a disruption event through the full agent pipeline:
-          Signal Intelligence → Risk Assessment → Prescriptive Action → ActionCard
+        Process a disruption event through the adaptive agent pipeline.
 
-        Each stage uses parallel_execute where applicable. If any stage fails,
-        the pipeline logs the failure and continues with available data from prior stages.
+        Subflow is chosen at runtime based on severity and post-classification confidence:
+          low      → classify_only        (signal intel only)
+          medium   → classify_risk        (signal intel + risk assessment)
+          high/critical → classify_risk_action (full pipeline)
+          low confidence after classify → human_review (skip prescriptive)
 
         Returns an ActionCard-ready payload.
         """
@@ -1158,6 +1211,9 @@ class SupervisorAgent:
         region = event.get("region", "")
         city = event.get("city", "")
         state = event.get("state", "")
+
+        # Determine initial subflow from severity — may be upgraded after classification
+        subflow = self._SUBFLOW_POLICY.get(severity, "classify_risk_action")
 
         logger.info(f"═══════════════════════════════════════════════════════════════")
         logger.info(f"  SUPERVISOR PIPELINE START: {supplier_name} ({severity})")
@@ -1221,9 +1277,19 @@ class SupervisorAgent:
         signal_confidence = float(signal_report.get("confidence", 0.5))
         affected_supplier_ids = signal_report.get("affected_supplier_ids", [])
 
+        # Upgrade subflow based on post-classification confidence
+        if signal_confidence < 0.3:
+            subflow = "human_review"
+            logger.info(f"  ⚠️  Low confidence ({signal_confidence:.2f}) — routing to human_review subflow")
+        elif signal_severity in ("high", "critical") and subflow == "classify_only":
+            subflow = "classify_risk_action"
+            logger.info(f"  ↑ Severity upgraded to {signal_severity} — escalating subflow to classify_risk_action")
+
+        logger.info(f"  Subflow selected: {subflow}")
+
         # ── Step 2: Risk Assessment (via parallel_execute) ──────────────────
         risk_result = {}
-        if supplier_id:
+        if supplier_id and subflow in ("classify_risk", "classify_risk_action"):
             start = time.monotonic()
             logger.info(f"  [2/5] 📊 Risk Assessment Agent — scoring supplier {supplier_id[:8]}...")
             try:
@@ -1308,7 +1374,7 @@ class SupervisorAgent:
 
         # ── Step 3: Prescriptive Action (via parallel_execute) ──────────────
         action_result = {}
-        if supplier_id:
+        if supplier_id and subflow == "classify_risk_action":
             start = time.monotonic()
             logger.info(f"  [3/5] 💡 Prescriptive Action Agent — generating recommendations...")
             try:
@@ -1446,8 +1512,16 @@ class SupervisorAgent:
                 "requires_human_review": signal_report.get("requires_human_review", False),
             },
             "agent": "supervisor",
+            "subflow": subflow,
             "strands_used": strands_actually_used,
-            "generation_mode": "ai_generated" if strands_actually_used else "signal_only",
+            # Cards are genuinely AI-generated only when the action agent produced
+            # a real title/description — not when we fell back to generic placeholders.
+            "ai_generated": strands_actually_used and bool(action_result.get("title")),
+            "generation_mode": (
+                "ai_generated" if (strands_actually_used and action_result.get("title"))
+                else "signal_only" if strands_actually_used
+                else "deterministic_fallback"
+            ),
             "pipeline_status": pipeline_status,
             "validation_status": "narrative_only",
             "evidence_snapshot_id": evidence_pkg.snapshot_id,
@@ -1482,42 +1556,18 @@ class SupervisorAgent:
             if was_blocked:
                 logger.warning(
                     f"Content-safety guardrail intervened for {supplier_name}: "
-                    f"blocked fields replaced with deterministic fallback"
+                    f"blocked fields cleared (no fabricated fallback text)"
                 )
-                if not validated_fields.get("title"):
-                    action_card["title"] = f"Alert: {supplier_name} — {disruption_type} disruption"
-                else:
-                    action_card["title"] = validated_fields["title"]
-
-                if not validated_fields.get("description"):
-                    action_card["description"] = f"{disruption_type} event in {signal_region}. Review required."
-                else:
-                    action_card["description"] = validated_fields["description"]
-
-                if not validated_fields.get("reasoning"):
-                    action_card["reasoning"] = f"Automated alert based on {signal_event_type} signal."
-                else:
-                    action_card["reasoning"] = validated_fields["reasoning"]
-
-                if not validated_fields.get("urgency_narrative"):
-                    action_card["urgency_narrative"] = (
-                        f"Action needed within {signal_report.get('estimated_duration_days', 7)} days."
-                    )
-                else:
-                    action_card["urgency_narrative"] = validated_fields["urgency_narrative"]
-
-                if not validated_fields.get("recommended_action"):
-                    action_card["recommended_action"] = "Review supplier status and initiate contingency plan."
-                else:
-                    action_card["recommended_action"] = validated_fields["recommended_action"]
-
-                if not validated_fields.get("alternate_supplier_rationale"):
-                    action_card["alternate_supplier_rationale"] = ""
-                else:
-                    action_card["alternate_supplier_rationale"] = validated_fields["alternate_supplier_rationale"]
+                # Only retain fields that passed content-safety — blocked fields become None
+                for field in ("title", "description", "reasoning", "urgency_narrative",
+                               "recommended_action", "alternate_supplier_rationale"):
+                    action_card[field] = validated_fields.get(field) or None
 
                 action_card["content_safety_intervened"] = True
                 action_card["content_safety_status"] = "intervened"
+                action_card["ai_error"] = True
+                action_card["ai_error_reason"] = "content_safety_blocked"
+                action_card["generation_mode"] = "ai_unavailable"
             else:
                 action_card["title"] = validated_fields.get("title", action_card["title"])
                 action_card["description"] = validated_fields.get("description", action_card["description"])

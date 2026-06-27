@@ -6,6 +6,7 @@ import {
   AlertOctagon, Clock, Banknote
 } from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
+import { AiBadge } from '../components/ui/AiBadge'
 
 /* ── Formatting ──────────────────────────────────────────────────────── */
 function formatINR(v: number) {
@@ -56,12 +57,19 @@ function ActionCard({ risk, card }: { risk: SupplierRiskAnalysis; card: Intellig
       {/* Card Body */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
         <div>
-          <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '4px' }}>
+          <span style={{ fontSize: '0.5625rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
             Recommended Action
+            <AiBadge mode={card.generation_mode} />
           </span>
-          <p style={{ fontSize: '0.8125rem', color: '#334155', lineHeight: 1.5, margin: 0, fontWeight: 500 }}>
-            {card.title || "Review supplier risk profile and formulate mitigation strategy."}
-          </p>
+          {card.title ? (
+            <p style={{ fontSize: '0.8125rem', color: '#334155', lineHeight: 1.5, margin: 0, fontWeight: 500 }}>
+              {card.title}
+            </p>
+          ) : (
+            <p style={{ fontSize: '0.8125rem', color: '#94A3B8', lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>
+              {card.ai_error ? 'AI analysis unavailable — check AWS Bedrock connectivity' : 'Awaiting AI analysis'}
+            </p>
+          )}
         </div>
 
         {/* Threat Metrics */}

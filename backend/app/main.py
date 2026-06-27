@@ -5,6 +5,14 @@ Enterprise-grade supply chain resilience platform.
 Module 2: Real-time operational visibility and live monitoring.
 """
 
+import os as _os
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    # Load .env from backend/ directory (where uvicorn is invoked from)
+    _load_dotenv(_os.path.join(_os.path.dirname(__file__), "..", ".env"), override=False)
+except ImportError:
+    pass
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,10 +22,8 @@ from app.core.database import init_db, close_db
 from app.core.exceptions import SupplySenseException, supplysense_exception_handler
 from app.core.logging import logger
 from app.services.synthetic_engine import synthetic_engine
-from app.routers import suppliers, skus, disruptions, dashboard, action_cards, events, health, scenarios, risk, procurement, chat, policy
+from app.routers import suppliers, skus, disruptions, dashboard, action_cards, events, health, risk, procurement, chat
 from app.routers.fallback import router as fallback_router
-from app.routers import auth, approvals
-from app.routers.prediction import router as prediction_router
 
 settings = get_settings()
 
@@ -73,12 +79,7 @@ app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(action_cards.router, prefix=API_PREFIX)
 app.include_router(events.router, prefix=API_PREFIX)
 app.include_router(health.router, prefix=API_PREFIX)
-app.include_router(scenarios.router, prefix=API_PREFIX)
 app.include_router(risk.router, prefix=API_PREFIX)
 app.include_router(procurement.router, prefix=API_PREFIX)
 app.include_router(chat.router, prefix=API_PREFIX)
-app.include_router(policy.router, prefix=API_PREFIX)
 app.include_router(fallback_router, prefix=API_PREFIX)
-app.include_router(auth.router, prefix=API_PREFIX)
-app.include_router(approvals.router, prefix=API_PREFIX)
-app.include_router(prediction_router, prefix=API_PREFIX)

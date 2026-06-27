@@ -3,7 +3,6 @@ import { useRef, useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { TopBar } from './TopBar'
 import { Sidebar } from './Sidebar'
-import { FallbackApprovalBanner } from '../ui/FallbackApprovalBanner'
 import { FloatingChatWidget } from '../ui/FloatingChatWidget'
 import { useSSECacheInvalidation } from '../../hooks/useSSECacheInvalidation'
 import { useGlobalSync, GlobalSyncContext } from '../../hooks/useGlobalSync'
@@ -26,7 +25,12 @@ export function DashboardLayout() {
 
   useEffect(() => {
     api.syncRisks().then(({ synced }) => {
-      if (synced > 0) queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
+      if (synced > 0) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.actionCards })
+        // Procurement cards read from DB action cards — invalidate so the cache
+        // re-fetches with the newly created cards instead of serving stale empty data.
+        queryClient.invalidateQueries({ queryKey: queryKeys.procurement })
+      }
     }).catch(() => {})
   }, [queryClient])
 
@@ -49,7 +53,6 @@ export function DashboardLayout() {
               backgroundSize: '24px 24px',
             }}
           >
-            <FallbackApprovalBanner />
             <Outlet />
           </main>
         </div>
