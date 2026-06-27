@@ -108,9 +108,18 @@ function round4(n: number): number {
  * Drop-in replacement for `useRiskAnalysis()` that applies user-saved
  * weights from Settings before returning risk data.
  *
+ * IMPORTANT — simulation mode contract:
+ *   When `isSimulation` is true, the returned scores are LOCAL RECALCULATIONS
+ *   only. They are NOT the canonical backend scores and must be clearly labelled
+ *   as "Simulation" in the UI. They must not be used to generate action cards,
+ *   drive procurement workflows, or be stored as authoritative results.
+ *   The canonical score is always the value returned directly by the backend.
+ *
  * Returns the same shape as `useRiskAnalysis()` plus:
  *   - `weights`       — the currently active weight set
  *   - `isCustom`      — true when weights differ from defaults
+ *   - `isSimulation`  — alias for isCustom; explicit signal for UI labelling
+ *   - `simulationNote`— human-readable explanation to display in the UI
  */
 export function useWeightedRiskAnalysis() {
   const query = useRiskAnalysis()
@@ -130,5 +139,12 @@ export function useWeightedRiskAnalysis() {
     data,
     weights,
     isCustom,
+    // Explicit simulation mode signals for UI components
+    isSimulation: isCustom,
+    simulationNote: isCustom
+      ? 'Scores shown are a local simulation using your custom weights. ' +
+        'These are not the canonical production scores and must not be used ' +
+        'to drive procurement decisions.'
+      : undefined,
   }
 }

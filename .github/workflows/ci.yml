@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: [main, aswin-dev, "feature/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/supplysense_test
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test-key-id
+      AWS_SECRET_ACCESS_KEY: test-secret-key
+      BEDROCK_MODEL_ID: anthropic.claude-opus-4-6-v1
+      SQS_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/000000000000/test-queue
+      S3_CACHE_BUCKET: test-bucket
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: supplysense_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run Alembic migrations
+        run: alembic upgrade head
+        continue-on-error: true  # skip if no migrations table yet
+
+      - name: Run backend tests
+        run: |
+          python -m pytest tests/ \
+            --tb=short \
+            -q \
+            --ignore=tests/__pycache__ \
+            -x
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: backend/.pytest_cache/
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+        continue-on-error: true  # warn but don't block on type errors for now
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+
+  trust-boundary-audit:
+    name: Trust boundary audit (fast)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://localhost:5432/test
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      BEDROCK_MODEL_ID: anthropic.claude-opus-4-6-v1
+      SQS_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/000000000000/q
+      S3_CACHE_BUCKET: test-bucket
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run engine unit tests (no DB required)
+        run: |
+          python -m pytest tests/test_risk_engine.py tests/test_financial_engine.py \
+            tests/test_golden_scenarios.py tests/test_adversarial.py \
+            tests/test_api_contracts.py \
+            --tb=short -q
+
+      - name: Verify trust boundary constants exported
+        run: |
+          python -c "
+          from app.services.procurement_service import (
+              _ACTION_CARD_NARRATIVE_KEYS,
+              _EXEC_BRIEF_NARRATIVE_KEYS,
+              _ALTERNATE_NARRATIVE_KEYS,
+          )
+          assert 'risk_score' not in _ACTION_CARD_NARRATIVE_KEYS, 'TRUST BOUNDARY VIOLATION: risk_score in narrative keys'
+          assert 'supplier_id' not in _ACTION_CARD_NARRATIVE_KEYS, 'TRUST BOUNDARY VIOLATION: supplier_id in narrative keys'
+          assert 'title' in _ACTION_CARD_NARRATIVE_KEYS, 'narrative keys must include title'
+          print('Trust boundary constants OK')
+          "
+
+      - name: Verify AI contract models importable
+        run: |
+          python -c "
+          from app.schemas.ai_contracts import (
+              ActionNarrative, ExecutiveBriefNarrative, AlternateSupplierNarrative,
+              SignalClassification, RiskNarrative, ActionProposalNarrative,
+          )
+          from app.core.evidence import build_evidence_package, validate_grounding
+          print('AI contract models OK')
+          "
+
+      - name: Verify risk engine weight sum
+        run: |
+          python -c "
+          from app.services.risk_engine import (
+              WEIGHT_DELIVERY_RELIABILITY, WEIGHT_DISRUPTION_SEVERITY,
+              WEIGHT_INVENTORY_PRESSURE, WEIGHT_LOGISTICS_VULNERABILITY,
+              WEIGHT_DEPENDENCY_EXPOSURE, WEIGHT_FESTIVAL_PROXIMITY,
+          )
+          total = (WEIGHT_DELIVERY_RELIABILITY + WEIGHT_DISRUPTION_SEVERITY +
+                   WEIGHT_INVENTORY_PRESSURE + WEIGHT_LOGISTICS_VULNERABILITY +
+                   WEIGHT_DEPENDENCY_EXPOSURE + WEIGHT_FESTIVAL_PROXIMITY)
+          assert abs(total - 1.0) < 1e-9, f'Weights sum to {total}, not 1.0 — DETERMINISM BROKEN'
+          print(f'Risk engine weights sum to {total:.9f} OK')
+          "

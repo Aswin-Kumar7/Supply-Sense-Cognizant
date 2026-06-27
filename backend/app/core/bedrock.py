@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import json
 import asyncio
-from typing import Any
+from typing import Any, TypeVar
 from app.core.config import get_settings
 from app.core.logging import logger
+
+T = TypeVar("T")
 
 settings = get_settings()
 
@@ -135,17 +137,17 @@ class BedrockInference:
         """
         Invoke Bedrock and parse JSON response.
         Falls back to empty dict if parsing fails.
+
+        Prefer invoke_typed() for new call sites — it validates the response
+        against a Pydantic model and rejects unexpected or out-of-range fields.
         """
-        # Append JSON instruction to prompt
         json_instruction = "\n\nRespond ONLY with valid JSON. No markdown, no explanation outside the JSON."
         response = await self.invoke(system_prompt, user_prompt + json_instruction)
 
         if not response:
             return {}
 
-        # Parse JSON from response
         try:
-            # Handle potential markdown code blocks
             text = response.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[1].rsplit("```", 1)[0]
@@ -153,6 +155,84 @@ class BedrockInference:
         except json.JSONDecodeError:
             logger.warning(f"Failed to parse Bedrock JSON response: {response[:200]}")
             return {}
+
+    async def invoke_typed(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: type[T],
+        repair_attempts: int = 1,
+    ) -> T | None:
+        """
+        Invoke Bedrock and validate the response against a Pydantic model.
+
+        Differences from invoke_structured():
+        - Validates schema using model_validate() with extra="forbid".
+        - Rejects unexpected fields (prevents AI from sneaking in authoritative
+          values like risk_score or supplier_id).
+        - Allows one repair attempt: the model is shown its validation errors
+          and asked to correct them.
+        - Returns None on final failure — callers must use their deterministic
+          fallback. Never returns a partially-valid dict.
+
+        Use for ALL new AI call sites. invoke_structured() is kept only for
+        legacy compatibility.
+        """
+        from pydantic import ValidationError
+
+        _JSON_INSTRUCTION = (
+            "\n\nRespond ONLY with valid JSON matching the required schema. "
+            "No markdown code fences, no explanation outside the JSON object."
+        )
+
+        response_text = await self.invoke(system_prompt, user_prompt + _JSON_INSTRUCTION)
+
+        if not response_text:
+            return None
+
+        current_text = response_text
+        for attempt in range(repair_attempts + 1):
+            raw = current_text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning(
+                    f"invoke_typed: JSON parse failed (attempt {attempt + 1}/"
+                    f"{repair_attempts + 1}) model={response_model.__name__}: {raw[:200]}"
+                )
+                if attempt < repair_attempts:
+                    repair = (
+                        f"Your previous response was not valid JSON. "
+                        f"Produce ONLY a JSON object with no surrounding text. "
+                        f"Previous (broken) response: {raw[:400]}"
+                    )
+                    current_text = await self.invoke(system_prompt, repair + _JSON_INSTRUCTION)
+                    continue
+                return None
+
+            try:
+                return response_model.model_validate(data)
+            except ValidationError as exc:
+                errors = exc.errors()
+                logger.warning(
+                    f"invoke_typed: schema validation failed (attempt {attempt + 1}/"
+                    f"{repair_attempts + 1}) model={response_model.__name__} "
+                    f"errors={errors[:3]}"
+                )
+                if attempt < repair_attempts:
+                    repair = (
+                        f"Your previous JSON failed schema validation with these errors: "
+                        f"{errors[:3]}. "
+                        f"Produce ONLY a corrected JSON object."
+                    )
+                    current_text = await self.invoke(system_prompt, repair + _JSON_INSTRUCTION)
+                    continue
+                return None
+
+        return None
 
 
 # Singleton instance

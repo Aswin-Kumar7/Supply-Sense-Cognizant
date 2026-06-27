@@ -12,8 +12,14 @@ All calculations are deterministic and auditable.
 Currency: Indian Rupees (INR)
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from app.schemas.policy import FinancialPolicyConfig
 
 
 @dataclass
@@ -61,7 +67,7 @@ class MitigationSimulation:
     """Result of simulating a mitigation strategy.
 
     Accounting identity (always holds):
-        current_exposure_inr = mitigated_exposure_inr + savings_inr + mitigation_cost_inr
+        current_exposure_inr = mitigated_exposure_inr + net_saving_inr + mitigation_cost_inr
     i.e. the original exposure splits into: residual risk + net saving + cost of action.
     """
     supplier_id: str
@@ -74,6 +80,7 @@ class MitigationSimulation:
     risk_before: float
     risk_after: float
     options: list[MitigationOption] = field(default_factory=list)
+    policy_version: int = 1         # version of FinancialPolicyConfig used
 
 
 class FinancialExposureEngine:
@@ -191,20 +198,39 @@ class FinancialExposureEngine:
         supplier_reliability: float,
         lead_time_days: int,
         risk_score: float = 1.0,
+        policy: "FinancialPolicyConfig | None" = None,
+        policy_version: int = 1,
     ) -> MitigationSimulation:
         """
         Generate mitigation options with financial impact projections.
+        When policy is None, the original hardcoded fractions are used (backward-compatible).
         """
+        # Resolve option proportions from policy or hardcoded defaults
+        if policy is not None:
+            ss_cost = policy.switch_supplier_cost_fraction
+            ss_red = policy.switch_supplier_reduction_fraction
+            is_cost = policy.increase_stock_cost_fraction
+            is_red = policy.increase_stock_reduction_fraction
+            ex_cost = policy.expedite_cost_fraction
+            ex_red = policy.expedite_reduction_fraction
+            sk_cost = policy.substitute_sku_cost_fraction
+            sk_red = policy.substitute_sku_reduction_fraction
+        else:
+            ss_cost, ss_red = 0.15, 0.60
+            is_cost, is_red = 0.25, 0.40
+            ex_cost, ex_red = 0.10, 0.30
+            sk_cost, sk_red = 0.08, 0.25
+
         options = []
         current_exposure = supplier_exposure.total_exposure_inr
 
         # Option 1: Switch to alternate supplier
         options.append(MitigationOption(
             action_type="switch_supplier",
-            description="Activate alternate supplier with 15% cost premium",
-            cost_inr=round(current_exposure * 0.15, 2),
-            risk_reduction=0.6,
-            exposure_reduction_inr=round(current_exposure * 0.6, 2),
+            description=f"Activate alternate supplier with {ss_cost:.0%} cost premium",
+            cost_inr=round(current_exposure * ss_cost, 2),
+            risk_reduction=ss_red,
+            exposure_reduction_inr=round(current_exposure * ss_red, 2),
             time_to_effect_days=lead_time_days + 3,
             confidence=0.75,
         ))
@@ -213,9 +239,9 @@ class FinancialExposureEngine:
         options.append(MitigationOption(
             action_type="increase_stock",
             description="Pre-order 2 weeks additional safety stock",
-            cost_inr=round(current_exposure * 0.25, 2),
-            risk_reduction=0.4,
-            exposure_reduction_inr=round(current_exposure * 0.4, 2),
+            cost_inr=round(current_exposure * is_cost, 2),
+            risk_reduction=is_red,
+            exposure_reduction_inr=round(current_exposure * is_red, 2),
             time_to_effect_days=lead_time_days,
             confidence=0.85,
         ))
@@ -224,9 +250,9 @@ class FinancialExposureEngine:
         options.append(MitigationOption(
             action_type="expedite",
             description="Pay expedite premium for priority shipping",
-            cost_inr=round(current_exposure * 0.10, 2),
-            risk_reduction=0.3,
-            exposure_reduction_inr=round(current_exposure * 0.3, 2),
+            cost_inr=round(current_exposure * ex_cost, 2),
+            risk_reduction=ex_red,
+            exposure_reduction_inr=round(current_exposure * ex_red, 2),
             time_to_effect_days=2,
             confidence=0.70,
         ))
@@ -235,9 +261,9 @@ class FinancialExposureEngine:
         options.append(MitigationOption(
             action_type="substitute_sku",
             description="Activate substitute products from alternate sources",
-            cost_inr=round(current_exposure * 0.08, 2),
-            risk_reduction=0.25,
-            exposure_reduction_inr=round(current_exposure * 0.25, 2),
+            cost_inr=round(current_exposure * sk_cost, 2),
+            risk_reduction=sk_red,
+            exposure_reduction_inr=round(current_exposure * sk_red, 2),
             time_to_effect_days=1,
             confidence=0.65,
         ))
@@ -245,7 +271,7 @@ class FinancialExposureEngine:
         # Best option = highest net saving (exposure reduced minus cost to act)
         best = max(options, key=lambda o: o.exposure_reduction_inr - o.cost_inr)
         mitigated_exposure = round(max(0.0, current_exposure - best.exposure_reduction_inr), 2)
-        # gross exposure reduction — identity: current = mitigated + savings + cost
+        # gross exposure reduction
         savings = round(current_exposure - mitigated_exposure, 2)
         net_saving = round(savings - best.cost_inr, 2)
 
@@ -260,6 +286,7 @@ class FinancialExposureEngine:
             risk_before=round(min(1.0, max(0.0, risk_score)), 3),
             risk_after=round(mitigated_exposure / max(current_exposure, 1), 3),
             options=options,
+            policy_version=policy_version,
         )
 
     def compute_delay_cost(

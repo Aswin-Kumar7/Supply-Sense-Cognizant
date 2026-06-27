@@ -27,7 +27,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from app.schemas.policy import RiskPolicyConfig
 
 
 # ============ SCORING WEIGHTS (tunable, explicit) ============
@@ -81,6 +85,7 @@ class RiskBreakdown:
     factors: list[RiskFactor] = field(default_factory=list)
     confidence: float = 0.85
     computed_at: str = ""
+    policy_version: int = 1  # version of RiskPolicyConfig used for this computation
 
     @property
     def factor_dict(self) -> dict:
@@ -91,6 +96,8 @@ class RiskScoringEngine:
     """
     Deterministic risk scoring engine.
     Computes supplier risk from multiple data signals.
+    Accepts an optional RiskPolicyConfig to override hardcoded constants,
+    enabling versioned policy replay and customer-specific tuning.
     """
 
     def compute_supplier_risk(
@@ -104,11 +111,41 @@ class RiskScoringEngine:
         inventory_pressure: float,
         dependency_exposure: float,
         festival_proximity: float,
-    ) -> RiskBreakdown:
+        policy: "RiskPolicyConfig | None" = None,
+        policy_version: int = 1,
+    ) -> "RiskBreakdown":
         """
         Compute comprehensive risk score for a supplier.
         All inputs are pre-fetched data; this method is pure computation.
+        When policy is None the module-level constants are used (backward-compatible).
         """
+        # Resolve weights and zone scores from policy or module-level constants
+        if policy is not None:
+            w_delivery = policy.weight_delivery_reliability
+            w_disruption = policy.weight_disruption_severity
+            w_inventory = policy.weight_inventory_pressure
+            w_logistics = policy.weight_logistics_vulnerability
+            w_dependency = policy.weight_dependency_exposure
+            w_festival = policy.weight_festival_proximity
+            zone_scores = {
+                "cyclone_coastal": policy.zone_cyclone_coastal,
+                "flood_prone": policy.zone_flood_prone,
+                "strike_prone": policy.zone_strike_prone,
+                None: policy.zone_default,
+            }
+            t_medium = policy.threshold_medium
+            t_high = policy.threshold_high
+            t_critical = policy.threshold_critical
+        else:
+            w_delivery = WEIGHT_DELIVERY_RELIABILITY
+            w_disruption = WEIGHT_DISRUPTION_SEVERITY
+            w_inventory = WEIGHT_INVENTORY_PRESSURE
+            w_logistics = WEIGHT_LOGISTICS_VULNERABILITY
+            w_dependency = WEIGHT_DEPENDENCY_EXPOSURE
+            w_festival = WEIGHT_FESTIVAL_PROXIMITY
+            zone_scores = RISK_ZONE_SCORES
+            t_medium, t_high, t_critical = 0.30, 0.50, 0.70
+
         factors = []
 
         # Factor 1: Delivery Reliability (inverted - low reliability = high risk)
@@ -116,7 +153,7 @@ class RiskScoringEngine:
         factors.append(RiskFactor(
             name="delivery_reliability",
             value=delivery_risk,
-            weight=WEIGHT_DELIVERY_RELIABILITY,
+            weight=w_delivery,
             explanation=f"Reliability {reliability_score:.0%}, late deliveries: {delivery_stats.get('late_pct', 0):.0%}",
         ))
 
@@ -125,7 +162,7 @@ class RiskScoringEngine:
         factors.append(RiskFactor(
             name="disruption_severity",
             value=disruption_risk,
-            weight=WEIGHT_DISRUPTION_SEVERITY,
+            weight=w_disruption,
             explanation=f"{len(active_disruptions)} active disruptions, max severity: {self._max_severity(active_disruptions)}",
         ))
 
@@ -133,16 +170,16 @@ class RiskScoringEngine:
         factors.append(RiskFactor(
             name="inventory_pressure",
             value=min(1.0, inventory_pressure),
-            weight=WEIGHT_INVENTORY_PRESSURE,
+            weight=w_inventory,
             explanation=f"Inventory pressure index: {inventory_pressure:.2f}",
         ))
 
         # Factor 4: Logistics Vulnerability
-        logistics_risk = RISK_ZONE_SCORES.get(risk_zone, 0.1)
+        logistics_risk = zone_scores.get(risk_zone, zone_scores.get(None, 0.1))
         factors.append(RiskFactor(
             name="logistics_vulnerability",
             value=logistics_risk,
-            weight=WEIGHT_LOGISTICS_VULNERABILITY,
+            weight=w_logistics,
             explanation=f"Risk zone: {risk_zone or 'none'}, vulnerability: {logistics_risk:.2f}",
         ))
 
@@ -150,7 +187,7 @@ class RiskScoringEngine:
         factors.append(RiskFactor(
             name="dependency_exposure",
             value=min(1.0, dependency_exposure),
-            weight=WEIGHT_DEPENDENCY_EXPOSURE,
+            weight=w_dependency,
             explanation=f"Upstream dependency risk: {dependency_exposure:.2f}",
         ))
 
@@ -158,7 +195,7 @@ class RiskScoringEngine:
         factors.append(RiskFactor(
             name="festival_proximity",
             value=min(1.0, festival_proximity),
-            weight=WEIGHT_FESTIVAL_PROXIMITY,
+            weight=w_festival,
             explanation=f"Festival demand multiplier proximity: {festival_proximity:.2f}",
         ))
 
@@ -166,8 +203,8 @@ class RiskScoringEngine:
         overall = sum(f.weighted_value for f in factors)
         overall = round(min(1.0, max(0.0, overall)), 4)
 
-        # Determine risk level
-        risk_level = self._score_to_level(overall)
+        # Determine risk level using policy thresholds
+        risk_level = self._score_to_level(overall, t_medium, t_high, t_critical)
 
         # Compute confidence using signal agreement scoring
         confidence = self._compute_confidence(
@@ -186,6 +223,7 @@ class RiskScoringEngine:
             factors=factors,
             confidence=confidence,
             computed_at=date.today().isoformat(),
+            policy_version=policy_version,
         )
 
     def _compute_delivery_risk(self, reliability: float, stats: dict) -> float:
@@ -211,12 +249,18 @@ class RiskScoringEngine:
                 return level
         return "low"
 
-    def _score_to_level(self, score: float) -> str:
-        if score >= 0.7:
+    def _score_to_level(
+        self,
+        score: float,
+        t_medium: float = 0.30,
+        t_high: float = 0.50,
+        t_critical: float = 0.70,
+    ) -> str:
+        if score >= t_critical:
             return "critical"
-        elif score >= 0.5:
+        elif score >= t_high:
             return "high"
-        elif score >= 0.3:
+        elif score >= t_medium:
             return "medium"
         return "low"
 

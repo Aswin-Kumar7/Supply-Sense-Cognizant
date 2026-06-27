@@ -21,6 +21,22 @@ from app.models.disruption import Disruption
 from app.services.risk_intelligence import RiskIntelligenceService
 from app.services.procurement_agent import procurement_agent
 from app.core.logging import logger
+from app.core.evidence import build_evidence_package
+from app.services.snapshot_service import save_snapshot as _save_snapshot
+
+_MODEL_VERSION = "anthropic.claude-opus-4-6-v1"
+
+# Permitted AI-generated narrative fields — AI must never overwrite these with
+# authoritative values like risk_score, financial_exposure_inr, or priority.
+_ACTION_CARD_NARRATIVE_KEYS = frozenset({
+    "title", "executive_summary", "reasoning", "urgency_narrative",
+    "cost_of_delay_narrative", "recommended_action", "escalation_window",
+    "alternate_supplier_rationale",
+})
+_EXEC_BRIEF_NARRATIVE_KEYS = frozenset({"summary", "top_risks", "immediate_actions"})
+_ALTERNATE_NARRATIVE_KEYS = frozenset({
+    "recommended_alternate", "rationale", "trade_offs", "transition_timeline",
+})
 
 
 class ProcurementService:
@@ -105,6 +121,32 @@ class ProcurementService:
             cascade = cascade_map.get(supplier_id)
             cascade_ctx = f"{cascade['total_affected']} downstream suppliers affected, propagated impact: {cascade['total_propagated_impact']:.2f}" if cascade else "No cascade detected"
 
+            # Build evidence package — immutable snapshot of deterministic facts.
+            # Persist to DB so results can be replayed from evidence + policy versions.
+            pkg = build_evidence_package(
+                supplier_id=supplier_id,
+                supplier_name=supplier_name,
+                risk_score=risk["overall_score"],
+                risk_level=risk["risk_level"],
+                exposure_inr=exposure_inr,
+                days_to_stockout=min_days,
+                sku_count=sku_count,
+            )
+            snapshot_id = None
+            try:
+                snap = await _save_snapshot(
+                    self.db,
+                    supplier_id=supplier_id,
+                    evidence_hash=pkg.facts_hash,
+                    evidence_json=pkg.to_dict(),
+                    risk_policy_version=1,
+                    financial_policy_version=1,
+                    model_version=_MODEL_VERSION,
+                )
+                snapshot_id = str(snap.id)
+            except Exception as exc:
+                logger.warning(f"snapshot: persist failed for {supplier_id}: {exc}")
+
             # Generate AI-enhanced card
             ai_card = await procurement_agent.generate_action_card(
                 supplier_name=supplier_name,
@@ -120,8 +162,13 @@ class ProcurementService:
                 action_type=action_type,
             )
 
+            # Extract only permitted narrative keys from AI response.
+            # This prevents AI from overwriting trusted deterministic values
+            # even if the model output contains fields like risk_score or priority.
+            ai_narratives = {k: v for k, v in ai_card.items() if k in _ACTION_CARD_NARRATIVE_KEYS}
+
             action_cards.append({
-                # Deterministic data
+                # Deterministic data — always set AFTER ai_narratives to enforce trust boundary
                 "supplier_id": supplier_id,
                 "supplier_name": supplier_name,
                 "city": supplier.city,
@@ -135,8 +182,14 @@ class ProcurementService:
                 "affected_skus": sku_count,
                 "action_type": action_type,
                 "priority": self._compute_priority(risk["overall_score"], min_days, exposure_inr),
-                # AI-generated narratives
-                **ai_card,
+                # Metadata
+                "generation_mode": "ai_generated" if ai_card.get("title") else "deterministic_fallback",
+                "validation_status": "narrative_filtered",
+                "evidence_snapshot_id": snapshot_id,
+                "risk_policy_version": 1,
+                "financial_policy_version": 1,
+                # AI-generated narrative fields only (trust-boundary enforced above)
+                **ai_narratives,
             })
 
         # Sort by priority
@@ -166,16 +219,19 @@ class ProcurementService:
             top_suppliers=top_suppliers,
         )
 
+        brief_narratives = {k: v for k, v in brief.items() if k in _EXEC_BRIEF_NARRATIVE_KEYS}
+
         return {
-            # Deterministic metrics
+            # Deterministic metrics — always set last so AI cannot overwrite them
             "at_risk_suppliers": len(at_risk),
             "total_exposure_inr": financial["total_financial_exposure_inr"],
             "critical_stockouts": stockout.critical_count,
             "high_stockouts": stockout.high_count,
             "cascade_count": len(cascades),
             "avg_days_to_stockout": stockout.avg_days_to_stockout,
-            # AI-generated content
-            **brief,
+            # AI-generated narrative fields only
+            **brief_narratives,
+            "generation_mode": "ai_generated" if brief_narratives.get("summary") else "deterministic_fallback",
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -228,6 +284,8 @@ class ProcurementService:
             alternates=alternates,
         )
 
+        alternate_narratives = {k: v for k, v in result.items() if k in _ALTERNATE_NARRATIVE_KEYS}
+
         return {
             "primary_supplier": {
                 "id": str(supplier.id),
@@ -236,7 +294,7 @@ class ProcurementService:
                 "reliability": supplier.reliability_score,
             },
             "alternates_evaluated": len(alternates),
-            **result,
+            **alternate_narratives,
         }
 
     def _determine_action_type(self, risk: dict, supplier_id: str, disruptions: dict) -> str:
