@@ -78,3 +78,8 @@ check_db.py
 scratch/
 tmp/
 .kiro
+
+
+# ── CI/CD ────────────────────────────────────────────────────────
+.github/
+# Excluded this GitHub configuration directory due to active local development
