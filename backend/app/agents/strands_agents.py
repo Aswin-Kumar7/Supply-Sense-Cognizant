@@ -54,21 +54,57 @@ from app.services.procurement_agent import procurement_agent
 
 settings = get_settings()
 
-def _run_in_new_loop(coro):
-    """Run an async coroutine in a fresh event loop.
+# Captures the main event loop (the one that owns the request DB session and its
+# asyncpg connections) before we hop into a Strands worker thread via
+# asyncio.to_thread. asyncio.to_thread copies the current context into the worker
+# thread, so the worker can read this back. See _run_in_new_loop / _invoke_agent.
+_main_event_loop: contextvars.ContextVar["asyncio.AbstractEventLoop | None"] = (
+    contextvars.ContextVar("main_event_loop", default=None)
+)
 
-    Strands calls tool functions synchronously from a thread created by
-    asyncio.to_thread(). Those threads have no running event loop, so
-    _run_in_new_loop() can raise
-    'RuntimeError: This event loop is already running' if the thread
-    happens to reuse an existing loop. Creating a new loop per call is
-    safe and explicit.
+
+def _run_in_new_loop(coro):
+    """Run an async coroutine from a Strands tool (which executes in a worker
+    thread created by asyncio.to_thread()).
+
+    DB sessions used by the tools belong to the *main* event loop that owns the
+    asyncpg connections. Running their coroutines in a brand-new event loop
+    corrupts that connection ("got result for unknown protocol state 3" /
+    "...attached to a different loop"), which made Risk Assessment queries fail.
+
+    So when the main loop is known (captured in _main_event_loop before the
+    to_thread hop) and we are genuinely on a different thread, marshal the
+    coroutine back onto it with run_coroutine_threadsafe. Only fall back to a
+    throwaway loop when no running main loop is available.
     """
+    main_loop = _main_event_loop.get()
+    if main_loop is not None and main_loop.is_running():
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        # Guard against self-deadlock: only marshal when we're NOT already on
+        # the main loop's thread (otherwise .result() would block it forever).
+        if running is not main_loop:
+            fut = asyncio.run_coroutine_threadsafe(coro, main_loop)
+            return fut.result(timeout=30)
+
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+async def _invoke_agent(agent, prompt):
+    """Run a Strands agent in a worker thread, first recording the running loop
+    so the agent's tools can marshal their DB coroutines back to it.
+
+    All four specialist agents go through here instead of calling
+    asyncio.to_thread(agent, prompt) directly.
+    """
+    _main_event_loop.set(asyncio.get_running_loop())
+    return await asyncio.to_thread(agent, prompt)
 
 
 # ── Per-session tool call history (for multi-turn context) ─────────────────
@@ -393,7 +429,7 @@ class RiskAssessmentAgent:
                 "recommendation_rationale (string, max 400 chars), "
                 "cascade_affected (integer, number of downstream suppliers affected)."
             )
-            response = await asyncio.to_thread(self._strands_agent, prompt)
+            response = await _invoke_agent(self._strands_agent, prompt)
             text = str(response)
 
             # Task 5: Always fetch authoritative values directly from the engine.
@@ -669,7 +705,7 @@ class PrescriptiveActionAgent:
                 "and get_alternate_suppliers if switching is needed. "
                 "Return JSON with: action_type, title, description, tfe_inr, reduction_pct, alternate_supplier."
             )
-            response = await asyncio.to_thread(self._strands_agent, prompt)
+            response = await _invoke_agent(self._strands_agent, prompt)
             text = str(response)
             if "{" in text:
                 start = text.index("{")
@@ -922,7 +958,7 @@ class ConversationalAdvisorAgent:
                     metrics_store.record_agent_call("conversational_advisor")
                 except Exception:
                     pass
-                response = await asyncio.to_thread(self._strands_agent, full_prompt)
+                response = await _invoke_agent(self._strands_agent, full_prompt)
             finally:
                 _current_session_id.reset(token)
 
@@ -1129,7 +1165,7 @@ class SignalIntelligenceAgent:
                 "Return a JSON with: event_type, severity, confidence, affected_region, "
                 "estimated_duration_days, affected_supplier_ids."
             )
-            response = await asyncio.to_thread(self._strands_agent, prompt)
+            response = await _invoke_agent(self._strands_agent, prompt)
             text_response = str(response)
             if "{" in text_response:
                 start = text_response.index("{")
