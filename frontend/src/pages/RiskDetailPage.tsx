@@ -411,6 +411,19 @@ export default function RiskDetailPage() {
                           {card.ai_error ? 'AI narrative unavailable — AWS Bedrock unreachable.' : 'Awaiting AI analysis…'}
                         </p>
                       )}
+
+                      {/* Always-present, grounded basis for the chosen action — lets a
+                          human validate WHY this action was selected, even if AI is down. */}
+                      {card.action_rationale ? (
+                        <div style={{ marginTop: '12px', padding: '10px 12px', background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: '8px' }}>
+                          <div style={{ fontSize: '0.625rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#0369A1', marginBottom: '4px' }}>
+                            Why this action
+                          </div>
+                          <p style={{ fontSize: '0.8125rem', color: '#0C4A6E', lineHeight: 1.5, margin: 0 }}>
+                            {card.action_rationale}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Severity + Cost — two clear panels */}

@@ -12,6 +12,7 @@ import random
 import uuid
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from seeders.seed_suppliers import SUPPLIERS, SUPPLIER_IDS
@@ -63,6 +64,43 @@ T2_NILGIRI_HERB   = SUPPLIER_IDS[18]   # Malabar — raw material
 T2_UJJAIN_TETRA   = SUPPLIER_IDS[19]   # Narmada — packaging
 T2_ANAND_DAIRY    = SUPPLIER_IDS[20]   # Narmada — raw material
 
+# ── Tier-2 logistics partners (3rd dependency type per Tier-1) ─────────────
+T2_KONKAN_LOG     = SUPPLIER_IDS[33]   # Vikas — logistics
+T2_MADRAS_LOG     = SUPPLIER_IDS[34]   # Dakshin — logistics
+T2_BENGAL_LOG     = SUPPLIER_IDS[35]   # Ganga — logistics
+T2_KANDLA_LOG     = SUPPLIER_IDS[36]   # Saurashtra — logistics
+T2_DELHI_LOG      = SUPPLIER_IDS[37]   # Arya — logistics
+T2_MALABAR_LOG    = SUPPLIER_IDS[38]   # Malabar — logistics
+T2_MALWA_LOG      = SUPPLIER_IDS[39]   # Narmada — logistics
+
+# ── Per-supplier category (business segment, not a single "FMCG" bucket) ────
+# Applied at insert time so the dashboard's "exposure by category" and the
+# supplier list show real segments. Alternates inherit the segment of the Tier-1
+# they back so category-based alternate matching stays coherent.
+SUPPLIER_CATEGORY = {
+    SUPPLIER_IDS[0]: "Home Care",          SUPPLIER_IDS[1]: "Packaged Foods",
+    SUPPLIER_IDS[2]: "Staples & Grains",   SUPPLIER_IDS[3]: "Personal Care",
+    SUPPLIER_IDS[4]: "Snacks & Beverages", SUPPLIER_IDS[5]: "Ayurvedic Wellness",
+    SUPPLIER_IDS[6]: "Dairy & Beverages",
+    # Tier-2 packaging
+    SUPPLIER_IDS[7]: "Packaging",  SUPPLIER_IDS[9]: "Packaging",  SUPPLIER_IDS[11]: "Packaging",
+    SUPPLIER_IDS[13]: "Packaging", SUPPLIER_IDS[15]: "Packaging", SUPPLIER_IDS[17]: "Packaging",
+    SUPPLIER_IDS[19]: "Packaging",
+    # Tier-2 raw material
+    SUPPLIER_IDS[8]: "Raw Materials",  SUPPLIER_IDS[10]: "Raw Materials", SUPPLIER_IDS[12]: "Raw Materials",
+    SUPPLIER_IDS[14]: "Raw Materials", SUPPLIER_IDS[16]: "Raw Materials", SUPPLIER_IDS[18]: "Raw Materials",
+    SUPPLIER_IDS[20]: "Raw Materials",
+    # Alternates — inherit the Tier-1 segment they cover
+    SUPPLIER_IDS[21]: "Home Care",          SUPPLIER_IDS[22]: "Packaged Foods",
+    SUPPLIER_IDS[23]: "Staples & Grains",   SUPPLIER_IDS[24]: "Personal Care",
+    SUPPLIER_IDS[25]: "Snacks & Beverages", SUPPLIER_IDS[26]: "Ayurvedic Wellness",
+    # Historical Tier-1
+    SUPPLIER_IDS[27]: "Packaged Foods",   SUPPLIER_IDS[28]: "Beverages",
+    SUPPLIER_IDS[29]: "Staples & Grains", SUPPLIER_IDS[30]: "Staples & Grains",
+    SUPPLIER_IDS[31]: "Edible Oils",      SUPPLIER_IDS[32]: "Edible Oils",
+    # Logistics Tier-2 (33-39) already carry "Logistics" in seed_suppliers.py
+}
+
 # ── Alternate supplier ID shortcuts ────────────────────────────────────
 ALT_PUNE          = SUPPLIER_IDS[21]   # Alt for Vikas
 ALT_BANGALORE     = SUPPLIER_IDS[22]   # Alt for Dakshin
@@ -72,49 +110,52 @@ ALT_LUCKNOW       = SUPPLIER_IDS[25]   # Alt for Arya
 ALT_MYSORE        = SUPPLIER_IDS[26]   # Alt for Malabar + Narmada
 
 # ── FMCG SKU catalogue — 3 products per Tier-1 vendor ──────────────────
+# Each vendor is a distinct FMCG business with its OWN product category and
+# per-product subcategory (no single "FMCG" bucket). category/subcat drive the
+# product-mix breakdowns on the dashboard.
 SKU_TEMPLATES = [
-    # Vikas Home Care (idx 0) — home care
-    {"name": "Liquid Detergent 1L",           "supplier_idx": 0, "cost": 195.0, "demand": 110, "code": "VHC-001"},
-    {"name": "Dishwash Bar 200g (3-pack)",    "supplier_idx": 0, "cost":  65.0, "demand":  95, "code": "VHC-002"},
-    {"name": "Floor Cleaner Citrus 500ml",    "supplier_idx": 0, "cost":  89.0, "demand":  80, "code": "VHC-003"},
+    # Vikas Home Care (idx 0) — Home Care
+    {"name": "Liquid Detergent 1L",           "supplier_idx": 0, "cost": 195.0, "demand": 110, "code": "VHC-001", "cat": "Home Care",          "subcat": "Fabric Care"},
+    {"name": "Dishwash Bar 200g (3-pack)",    "supplier_idx": 0, "cost":  65.0, "demand":  95, "code": "VHC-002", "cat": "Home Care",          "subcat": "Dishwash"},
+    {"name": "Floor Cleaner Citrus 500ml",    "supplier_idx": 0, "cost":  89.0, "demand":  80, "code": "VHC-003", "cat": "Home Care",          "subcat": "Surface Care"},
 
-    # Dakshin Foods (idx 1) — packaged foods
-    {"name": "Idli-Dosa Batter 1kg",          "supplier_idx": 1, "cost":  75.0, "demand": 180, "code": "DFC-001"},
-    {"name": "Sambar Masala 200g",            "supplier_idx": 1, "cost": 110.0, "demand":  70, "code": "DFC-002"},
-    {"name": "Coconut Chutney Powder 150g",   "supplier_idx": 1, "cost":  95.0, "demand":  85, "code": "DFC-003"},
+    # Dakshin Foods (idx 1) — Packaged Foods
+    {"name": "Idli-Dosa Batter 1kg",          "supplier_idx": 1, "cost":  75.0, "demand": 180, "code": "DFC-001", "cat": "Packaged Foods",     "subcat": "Fresh Batter"},
+    {"name": "Sambar Masala 200g",            "supplier_idx": 1, "cost": 110.0, "demand":  70, "code": "DFC-002", "cat": "Packaged Foods",     "subcat": "Spice Mix"},
+    {"name": "Coconut Chutney Powder 150g",   "supplier_idx": 1, "cost":  95.0, "demand":  85, "code": "DFC-003", "cat": "Packaged Foods",     "subcat": "Condiments"},
 
-    # Ganga Agri (idx 2) — staples & spices
-    {"name": "Gobindobhog Rice 5kg",          "supplier_idx": 2, "cost": 520.0, "demand":  40, "code": "GAP-001"},
-    {"name": "Cold-Pressed Mustard Oil 1L",   "supplier_idx": 2, "cost": 185.0, "demand":  65, "code": "GAP-002"},
-    {"name": "Whole Wheat Atta 10kg",         "supplier_idx": 2, "cost": 395.0, "demand":  55, "code": "GAP-003"},
+    # Ganga Agri (idx 2) — Staples & Edible Oils
+    {"name": "Gobindobhog Rice 5kg",          "supplier_idx": 2, "cost": 520.0, "demand":  40, "code": "GAP-001", "cat": "Staples & Grains",   "subcat": "Rice"},
+    {"name": "Cold-Pressed Mustard Oil 1L",   "supplier_idx": 2, "cost": 185.0, "demand":  65, "code": "GAP-002", "cat": "Edible Oils",        "subcat": "Mustard Oil"},
+    {"name": "Whole Wheat Atta 10kg",         "supplier_idx": 2, "cost": 395.0, "demand":  55, "code": "GAP-003", "cat": "Staples & Grains",   "subcat": "Flour"},
 
-    # Saurashtra Naturals (idx 3) — personal care
-    {"name": "Virgin Coconut Oil 500ml",      "supplier_idx": 3, "cost": 210.0, "demand":  70, "code": "SNP-001"},
-    {"name": "Amla Hair Oil 200ml",           "supplier_idx": 3, "cost": 135.0, "demand":  60, "code": "SNP-002"},
-    {"name": "Neem Face Wash 100ml",          "supplier_idx": 3, "cost": 125.0, "demand":  55, "code": "SNP-003"},
+    # Saurashtra Naturals (idx 3) — Personal Care
+    {"name": "Virgin Coconut Oil 500ml",      "supplier_idx": 3, "cost": 210.0, "demand":  70, "code": "SNP-001", "cat": "Personal Care",      "subcat": "Hair Care"},
+    {"name": "Amla Hair Oil 200ml",           "supplier_idx": 3, "cost": 135.0, "demand":  60, "code": "SNP-002", "cat": "Personal Care",      "subcat": "Hair Care"},
+    {"name": "Neem Face Wash 100ml",          "supplier_idx": 3, "cost": 125.0, "demand":  55, "code": "SNP-003", "cat": "Personal Care",      "subcat": "Skin Care"},
 
-    # Arya Consumer Brands (idx 4) — snacks & beverages
-    {"name": "Masala Chai 250g",              "supplier_idx": 4, "cost": 240.0, "demand":  45, "code": "ACB-001"},
-    {"name": "Cream Biscuit 100g (12-pack)",  "supplier_idx": 4, "cost":  22.0, "demand": 280, "code": "ACB-002"},
-    {"name": "Roasted Cashew 200g",           "supplier_idx": 4, "cost": 320.0, "demand":  35, "code": "ACB-003"},
+    # Arya Consumer Brands (idx 4) — Snacks & Beverages
+    {"name": "Masala Chai 250g",              "supplier_idx": 4, "cost": 240.0, "demand":  45, "code": "ACB-001", "cat": "Beverages",          "subcat": "Tea"},
+    {"name": "Cream Biscuit 100g (12-pack)",  "supplier_idx": 4, "cost":  22.0, "demand": 280, "code": "ACB-002", "cat": "Snacks",             "subcat": "Biscuits"},
+    {"name": "Roasted Cashew 200g",           "supplier_idx": 4, "cost": 320.0, "demand":  35, "code": "ACB-003", "cat": "Snacks",             "subcat": "Dry Fruits & Nuts"},
 
-    # Malabar Ayur Essentials (idx 5) — ayurvedic personal care
-    {"name": "Kumkumadi Face Serum 30ml",     "supplier_idx": 5, "cost": 450.0, "demand":  25, "code": "MAE-001"},
-    {"name": "Dashamoola Body Oil 200ml",     "supplier_idx": 5, "cost": 280.0, "demand":  40, "code": "MAE-002"},
-    {"name": "Triphala Wellness Tabs 60s",    "supplier_idx": 5, "cost": 195.0, "demand":  50, "code": "MAE-003"},
+    # Malabar Ayur Essentials (idx 5) — Ayurvedic Wellness
+    {"name": "Kumkumadi Face Serum 30ml",     "supplier_idx": 5, "cost": 450.0, "demand":  25, "code": "MAE-001", "cat": "Ayurvedic Wellness", "subcat": "Skin Care"},
+    {"name": "Dashamoola Body Oil 200ml",     "supplier_idx": 5, "cost": 280.0, "demand":  40, "code": "MAE-002", "cat": "Ayurvedic Wellness", "subcat": "Body Care"},
+    {"name": "Triphala Wellness Tabs 60s",    "supplier_idx": 5, "cost": 195.0, "demand":  50, "code": "MAE-003", "cat": "Ayurvedic Wellness", "subcat": "Supplements"},
 
-    # Narmada Dairy & Beverages (idx 6) — dairy & drinks
-    {"name": "Flavoured Lassi 200ml (6-pack)","supplier_idx": 6, "cost": 120.0, "demand": 150, "code": "NDB-001"},
-    {"name": "Paneer Block 200g",             "supplier_idx": 6, "cost":  95.0, "demand": 130, "code": "NDB-002"},
-    {"name": "Mango Drink 1L Tetra Pak",      "supplier_idx": 6, "cost":  65.0, "demand": 160, "code": "NDB-003"},
+    # Narmada Dairy & Beverages (idx 6) — Dairy & Drinks
+    {"name": "Flavoured Lassi 200ml (6-pack)","supplier_idx": 6, "cost": 120.0, "demand": 150, "code": "NDB-001", "cat": "Dairy",              "subcat": "Cultured Dairy"},
+    {"name": "Paneer Block 200g",             "supplier_idx": 6, "cost":  95.0, "demand": 130, "code": "NDB-002", "cat": "Dairy",              "subcat": "Fresh Dairy"},
+    {"name": "Mango Drink 1L Tetra Pak",      "supplier_idx": 6, "cost":  65.0, "demand": 160, "code": "NDB-003", "cat": "Beverages",          "subcat": "Juices"},
 
     # Historical / Resolved SKUs (idx 27-32)
-    {"name": "Turmeric Powder 500g",          "supplier_idx": 27, "cost": 120.0, "demand": 90, "code": "BSE-001"},
-    {"name": "Mineral Water 1L (12-pack)",    "supplier_idx": 28, "cost": 180.0, "demand": 210, "code": "HSW-001"},
-    {"name": "Ponni Raw Rice 10kg",           "supplier_idx": 29, "cost": 450.0, "demand": 60, "code": "KAP-001"},
-    {"name": "Premium Besan 1kg",             "supplier_idx": 30, "cost": 85.0,  "demand": 120, "code": "RG-001"},
-    {"name": "Sunflower Oil 5L",              "supplier_idx": 31, "cost": 750.0, "demand": 40, "code": "DE-001"},
-    {"name": "Refined Cottonseed Oil 1L",     "supplier_idx": 32, "cost": 115.0, "demand": 80, "code": "VCO-001"},
+    {"name": "Turmeric Powder 500g",          "supplier_idx": 27, "cost": 120.0, "demand": 90, "code": "BSE-001", "cat": "Packaged Foods",     "subcat": "Spices"},
+    {"name": "Mineral Water 1L (12-pack)",    "supplier_idx": 28, "cost": 180.0, "demand": 210, "code": "HSW-001", "cat": "Beverages",          "subcat": "Packaged Water"},
+    {"name": "Ponni Raw Rice 10kg",           "supplier_idx": 29, "cost": 450.0, "demand": 60, "code": "KAP-001", "cat": "Staples & Grains",   "subcat": "Rice"},
+    {"name": "Premium Besan 1kg",             "supplier_idx": 30, "cost": 85.0,  "demand": 120, "code": "RG-001",  "cat": "Staples & Grains",   "subcat": "Flour"},
+    {"name": "Sunflower Oil 5L",              "supplier_idx": 31, "cost": 750.0, "demand": 40, "code": "DE-001",  "cat": "Edible Oils",        "subcat": "Sunflower Oil"},
+    {"name": "Refined Cottonseed Oil 1L",     "supplier_idx": 32, "cost": 115.0, "demand": 80, "code": "VCO-001", "cat": "Edible Oils",        "subcat": "Cottonseed Oil"},
 ]
 
 today = date.today()
@@ -301,22 +342,22 @@ FIXED_DISRUPTIONS = [
 
 FESTIVAL_DATA = [
     # 2025
-    {"name": "Onam",            "start": "2025-09-05", "end": "2025-09-07", "region": "South",         "multiplier": 1.5, "categories": "FMCG"},
-    {"name": "Navratri",        "start": "2025-09-29", "end": "2025-10-07", "region": "West,North",    "multiplier": 1.8, "categories": "FMCG"},
-    {"name": "Durga Puja",      "start": "2025-10-01", "end": "2025-10-05", "region": "East",          "multiplier": 2.0, "categories": "FMCG"},
-    {"name": "Diwali",          "start": "2025-10-20", "end": "2025-10-24", "region": "All India",     "multiplier": 2.5, "categories": "FMCG"},
+    {"name": "Onam",            "start": "2025-09-05", "end": "2025-09-07", "region": "South",         "multiplier": 1.5, "categories": "All"},
+    {"name": "Navratri",        "start": "2025-09-29", "end": "2025-10-07", "region": "West,North",    "multiplier": 1.8, "categories": "All"},
+    {"name": "Durga Puja",      "start": "2025-10-01", "end": "2025-10-05", "region": "East",          "multiplier": 2.0, "categories": "All"},
+    {"name": "Diwali",          "start": "2025-10-20", "end": "2025-10-24", "region": "All India",     "multiplier": 2.5, "categories": "All"},
     # 2026 (past)
-    {"name": "Pongal",          "start": "2026-01-14", "end": "2026-01-17", "region": "South",         "multiplier": 1.6, "categories": "FMCG"},
-    {"name": "Holi",            "start": "2026-03-02", "end": "2026-03-03", "region": "North,Central", "multiplier": 1.7, "categories": "FMCG"},
-    {"name": "Eid ul-Adha",     "start": "2026-06-07", "end": "2026-06-09", "region": "All India",     "multiplier": 1.9, "categories": "FMCG"},
+    {"name": "Pongal",          "start": "2026-01-14", "end": "2026-01-17", "region": "South",         "multiplier": 1.6, "categories": "All"},
+    {"name": "Holi",            "start": "2026-03-02", "end": "2026-03-03", "region": "North,Central", "multiplier": 1.7, "categories": "All"},
+    {"name": "Eid ul-Adha",     "start": "2026-06-07", "end": "2026-06-09", "region": "All India",     "multiplier": 1.9, "categories": "All"},
     # 2026 (upcoming)
-    {"name": "Rakshabandhan",   "start": "2026-08-22", "end": "2026-08-23", "region": "North,West",    "multiplier": 1.5, "categories": "FMCG"},
-    {"name": "Ganesh Chaturthi","start": "2026-08-26", "end": "2026-09-04", "region": "West,South",    "multiplier": 1.8, "categories": "FMCG"},
-    {"name": "Onam 2026",       "start": "2026-08-25", "end": "2026-08-27", "region": "South",         "multiplier": 1.5, "categories": "FMCG"},
-    {"name": "Navratri 2026",   "start": "2026-10-09", "end": "2026-10-17", "region": "West,North",    "multiplier": 1.8, "categories": "FMCG"},
-    {"name": "Dussehra 2026",   "start": "2026-10-17", "end": "2026-10-18", "region": "All India",     "multiplier": 2.0, "categories": "FMCG"},
-    {"name": "Diwali 2026",     "start": "2026-11-08", "end": "2026-11-12", "region": "All India",     "multiplier": 2.5, "categories": "FMCG"},
-    {"name": "Christmas 2026",  "start": "2026-12-24", "end": "2026-12-26", "region": "All India",     "multiplier": 1.4, "categories": "FMCG"},
+    {"name": "Rakshabandhan",   "start": "2026-08-22", "end": "2026-08-23", "region": "North,West",    "multiplier": 1.5, "categories": "All"},
+    {"name": "Ganesh Chaturthi","start": "2026-08-26", "end": "2026-09-04", "region": "West,South",    "multiplier": 1.8, "categories": "All"},
+    {"name": "Onam 2026",       "start": "2026-08-25", "end": "2026-08-27", "region": "South",         "multiplier": 1.5, "categories": "All"},
+    {"name": "Navratri 2026",   "start": "2026-10-09", "end": "2026-10-17", "region": "West,North",    "multiplier": 1.8, "categories": "All"},
+    {"name": "Dussehra 2026",   "start": "2026-10-17", "end": "2026-10-18", "region": "All India",     "multiplier": 2.0, "categories": "All"},
+    {"name": "Diwali 2026",     "start": "2026-11-08", "end": "2026-11-12", "region": "All India",     "multiplier": 2.5, "categories": "All"},
+    {"name": "Christmas 2026",  "start": "2026-12-24", "end": "2026-12-26", "region": "All India",     "multiplier": 1.4, "categories": "All"},
 ]
 
 ACTION_CARDS = [
@@ -335,7 +376,7 @@ ACTION_CARDS = [
     {"type": "reorder",              "priority": "high",     "supplier_idx": 2, "sku_idx": 6,  "impact": 104000,
      "title": "Reorder Gobindobhog Rice 5kg — flood damages 35% of Kolkata stock",
      "desc":  "Ganga Agri warehouse flooding puts premium rice inventory at risk. Pre-emptive reorder from Cuttack Agro Traders to cover 15-day gap."},
-    {"type": "increase_safety_stock","priority": "high",     "supplier_idx": 0, "sku_idx": 1,  "impact":  68000,
+    {"type": "increase_stock","priority": "high",     "supplier_idx": 0, "sku_idx": 1,  "impact":  68000,
      "title": "Increase safety stock: Dishwash Bar — Diwali cleaning surge",
      "desc":  "Festival demand 95 units/day vs 65 baseline. Current 6-day cover insufficient for 12-day festival window. Raise safety stock to 15-day cover."},
     {"type": "reorder",              "priority": "high",     "supplier_idx": 3, "sku_idx": 9,  "impact":  98000,
@@ -346,7 +387,7 @@ ACTION_CARDS = [
     {"type": "switch_supplier",      "priority": "medium",   "supplier_idx": 3, "sku_idx": 10, "impact":  52000,
      "title": "Evaluate alternate for Amla Hair Oil — input cost surge +28%",
      "desc":  "Copra shortage driving amla oil base cost up 28%. Nashik Herbal Products offers 12% premium vs 28% current spike. Cost-benefit analysis needed."},
-    {"type": "increase_safety_stock","priority": "medium",   "supplier_idx": 6, "sku_idx": 18, "impact":  48000,
+    {"type": "increase_stock","priority": "medium",   "supplier_idx": 6, "sku_idx": 18, "impact":  48000,
      "title": "Pre-position Flavoured Lassi — cold chain risk on NH-44",
      "desc":  "FASTag toll disruptions creating unpredictable cold chain delays on Delhi-bound routes. Increase Delhi NCR buffer stock to 10-day cover."},
     {"type": "expedite",             "priority": "medium",   "supplier_idx": 5, "sku_idx": 15, "impact":  42000,
@@ -363,7 +404,7 @@ ACTION_CARDS = [
     {"type": "reorder",              "priority": "medium",   "supplier_idx": 29, "sku_idx": 23,  "impact":  37000,
      "title": "Reorder Ponni Raw Rice — duty revision impact mitigated [RESOLVED]",
      "desc":  "Central excise duty hike absorbed through renegotiated procurement rate. New contract price locked.", "resolved": True, "resolved_days_ago": 15},
-    {"type": "increase_safety_stock","priority": "low",      "supplier_idx": 30, "sku_idx": 24,  "impact":  14000,
+    {"type": "increase_stock","priority": "low",      "supplier_idx": 30, "sku_idx": 24,  "impact":  14000,
      "title": "Safety stock for Premium Besan — dual-source packaging secured [RESOLVED]",
      "desc":  "Sole-source concentration risk resolved. Second vendor contracted. Packaging lead time buffer adequate.", "resolved": True, "resolved_days_ago": 22},
     {"type": "expedite",             "priority": "medium",   "supplier_idx": 31, "sku_idx": 25,  "impact":  28000,
@@ -396,18 +437,24 @@ async def seed_database():
     from app.models.festival import FestivalCalendar
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        # Full schema reset rather than metadata.drop_all: the DB may contain
+        # legacy/orphaned tables (e.g. approval_records) whose models are no
+        # longer in the codebase, and those FK-block a metadata-scoped drop.
+        # Dropping + recreating the public schema guarantees a clean slate.
+        await conn.execute(sa_text("DROP SCHEMA public CASCADE"))
+        await conn.execute(sa_text("CREATE SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
 
     async with session_factory() as session:
         # ── [1/8] Suppliers ─────────────────────────────────────────────
         print(f"[1/8] Seeding {len(SUPPLIERS)} suppliers...")
         for s in SUPPLIERS:
-            session.add(Supplier(**s))
+            cat = SUPPLIER_CATEGORY.get(s["id"], s.get("category", "FMCG"))
+            session.add(Supplier(**{**s, "category": cat}))
         await session.commit()
 
         # ── [2/8] Tier-1 → Tier-2 dependencies ─────────────────────────
-        print("[2/8] Seeding 14 Tier-1 → Tier-2 dependencies...")
+        print("[2/8] Seeding 21 Tier-1 → Tier-2 dependencies (packaging + raw material + logistics)...")
         deps = [
             # Vikas Home Care → Konkan Flexi Pack (packaging) + Vapi Oleochem (raw material)
             {"supplier_id": S_VIKAS,      "depends_on_id": T2_KONKAN_PKG,     "dependency_type": "packaging",    "criticality": 0.75},
@@ -430,6 +477,14 @@ async def seed_database():
             # Narmada Dairy → Ujjain Tetra Pak (packaging) + Anand Dairy (raw material)
             {"supplier_id": S_NARMADA,    "depends_on_id": T2_UJJAIN_TETRA,   "dependency_type": "packaging",    "criticality": 0.70},
             {"supplier_id": S_NARMADA,    "depends_on_id": T2_ANAND_DAIRY,    "dependency_type": "raw_material", "criticality": 0.92},
+            # ── Logistics dependencies (3rd type per Tier-1) ──────────────
+            {"supplier_id": S_VIKAS,      "depends_on_id": T2_KONKAN_LOG,     "dependency_type": "logistics",    "criticality": 0.60},
+            {"supplier_id": S_DAKSHIN,    "depends_on_id": T2_MADRAS_LOG,     "dependency_type": "logistics",    "criticality": 0.78},
+            {"supplier_id": S_GANGA,      "depends_on_id": T2_BENGAL_LOG,     "dependency_type": "logistics",    "criticality": 0.75},
+            {"supplier_id": S_SAURASHTRA, "depends_on_id": T2_KANDLA_LOG,     "dependency_type": "logistics",    "criticality": 0.62},
+            {"supplier_id": S_ARYA,       "depends_on_id": T2_DELHI_LOG,      "dependency_type": "logistics",    "criticality": 0.80},
+            {"supplier_id": S_MALABAR,    "depends_on_id": T2_MALABAR_LOG,    "dependency_type": "logistics",    "criticality": 0.58},
+            {"supplier_id": S_NARMADA,    "depends_on_id": T2_MALWA_LOG,      "dependency_type": "logistics",    "criticality": 0.66},
         ]
         for dep in deps:
             session.add(SupplierDependency(id=uuid.uuid4(), **dep))
@@ -458,8 +513,8 @@ async def seed_database():
                 id=sku_id,
                 sku_code=tmpl["code"],
                 name=tmpl["name"],
-                category="FMCG",
-                subcategory="FMCG",
+                category=tmpl.get("cat", "FMCG"),
+                subcategory=tmpl.get("subcat", "General"),
                 supplier_id=supplier_id,
                 unit_cost_inr=tmpl["cost"],
                 current_stock=stock,
@@ -641,7 +696,7 @@ async def seed_database():
     await engine.dispose()
     print("\n=== SupplySense database seeded successfully ===")
     print(f"  - 7 Tier-1 manufacturers   (Vikas, Dakshin, Ganga, Saurashtra, Arya, Malabar, Narmada)")
-    print(f"  - 14 Tier-2 suppliers       (2 per vendor: packaging + raw material)")
+    print(f"  - 21 Tier-2 suppliers       (3 per vendor: packaging + raw material + logistics)")
     print(f"  - 6 Alternate suppliers     (1 per Tier-1, Mysore shared by Malabar+Narmada)")
     print(f"  - 21 FMCG SKUs              (3 per vendor)")
     print(f"  - {len(FIXED_DISRUPTIONS)} disruptions          ({sum(1 for d in FIXED_DISRUPTIONS if d['is_active'])} active, {sum(1 for d in FIXED_DISRUPTIONS if not d['is_active'])} resolved)")

@@ -137,6 +137,7 @@ const ACTION_LABELS: Record<string, string> = {
   increase_stock:   'Pre-order safety stock buffer',
   expedite:         'Expedite pending purchase orders',
   substitute_sku:   'Activate substitute SKU inventory',
+  reorder:          'Place immediate replenishment order',
 }
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
@@ -144,6 +145,7 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   increase_stock:   <Package size={14} style={{ color: '#10B981' }} />,
   expedite:         <Zap size={14} style={{ color: '#F59E0B' }} />,
   substitute_sku:   <Shuffle size={14} style={{ color: '#EC4899' }} />,
+  reorder:          <Package size={14} style={{ color: '#0EA5E9' }} />,
 }
 
 const ACTION_DETAILS: Record<string, {
@@ -170,6 +172,11 @@ const ACTION_DETAILS: Record<string, {
     what: 'Switch to a compatible alternate part code or product code currently in stock.',
     effect: 'Zero lead time alternative. Reduces risk by 25% instantly.',
     tradeoff: 'Requires technical check and possible pricing adjustment.',
+  },
+  reorder: {
+    what: 'Place an immediate replenishment purchase order with the current supplier.',
+    effect: 'Rebuilds cover quickly when the supplier itself is healthy — the issue is low stock, not the vendor.',
+    tradeoff: 'Does nothing if the supplier is the disruption; ties up working capital.',
   },
 }
 
@@ -204,14 +211,20 @@ function MitigationOptions({
   const bestIdx = sim.options.reduce(
     (best, opt, i) => opt.exposure_reduction_inr > sim.options[best].exposure_reduction_inr ? i : best, 0
   )
+  // When the AI named a recommended action, highlight that; else fall back to the
+  // highest net-saving option computed by the engine.
+  const recommendedIdx = sim.recommended_action_type
+    ? sim.options.findIndex(o => o.action_type === sim.recommended_action_type)
+    : -1
+  const highlightIdx = recommendedIdx >= 0 ? recommendedIdx : bestIdx
 
   const handleMarkDone = useCallback(async () => {
     if (!actionCard) { setResolved(true); onResolved(); return }
     setResolving(true)
     try {
-      const effectiveIdx = selected !== null ? selected : bestIdx
+      const effectiveIdx = selected !== null ? selected : highlightIdx
       const selectedOpt = sim.options[effectiveIdx]
-      const actionLabel = ACTION_LABELS[selectedOpt.action_type] ?? selectedOpt.action_type
+      const actionLabel = selectedOpt.title || ACTION_LABELS[selectedOpt.action_type] || selectedOpt.action_type
       const noteParts = [
         `Action taken: ${actionLabel}`,
         showExternal ? 'Handled externally' : null,
@@ -233,7 +246,7 @@ function MitigationOptions({
     } finally {
       if (isMounted.current) setResolving(false)
     }
-  }, [actionCard, supplierId, selected, sim.options, showExternal, externalNote, queryClient, onResolved, bestIdx])
+  }, [actionCard, supplierId, selected, sim.options, showExternal, externalNote, queryClient, onResolved, highlightIdx])
 
   if (resolved) {
     return (
@@ -249,15 +262,30 @@ function MitigationOptions({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
         <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Choose Mitigation Strategy</span>
+        {sim.generation_mode && <AiBadge mode={sim.generation_mode} />}
       </div>
 
+      {/* AI plan summary — scenario-specific overview */}
+      {sim.plan_summary && (
+        <div style={{
+          background: 'linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%)',
+          border: '1px solid #C7D2FE', borderRadius: '10px', padding: '12px 14px',
+          fontSize: '0.8125rem', color: '#3730A3', lineHeight: 1.55, fontWeight: 500,
+        }}>
+          {sim.plan_summary}
+        </div>
+      )}
+
       {sim.options.map((opt, i) => {
-        const isBest = i === bestIdx
+        const isBest = i === highlightIdx
         const isSelected = selected === i
         const isSwitch = opt.action_type === 'switch_supplier'
-        const label = ACTION_LABELS[opt.action_type] ?? opt.description
+        // Prefer the AI's scenario-specific copy; fall back to static labels/details.
+        const label = opt.title || ACTION_LABELS[opt.action_type] || opt.description
+        const whatText = opt.description || ACTION_DETAILS[opt.action_type]?.what
+        const tradeoffText = opt.tradeoff || ACTION_DETAILS[opt.action_type]?.tradeoff
 
         return (
           <div key={i} style={{
@@ -310,12 +338,17 @@ function MitigationOptions({
                 </h4>
               </div>
 
-              {/* Description */}
-              {ACTION_DETAILS[opt.action_type] && (
+              {/* Description (AI scenario-specific copy, or static fallback) */}
+              {whatText && (
                 <div style={{ paddingLeft: '24px', marginBottom: '10px' }}>
                   <p style={{ fontSize: '0.8125rem', color: '#475569', lineHeight: 1.5, margin: 0 }}>
-                    {ACTION_DETAILS[opt.action_type].what}
+                    {whatText}
                   </p>
+                  {opt.rationale && (
+                    <p style={{ fontSize: '0.75rem', color: '#4F46E5', lineHeight: 1.5, margin: '6px 0 0', fontWeight: 500 }}>
+                      Why: {opt.rationale}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -351,11 +384,11 @@ function MitigationOptions({
               </div>
 
               {/* Tradeoff */}
-              {ACTION_DETAILS[opt.action_type] && (
+              {tradeoffText && (
                 <div style={{ paddingLeft: '24px', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Scale size={12} style={{ color: '#64748B' }} />
                   <span style={{ fontSize: '0.75rem', color: '#64748B', fontStyle: 'italic' }}>
-                    {ACTION_DETAILS[opt.action_type].tradeoff}
+                    {tradeoffText}
                   </span>
                 </div>
               )}

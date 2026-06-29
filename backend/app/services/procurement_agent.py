@@ -33,6 +33,7 @@ from app.schemas.ai_contracts import (
     ActionNarrative,
     ExecutiveBriefNarrative,
     AlternateSupplierNarrative,
+    MitigationPlanNarrative,
 )
 from app.core.evidence import build_evidence_package, validate_grounding, EvidencePackage
 
@@ -107,6 +108,48 @@ Generate a JSON response with ONLY these fields:
   "summary": "3-4 sentence executive briefing suitable for a CFO",
   "top_risks": ["risk 1", "risk 2", "risk 3"],
   "immediate_actions": ["action 1", "action 2", "action 3"]
+}}}}""".format(data_open=_DATA_OPEN, data_close=_DATA_CLOSE)
+
+MITIGATION_PLAN_PROMPT = """You are devising a mitigation plan for ONE at-risk supplier. Analyse the specific situation below and design the response that actually fits it — do not output a generic checklist.
+
+{data_open}
+SUPPLIER: {{supplier_name}} ({{city}}, {{state}})
+RISK: {{risk_level}} ({{risk_score:.0%}})
+FINANCIAL EXPOSURE AT STAKE: ₹{{exposure_inr:,.0f}}
+DAYS TO STOCKOUT: {{days_to_stockout}}
+PRODUCTS AFFECTED: {{products}}
+ACTIVE DISRUPTION: {{disruption_context}}
+TOP RISK SIGNALS: {{risk_factors}}
+ALTERNATE SUPPLIERS ON FILE: {{alternates_text}}
+{data_close}
+
+Supported action types (choose ONLY the ones that genuinely fit this scenario — between 2 and 4, ordered best-first):
+- switch_supplier: redirect orders to an alternate vendor. Only viable if an alternate exists and the issue is supplier-specific.
+- expedite: rush/priority-ship orders already in the pipeline. Fits short delays, not supplier collapse.
+- increase_stock: pre-buy a safety buffer now. Fits demand spikes / short disruptions when stock cover is thin.
+- substitute_sku: switch to a compatible in-stock alternate product. Fits when an equivalent SKU exists.
+- reorder: place an immediate replenishment order. Fits an inventory breach with a healthy supplier.
+
+Rules:
+- Provide 2-4 options so the planner has a real choice: your single best recommendation FIRST, then 1-3 realistic alternatives or bridge actions (e.g. expedite or a stock buffer to cover the switch lead time). Even when one action clearly dominates, include at least one complementary fallback.
+- Pick the subset that fits THIS disruption and these products — a flood that submerged the warehouse is different from a demand spike.
+- Reference the actual product names, city, and disruption in your text.
+- Do NOT invent rupee figures — the financial impact of each option is computed separately.
+- Each option's description/rationale/tradeoff must be specific to this supplier, not boilerplate.
+
+Return JSON with ONLY these fields:
+{{{{
+  "plan_summary": "2-3 sentences: the situation and your overall recommended approach",
+  "recommended_action_type": "one of the action types above",
+  "options": [
+    {{{{
+      "action_type": "one of the supported types",
+      "title": "short action title specific to this scenario (max 100 chars)",
+      "description": "what this action concretely means for {{supplier_name}}'s affected products (1-2 sentences)",
+      "rationale": "why this fits THIS disruption/risk (1-2 sentences)",
+      "tradeoff": "what you give up (1 sentence)"
+    }}}}
+  ]
 }}}}""".format(data_open=_DATA_OPEN, data_close=_DATA_CLOSE)
 
 ALTERNATE_SUPPLIER_PROMPT = """Evaluate alternate supplier options for the procurement decision below.
@@ -256,6 +299,96 @@ class ProcurementIntelligenceAgent:
         marker = _ai_unavailable_action_card("bedrock_unavailable")
         marker["evidence_snapshot_id"] = evidence.snapshot_id
         return marker
+
+    async def generate_mitigation_plan(
+        self,
+        supplier_name: str,
+        city: str,
+        state: str,
+        risk_score: float,
+        risk_level: str,
+        exposure_inr: float,
+        days_to_stockout: int,
+        products: list[str],
+        disruption_context: str,
+        risk_factors: str,
+        alternates: list[dict],
+    ) -> dict | None:
+        """
+        AI-generated, scenario-specific mitigation plan.
+
+        Returns a validated MitigationPlanNarrative as a dict (with ai_* status),
+        or None when Bedrock is unavailable / output fails validation so the
+        caller falls back to the deterministic engine plan. The AI selects WHICH
+        actions fit and writes the copy; it never produces rupee figures.
+        """
+        if not bedrock.is_available:
+            logger.warning(f"Bedrock unavailable for mitigation plan: {supplier_name}")
+            return None
+
+        products_text = ", ".join(products[:8]) if products else "multiple SKUs"
+        if alternates:
+            alternates_text = "; ".join(
+                f"{a['name']} ({a.get('city', 'n/a')}, +{a.get('cost_premium_pct', 0):.0f}% cost, "
+                f"{a.get('quality_score', 0):.0%} quality)"
+                for a in alternates[:4]
+            )
+        else:
+            alternates_text = "None on file"
+
+        # Ground the single rupee figure the model is shown so it can reference
+        # exposure without inventing new amounts.
+        evidence = build_evidence_package(
+            supplier_id="",
+            supplier_name=supplier_name,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            exposure_inr=exposure_inr,
+            days_to_stockout=days_to_stockout,
+            sku_count=len(products) or 1,
+            extra_entities=[city, state],
+        )
+
+        prompt = MITIGATION_PLAN_PROMPT.format(
+            supplier_name=supplier_name,
+            city=city,
+            state=state,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            exposure_inr=exposure_inr,
+            days_to_stockout=days_to_stockout,
+            products=products_text,
+            disruption_context=disruption_context,
+            risk_factors=risk_factors,
+            alternates_text=alternates_text,
+        )
+
+        validated: MitigationPlanNarrative | None = await bedrock.invoke_typed(
+            SYSTEM_PROMPT, prompt, MitigationPlanNarrative, repair_attempts=0
+        )
+        if validated is None:
+            logger.warning(f"Mitigation plan AI returned no valid output: {supplier_name}")
+            return None
+
+        result = validated.model_dump()
+
+        # Grounding: reject any rupee amounts in the narrative that weren't in evidence.
+        narrative_strings = {"plan_summary": result.get("plan_summary", "")}
+        for i, opt in enumerate(result.get("options", [])):
+            for k in ("title", "description", "rationale", "tradeoff"):
+                narrative_strings[f"opt{i}_{k}"] = opt.get(k, "")
+        grounding = validate_grounding(narrative_strings, evidence)
+        if not grounding.passed:
+            logger.warning(
+                f"Mitigation plan grounding violation for {supplier_name}: {grounding.violations}"
+            )
+            return None
+
+        result["generation_mode"] = "ai_generated"
+        result["ai_generated"] = True
+        result["ai_error"] = False
+        result["evidence_snapshot_id"] = evidence.snapshot_id
+        return result
 
     async def generate_executive_brief(
         self,

@@ -4,11 +4,13 @@ import { router } from './router'
 
 /**
  * Concurrency limiter for API requests.
- * Limits simultaneous in-flight queries to 4 to reduce backend pressure.
- * Validates: Requirements 5.1
+ * Caps simultaneous in-flight queries to protect the backend, but high enough
+ * that the fast deterministic dashboard queries don't queue behind the slow AI
+ * endpoints (procurement cards / executive brief). The Neon pool (size 20)
+ * comfortably handles this. Was 4 — too low, starved first paint.
  */
 let activeRequests = 0
-const MAX_CONCURRENT = 4
+const MAX_CONCURRENT = 10
 const queue: Array<() => void> = []
 
 function waitForSlot(): Promise<void> {

@@ -21,7 +21,7 @@ from app.schemas.action_card import ActionCardListResponse, ActionCardResponse
 # Maps the highest-firing risk factor to the most appropriate action type
 _FACTOR_TO_ACTION: dict[str, str] = {
     'inventory_pressure':      'reorder',
-    'festival_proximity':      'increase_safety_stock',
+    'festival_proximity':      'increase_stock',
     'delivery_reliability':    'expedite',
     'disruption_severity':     'switch_supplier',
     'logistics_vulnerability': 'switch_supplier',

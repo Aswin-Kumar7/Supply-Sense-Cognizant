@@ -3,13 +3,18 @@ Risk Intelligence Service - Orchestration Layer.
 """
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import time
 from uuid import UUID
 from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import AsyncSessionLocal
+
 from app.models.supplier import Supplier
-from app.models.sku import SKU
+from app.models.sku import SKU, AlternateSupplier
 from app.models.disruption import Disruption
 from app.models.delivery import DeliveryRecord
 from app.models.festival import FestivalCalendar
@@ -20,6 +25,36 @@ from app.services.financial_engine import (
     financial_engine, SupplierExposure, FinancialSummary, MitigationSimulation
 )
 from app.core.event_bus import event_bus, SupplyChainEvent
+from app.core.logging import logger
+
+
+# In-process cache for AI mitigation plans, keyed by a content hash of the
+# scenario inputs. Same scenario → same plan (stable across reloads + fast),
+# until inputs change or the 10-min TTL lapses. { hash: (plan_dict, ts) }
+_MITIGATION_AI_CACHE: dict[str, tuple] = {}
+_MITIGATION_AI_TTL = 600.0
+
+# Short-TTL cache for the all-supplier risk computation. compute_all_supplier_risks
+# is an N+1 (~6 Neon round-trips per supplier) called by the dashboard summary,
+# the risks page, financial summary, and the AI brief — recomputing it on every
+# one of those on every load was the main dashboard slowness. Risk scores derive
+# from suppliers/disruptions/delivery/inventory, NOT from action-card resolution,
+# so a short staleness is safe; new disruptions surface within the TTL or on a
+# manual Refresh (which calls clear_risk_cache via /procurement/cache/invalidate).
+_ALL_RISKS_CACHE: dict = {"data": None, "ts": 0.0}
+_ALL_RISKS_TTL = 20.0
+
+# Same idea for the all-supplier financial summary (also an N+1 with cascade).
+_FIN_SUMMARY_CACHE: dict = {"data": None, "ts": 0.0}
+_FIN_SUMMARY_TTL = 20.0
+
+
+def clear_risk_cache() -> None:
+    """Drop the cached all-supplier computations so the next one is fresh."""
+    _ALL_RISKS_CACHE["data"] = None
+    _ALL_RISKS_CACHE["ts"] = 0.0
+    _FIN_SUMMARY_CACHE["data"] = None
+    _FIN_SUMMARY_CACHE["ts"] = 0.0
 
 
 class RiskIntelligenceService:
@@ -35,29 +70,45 @@ class RiskIntelligenceService:
 
     async def compute_all_supplier_risks(self) -> list[dict]:
         """Compute risk scores for all suppliers."""
-        suppliers = (await self.db.execute(select(Supplier))).scalars().all()
-        results = []
+        cached = _ALL_RISKS_CACHE["data"]
+        if cached is not None and (time.monotonic() - _ALL_RISKS_CACHE["ts"]) < _ALL_RISKS_TTL:
+            return list(cached)
 
-        for supplier in suppliers:
-            breakdown = await self._compute_single_supplier_risk(supplier)
-            risk_trend = await self._compute_risk_trend(supplier.id)
-            # Low-confidence single-signal alerts route to human review
-            human_review = breakdown.confidence < 0.50
-            results.append({
+        suppliers = (await self.db.execute(select(Supplier))).scalars().all()
+
+        # Per-supplier risk is ~6 sequential Neon round-trips; doing all suppliers
+        # sequentially on one session took ~11s. Fan out with bounded concurrency,
+        # each task on its own short-lived session, to collapse that to ~2s.
+        # Supplier ORM attributes are already loaded (expire_on_commit=False), so
+        # they're safe to read inside the worker sessions.
+        sem = asyncio.Semaphore(8)
+
+        async def _one(supplier) -> dict:
+            async with sem:
+                async with AsyncSessionLocal() as worker_db:
+                    svc = RiskIntelligenceService(worker_db)
+                    breakdown = await svc._compute_single_supplier_risk(supplier)
+                    risk_trend = await svc._compute_risk_trend(supplier.id)
+            return {
                 "supplier_id": str(breakdown.supplier_id),
                 "supplier_name": breakdown.supplier_name,
                 "overall_score": breakdown.overall_score,
                 "risk_level": breakdown.risk_level,
                 "risk_trend": risk_trend,
                 "confidence": breakdown.confidence,
-                "human_review_required": human_review,
+                # Low-confidence single-signal alerts route to human review
+                "human_review_required": breakdown.confidence < 0.50,
                 "factors": breakdown.factor_dict,
                 "computed_at": breakdown.computed_at,
-            })
+            }
+
+        results = await asyncio.gather(*[_one(s) for s in suppliers])
 
         # Sort by risk (highest first)
         results.sort(key=lambda x: x["overall_score"], reverse=True)
-        return results
+        _ALL_RISKS_CACHE["data"] = results
+        _ALL_RISKS_CACHE["ts"] = time.monotonic()
+        return list(results)
 
     async def compute_supplier_risk(self, supplier_id: UUID) -> dict:
         """Compute detailed risk for a single supplier."""
@@ -325,16 +376,27 @@ class RiskIntelligenceService:
     # ============ FINANCIAL EXPOSURE ============
 
     async def get_financial_summary(self) -> dict:
-        """Compute financial exposure across all suppliers."""
-        suppliers = (await self.db.execute(select(Supplier))).scalars().all()
-        exposures = []
+        """Compute financial exposure across all suppliers (cached + parallelized)."""
+        cached = _FIN_SUMMARY_CACHE["data"]
+        if cached is not None and (time.monotonic() - _FIN_SUMMARY_CACHE["ts"]) < _FIN_SUMMARY_TTL:
+            return cached
 
-        for supplier in suppliers:
-            exposure = await self._compute_supplier_exposure(supplier)
-            # Skip suppliers with no financial stake — cost data missing or stock healthy
-            if exposure.total_exposure_inr == 0:
-                continue
-            exposures.append(exposure)
+        suppliers = (await self.db.execute(select(Supplier))).scalars().all()
+
+        # Per-supplier exposure is another N+1 (SKUs + disruptions + delivery +
+        # recursive cascade + festival). Fan out with bounded concurrency, each
+        # on its own session, mirroring compute_all_supplier_risks.
+        sem = asyncio.Semaphore(8)
+
+        async def _exposure(supplier):
+            async with sem:
+                async with AsyncSessionLocal() as worker_db:
+                    svc = RiskIntelligenceService(worker_db)
+                    return await svc._compute_supplier_exposure(supplier)
+
+        all_exposures = await asyncio.gather(*[_exposure(s) for s in suppliers])
+        # Skip suppliers with no financial stake — cost data missing or stock healthy
+        exposures = [e for e in all_exposures if e.total_exposure_inr != 0]
 
         # Sort by exposure descending
         exposures.sort(key=lambda x: x.total_exposure_inr, reverse=True)
@@ -354,7 +416,7 @@ class RiskIntelligenceService:
         total_stockout = sum(e.stockout_cost_inr for e in exposures)
         total_mitigation = sum(e.mitigation_cost_inr for e in exposures)
 
-        return {
+        result = {
             "total_financial_exposure_inr": round(total_exposure, 2),
             "total_revenue_at_risk_inr": round(total_revenue, 2),
             "total_sla_penalties_inr": round(total_sla, 2),
@@ -373,6 +435,9 @@ class RiskIntelligenceService:
                 for e in exposures[:10]
             ],
         }
+        _FIN_SUMMARY_CACHE["data"] = result
+        _FIN_SUMMARY_CACHE["ts"] = time.monotonic()
+        return result
 
     async def _compute_supplier_exposure(self, supplier: Supplier) -> SupplierExposure:
         """Compute financial exposure for a single supplier."""
@@ -595,7 +660,14 @@ class RiskIntelligenceService:
         }
 
     async def simulate_mitigation(self, supplier_id: UUID) -> dict:
-        """Simulate mitigation options for a supplier."""
+        """
+        Build a mitigation plan for a supplier.
+
+        Hybrid model: the financial_engine computes ALL rupee figures
+        (deterministic, grounded), while the AI selects WHICH actions fit this
+        specific scenario and writes scenario-specific copy. The two are merged.
+        Falls back to the full deterministic engine plan when AI is unavailable.
+        """
         supplier = (await self.db.execute(
             select(Supplier).where(Supplier.id == supplier_id)
         )).scalar_one_or_none()
@@ -610,7 +682,38 @@ class RiskIntelligenceService:
             risk_score=breakdown.overall_score,
         )
 
-        return {
+        # Deterministic numbers per action_type — the single source of ₹ truth.
+        # "reorder" isn't an engine option, so synthesise it from increase_stock
+        # (both are replenishment) but a touch faster.
+        number_map: dict[str, dict] = {
+            o.action_type: {
+                "cost_inr": o.cost_inr,
+                "risk_reduction": o.risk_reduction,
+                "exposure_reduction_inr": o.exposure_reduction_inr,
+                "time_to_effect_days": o.time_to_effect_days,
+                "confidence": o.confidence,
+            }
+            for o in simulation.options
+        }
+        if "increase_stock" in number_map and "reorder" not in number_map:
+            base = number_map["increase_stock"]
+            number_map["reorder"] = {
+                **base,
+                "time_to_effect_days": max(1, base["time_to_effect_days"] - 1),
+            }
+
+        def _engine_option_payload(o) -> dict:
+            return {
+                "action_type": o.action_type,
+                "description": o.description,
+                "cost_inr": o.cost_inr,
+                "risk_reduction": o.risk_reduction,
+                "exposure_reduction_inr": o.exposure_reduction_inr,
+                "time_to_effect_days": o.time_to_effect_days,
+                "confidence": o.confidence,
+            }
+
+        base_response = {
             "supplier_id": simulation.supplier_id,
             "supplier_name": simulation.supplier_name,
             "current_exposure_inr": simulation.current_exposure_inr,
@@ -620,16 +723,166 @@ class RiskIntelligenceService:
             "net_saving_inr": simulation.net_saving_inr,
             "risk_before": simulation.risk_before,
             "risk_after": simulation.risk_after,
-            "options": [
-                {
-                    "action_type": o.action_type,
-                    "description": o.description,
-                    "cost_inr": o.cost_inr,
-                    "risk_reduction": o.risk_reduction,
-                    "exposure_reduction_inr": o.exposure_reduction_inr,
-                    "time_to_effect_days": o.time_to_effect_days,
-                    "confidence": o.confidence,
-                }
-                for o in simulation.options
-            ],
+            "options": [_engine_option_payload(o) for o in simulation.options],
+            "generation_mode": "deterministic_fallback",
+            "ai_generated": False,
+            "ai_error": False,
         }
+
+        # ── Gather scenario context for the AI ──────────────────────────────
+        skus_q = await self.db.execute(select(SKU).where(SKU.supplier_id == supplier.id))
+        skus = skus_q.scalars().all()
+        products = [s.name for s in skus]
+
+        disruptions_q = await self.db.execute(
+            select(Disruption).where(
+                Disruption.supplier_id == supplier.id,
+                Disruption.is_active == True,
+            )
+        )
+        active = disruptions_q.scalars().all()
+        if active:
+            d = max(active, key=lambda x: x.impact_score or 0)
+            disruption_context = f"{d.disruption_type}: {d.title} (severity {d.severity})"
+        else:
+            disruption_context = "No active disruption — risk is from reliability/inventory signals"
+
+        # Top fired risk factors → human-readable signal list
+        factors = breakdown.factor_dict
+        def _fval(v):
+            return v.get("value", 0) if isinstance(v, dict) else (float(v) if v is not None else 0)
+        fired = sorted(
+            ((k, _fval(v)) for k, v in factors.items()), key=lambda kv: kv[1], reverse=True
+        )
+        risk_factors = ", ".join(
+            f"{k.replace('_', ' ')} ({val:.0%})" for k, val in fired if val > 0.3
+        ) or "multiple low-level signals"
+
+        # Alternates for this supplier's SKUs (for switch_supplier feasibility)
+        alts: list[dict] = []
+        if skus:
+            alt_q = await self.db.execute(
+                select(AlternateSupplier, Supplier)
+                .join(Supplier, Supplier.id == AlternateSupplier.supplier_id)
+                .where(AlternateSupplier.sku_id.in_([s.id for s in skus]))
+            )
+            seen_alt: set = set()
+            for alt, alt_sup in alt_q.all():
+                if alt_sup.id in seen_alt:
+                    continue
+                seen_alt.add(alt_sup.id)
+                alts.append({
+                    "name": alt_sup.name,
+                    "city": alt_sup.city,
+                    "cost_premium_pct": alt.cost_premium_pct,
+                    "quality_score": alt.quality_score,
+                })
+
+        min_days = 30
+        # cheap days-to-stockout proxy from stock cover
+        for s in skus:
+            if s.daily_demand_avg:
+                min_days = min(min_days, int(s.current_stock / max(1, s.daily_demand_avg)))
+
+        # ── AI plan (cached by scenario content hash) ───────────────────────
+        ai_plan = await self._get_ai_mitigation_plan(
+            supplier=supplier,
+            exposure_inr=exposure.total_exposure_inr,
+            risk_score=breakdown.overall_score,
+            risk_level=breakdown.risk_level,
+            days_to_stockout=min_days,
+            products=products,
+            disruption_context=disruption_context,
+            risk_factors=risk_factors,
+            alternates=alts,
+        )
+
+        if not ai_plan:
+            return base_response
+
+        # ── Merge AI option selection/copy with engine numbers ──────────────
+        merged_options: list[dict] = []
+        for opt in ai_plan.get("options", []):
+            at = opt.get("action_type")
+            nums = number_map.get(at)
+            if nums is None:
+                # AI chose an action the engine can't cost — skip it rather than fabricate.
+                continue
+            merged_options.append({
+                "action_type": at,
+                "title": opt.get("title"),
+                "description": opt.get("description"),
+                "rationale": opt.get("rationale"),
+                "tradeoff": opt.get("tradeoff"),
+                **nums,
+            })
+
+        if not merged_options:
+            return base_response
+
+        # Recompute the headline numbers from the AI-recommended option (or best).
+        rec_at = ai_plan.get("recommended_action_type")
+        chosen = next((o for o in merged_options if o["action_type"] == rec_at), None)
+        if chosen is None:
+            chosen = max(merged_options, key=lambda o: o["exposure_reduction_inr"] - o["cost_inr"])
+        current = simulation.current_exposure_inr
+        mitigated = round(max(0.0, current - chosen["exposure_reduction_inr"]), 2)
+
+        return {
+            **base_response,
+            "mitigated_exposure_inr": mitigated,
+            "savings_inr": round(current - mitigated, 2),
+            "mitigation_cost_inr": round(chosen["cost_inr"], 2),
+            "net_saving_inr": round((current - mitigated) - chosen["cost_inr"], 2),
+            "risk_after": round(mitigated / max(current, 1), 3),
+            "options": merged_options,
+            "plan_summary": ai_plan.get("plan_summary"),
+            "recommended_action_type": rec_at,
+            "generation_mode": "ai_generated",
+            "ai_generated": True,
+            "ai_error": False,
+            "evidence_snapshot_id": ai_plan.get("evidence_snapshot_id"),
+        }
+
+    async def _get_ai_mitigation_plan(
+        self, supplier, exposure_inr, risk_score, risk_level, days_to_stockout,
+        products, disruption_context, risk_factors, alternates,
+    ) -> dict | None:
+        """Call the AI mitigation agent, cached by a hash of the scenario inputs."""
+        key_src = "|".join([
+            str(supplier.id),
+            str(round(exposure_inr)),
+            str(round(risk_score, 3)),
+            disruption_context,
+            risk_factors,
+            ",".join(sorted(products)),
+            ",".join(sorted(a["name"] for a in alternates)),
+        ])
+        key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
+
+        hit = _MITIGATION_AI_CACHE.get(key)
+        if hit and (time.monotonic() - hit[1]) < _MITIGATION_AI_TTL:
+            return hit[0]
+
+        from app.services.procurement_agent import procurement_agent
+        try:
+            plan = await procurement_agent.generate_mitigation_plan(
+                supplier_name=supplier.name,
+                city=supplier.city,
+                state=supplier.state,
+                risk_score=risk_score,
+                risk_level=risk_level,
+                exposure_inr=exposure_inr,
+                days_to_stockout=days_to_stockout,
+                products=products,
+                disruption_context=disruption_context,
+                risk_factors=risk_factors,
+                alternates=alternates,
+            )
+        except Exception as exc:
+            logger.warning(f"AI mitigation plan failed for {supplier.name}: {exc}")
+            return None
+
+        if plan:
+            _MITIGATION_AI_CACHE[key] = (plan, time.monotonic())
+        return plan

@@ -35,6 +35,47 @@ _ALTERNATE_NARRATIVE_KEYS = frozenset({
     "recommended_alternate", "rationale", "trade_offs", "transition_timeline",
 })
 
+# Human-readable verb per action_type, used to explain the chosen action.
+_ACTION_VERB = {
+    "switch_supplier": "switch to an alternate supplier",
+    "expedite": "expedite open purchase orders",
+    "increase_safety_stock": "raise safety-stock cover",
+    "increase_stock": "raise safety-stock cover",
+    "reorder": "place an immediate replenishment order",
+    "substitute_sku": "activate substitute SKUs",
+}
+
+
+def _build_action_rationale(action_type: str, factors: dict, days_to_stockout: int) -> str:
+    """
+    A short, ALWAYS-present, grounded justification for the chosen action_type.
+
+    It states the actual decision basis — the supplier's dominant risk signals —
+    so a human can validate WHY this action was selected, even when the AI
+    narrative is unavailable. Uses only real engine factor values (no fabrication).
+    """
+    fired = sorted(
+        (
+            (k, (v.get("value", 0) if isinstance(v, dict) else float(v or 0)))
+            for k, v in (factors or {}).items()
+        ),
+        key=lambda kv: kv[1],
+        reverse=True,
+    )
+    top = [(k.replace("_", " "), val) for k, val in fired if val > 0.3][:2]
+    if top:
+        basis = " and ".join(f"{name} ({val:.0%})" for name, val in top)
+        signal_word = "signals are" if len(top) > 1 else "signal is"
+    else:
+        basis = "elevated overall risk"
+        signal_word = "signal is"
+    verb = _ACTION_VERB.get(action_type, (action_type or "act").replace("_", " "))
+    urgency = (
+        f", and only ~{days_to_stockout} days of stock cover remain"
+        if days_to_stockout and days_to_stockout < 14 else ""
+    )
+    return f"Recommended to {verb} because the dominant risk {signal_word} {basis}{urgency}."
+
 
 class ProcurementService:
     """Orchestrates procurement intelligence generation."""
@@ -81,6 +122,11 @@ class ProcurementService:
 
         cascades = await self.risk_service.get_all_cascades()
         cascade_map = {c["source_supplier_id"]: c for c in cascades}
+
+        # Risk factors (cached) → grounds the always-present action rationale so a
+        # human can see WHY each action_type was chosen.
+        all_risks = await self.risk_service.compute_all_supplier_risks()
+        factor_map = {r["supplier_id"]: r.get("factors", {}) for r in all_risks}
 
         # priority → approximate risk_score (used only to prompt the AI — never exposed to UI)
         _PRIORITY_SCORE = {"critical": 0.85, "high": 0.65, "medium": 0.45, "low": 0.2}
@@ -131,35 +177,41 @@ class ProcurementService:
                 "cascade_ctx": cascade_ctx,
             })
 
-        # Step 4: Fire all AI calls in parallel — reduces N×T to ~T
-        # Hard cap: if all parallel AI calls don't finish in 18s, return ai_unavailable for each
+        # Step 4: Generate AI narratives with BOUNDED concurrency.
+        # Firing all N cards at Bedrock at once (e.g. after a cache bust) throttles
+        # Nova Lite and most calls fail. A small semaphore keeps us under the rate
+        # limit; each card has its own timeout and failures are isolated so one
+        # slow/throttled card can't poison the rest.
         _ai_unavailable = {
             "generation_mode": "ai_unavailable", "ai_generated": False,
-            "ai_error": True, "ai_error_reason": "timeout",
+            "ai_error": True, "ai_error_reason": "throttled_or_timeout",
         }
-        try:
-            ai_results = await asyncio.wait_for(
-                asyncio.gather(*[
-                    procurement_agent.generate_action_card(
-                        supplier_name=inp["supplier"].name,
-                        city=inp["supplier"].city,
-                        state=inp["supplier"].state,
-                        risk_score=inp["risk_score"],
-                        risk_level=inp["risk_level"],
-                        exposure_inr=inp["exposure_inr"],
-                        days_to_stockout=inp["min_days"],
-                        sku_count=inp["sku_count"],
-                        disruption_context=inp["disruption_ctx"],
-                        cascade_context=inp["cascade_ctx"],
-                        action_type=inp["card"].action_type or "reorder",
+        _sem = asyncio.Semaphore(3)
+
+        async def _gen_card(inp) -> dict:
+            async with _sem:
+                try:
+                    return await asyncio.wait_for(
+                        procurement_agent.generate_action_card(
+                            supplier_name=inp["supplier"].name,
+                            city=inp["supplier"].city,
+                            state=inp["supplier"].state,
+                            risk_score=inp["risk_score"],
+                            risk_level=inp["risk_level"],
+                            exposure_inr=inp["exposure_inr"],
+                            days_to_stockout=inp["min_days"],
+                            sku_count=inp["sku_count"],
+                            disruption_context=inp["disruption_ctx"],
+                            cascade_context=inp["cascade_ctx"],
+                            action_type=inp["card"].action_type or "reorder",
+                        ),
+                        timeout=20.0,
                     )
-                    for inp in card_inputs
-                ]),
-                timeout=18.0,
-            )
-        except asyncio.TimeoutError:
-            logger.warning("AI action card generation timed out after 18s — returning ai_unavailable for all cards")
-            ai_results = [dict(_ai_unavailable) for _ in card_inputs]
+                except Exception as exc:
+                    logger.warning(f"action card AI gen failed for {inp['supplier'].name}: {exc}")
+                    return dict(_ai_unavailable)
+
+        ai_results = await asyncio.gather(*[_gen_card(inp) for inp in card_inputs])
 
         # Step 5: Assemble final cards
         action_cards = []
@@ -183,6 +235,12 @@ class ProcurementService:
                 "region": supplier.region,
                 "category": supplier.category,
                 "action_type": inp["card"].action_type or "reorder",
+                # Always-present, grounded "why this action" for human validation
+                "action_rationale": _build_action_rationale(
+                    inp["card"].action_type or "reorder",
+                    factor_map.get(supplier_id, {}),
+                    inp["min_days"],
+                ),
                 "priority": inp["risk_level"],
                 "financial_exposure_inr": inp["exposure_inr"],
                 "days_to_stockout": inp["min_days"],

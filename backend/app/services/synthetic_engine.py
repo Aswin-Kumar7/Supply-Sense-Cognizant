@@ -240,17 +240,30 @@ class SyntheticEngine:
     async def _trigger_supervisor(self, event: SupplyChainEvent):
         """Run the full Strands supervisor pipeline for a critical synthetic event."""
         try:
+            from sqlalchemy import select
+            from app.models.supplier import Supplier
             from app.agents.strands_agents import SupervisorAgent
             async with AsyncSessionLocal() as db:
+                # Resolve the synthetic event's supplier NAME to a real row. Without
+                # a real supplier_id the Risk + Prescriptive stages skip themselves,
+                # so the live pipeline did almost nothing — this makes it run fully
+                # on real data (real city/state/region too, not random ones).
+                supplier_name = event.data.get("supplier", "")
+                supplier = None
+                if supplier_name:
+                    supplier = (await db.execute(
+                        select(Supplier).where(Supplier.name == supplier_name)
+                    )).scalar_one_or_none()
+
                 supervisor = SupervisorAgent(db)
                 disruption_event = {
-                    "supplier_id": "",
-                    "supplier_name": event.data.get("supplier", "Unknown Supplier"),
+                    "supplier_id": str(supplier.id) if supplier else "",
+                    "supplier_name": supplier.name if supplier else (supplier_name or "Unknown Supplier"),
                     "severity": event.severity,
                     "disruption_type": event.event_type,
-                    "region": event.data.get("region", ""),
-                    "city": event.data.get("city", ""),
-                    "state": "",
+                    "region": supplier.region if supplier else event.data.get("region", ""),
+                    "city": supplier.city if supplier else event.data.get("city", ""),
+                    "state": supplier.state if supplier else "",
                     "estimated_impact_inr": 0,
                     "days_to_stockout": 7,
                     "sku_count": 1,

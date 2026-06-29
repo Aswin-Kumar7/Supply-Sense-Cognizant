@@ -45,8 +45,9 @@ from sqlalchemy import text
 from app.core.logging import logger
 from app.core.config import get_settings
 from app.core.event_bus import event_bus, SupplyChainEvent
-from app.core.bedrock import validate_with_guardrail
+from app.core.bedrock import bedrock, validate_with_guardrail
 from app.core.evidence import build_evidence_package, validate_grounding
+from app.schemas.ai_contracts import RiskNarrative
 from app.services.risk_engine import risk_engine
 from app.services.cascade_engine import cascade_engine
 from app.services.financial_engine import financial_engine
@@ -408,47 +409,60 @@ class RiskAssessmentAgent:
 
     async def assess(self, supplier_id: str, context: str = "") -> dict:
         """
-        Assess risk for a supplier via Strands. Returns error dict on failure — no fallback.
+        Assess risk for a supplier.
 
-        Task 5: Authoritative values (overall_score, risk_level, confidence, factors) are
-        always sourced directly from the engine AFTER the Strands agent runs. The model's
-        restated values are discarded. Only narrative fields (key_factors_summary,
-        recommendation_rationale, cascade_affected) come from the model.
+        Authoritative scores (overall_score, risk_level, confidence, factors) ALWAYS
+        come straight from the deterministic engine; the cascade count is computed
+        by the cascade engine. The AI contributes ONLY the two narrative strings,
+        via a single grounded call.
+
+        This deliberately does NOT run a Strands multi-tool LLM loop: the old design
+        ran the full loop (get_supplier_risk_score + get_delivery_history +
+        get_cascade_impact) and then *discarded* the model's scores in favour of the
+        engine — ~8s of work for two narrative fields. A single grounded narrative
+        call is equivalent in output and far cheaper/faster.
         """
-        if self._strands_agent is None:
-            return {"error": "Strands RiskAssessmentAgent unavailable (SDK or Bedrock model not initialised)", "status": "error"}
-
         try:
-            logger.info(f"    → Strands RiskAssessmentAgent invoking LLM with tools...")
-            prompt = (
-                f"Assess the risk profile for supplier {supplier_id}. "
-                f"Context: {context}. "
-                "Use get_supplier_risk_score, get_delivery_history, and get_cascade_impact tools. "
-                "Return a JSON with ONLY these fields: "
-                "key_factors_summary (string, max 500 chars), "
-                "recommendation_rationale (string, max 400 chars), "
-                "cascade_affected (integer, number of downstream suppliers affected)."
-            )
-            response = await _invoke_agent(self._strands_agent, prompt)
-            text = str(response)
-
-            # Task 5: Always fetch authoritative values directly from the engine.
-            # Do NOT use the model's restated scores — the model may round, alter,
-            # or fabricate them. The engine is the single source of truth.
             authoritative = await _get_supplier_risk_score_impl(supplier_id, self.db)
+            if "error" in authoritative:
+                return {"error": authoritative.get("error", "risk unavailable"), "status": "error"}
 
-            # Extract only permitted narrative fields from the model response.
-            narrative: dict = {}
-            if "{" in text:
-                try:
-                    start = text.index("{")
-                    end = text.rindex("}") + 1
-                    model_json = json.loads(text[start:end])
-                    for key in ("key_factors_summary", "recommendation_rationale", "cascade_affected"):
-                        if key in model_json:
-                            narrative[key] = model_json[key]
-                except (json.JSONDecodeError, ValueError):
-                    pass
+            # Real cascade count (grounded) — never invented by the model.
+            try:
+                cascade = await _get_cascade_impact_impl(
+                    supplier_id, float(authoritative.get("overall_score") or 0.5), self.db
+                )
+                cascade_affected = int(cascade.get("total_affected", 0))
+            except Exception:
+                cascade_affected = 0
+
+            key_factors_summary = ""
+            recommendation_rationale = ""
+            if bedrock.is_available:
+                factors = authoritative.get("factors", {})
+                factor_lines = ", ".join(
+                    f"{k.replace('_', ' ')}: "
+                    f"{(v.get('value', 0) if isinstance(v, dict) else v):.0%}"
+                    for k, v in factors.items()
+                )
+                prompt = (
+                    f"Summarise the supply-chain risk for supplier "
+                    f"{authoritative.get('supplier_name', supplier_id)}.\n"
+                    f"Overall risk: {float(authoritative.get('overall_score') or 0):.0%} "
+                    f"({authoritative.get('risk_level')}).\n"
+                    f"Risk factors: {factor_lines}.\n"
+                    f"Downstream suppliers affected by cascade: {cascade_affected}.\n"
+                    f"Situation context: {context}.\n\n"
+                    "Return JSON with exactly: key_factors_summary (<=500 chars), "
+                    f"recommendation_rationale (<=400 chars), cascade_affected ({cascade_affected})."
+                )
+                validated = await bedrock.invoke_typed(
+                    _RISK_SYSTEM, prompt, RiskNarrative, repair_attempts=0
+                )
+                if validated is not None:
+                    nd = validated.model_dump()
+                    key_factors_summary = str(nd.get("key_factors_summary", ""))[:500]
+                    recommendation_rationale = str(nd.get("recommendation_rationale", ""))[:400]
 
             return {
                 # Authoritative fields — always from engine, never from model
@@ -456,14 +470,14 @@ class RiskAssessmentAgent:
                 "risk_level": authoritative.get("risk_level"),
                 "confidence": authoritative.get("confidence"),
                 "factors": authoritative.get("factors", {}),
-                # Narrative fields — from model (empty string if parsing failed)
-                "key_factors_summary": str(narrative.get("key_factors_summary", ""))[:500],
-                "recommendation_rationale": str(narrative.get("recommendation_rationale", ""))[:400],
-                "cascade_affected": int(narrative.get("cascade_affected", 0) or 0),
-                "source": "strands_engine_grounded",
+                # Narrative fields — single grounded AI call (empty if AI unavailable)
+                "key_factors_summary": key_factors_summary,
+                "recommendation_rationale": recommendation_rationale,
+                "cascade_affected": cascade_affected,
+                "source": "engine_grounded",
             }
         except Exception as exc:
-            logger.warning(f"RiskAssessmentAgent Strands call failed: {exc}")
+            logger.warning(f"RiskAssessmentAgent assess failed: {exc}")
             return {"error": str(exc), "status": "error"}
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1408,79 +1422,72 @@ class SupervisorAgent:
         else:
             logger.warning(f"  [2/5] ⚠️  Risk Assessment data unavailable — score suppressed to prevent fabricated recommendation")
 
-        # ── Step 3: Prescriptive Action (via parallel_execute) ──────────────
+        # ── Step 3: Prescriptive Action — ONE grounded recommender ──────────
+        # Uses the SAME recommender as the dashboard (procurement_agent.generate_action_card)
+        # so the supervisor and the read-time cards can never diverge. action_type
+        # is chosen by the canonical factor→action rule; ₹ exposure is recomputed
+        # by the engine (the event carries 0); narrative comes from the grounded
+        # AI card. Replaces the separate Strands PrescriptiveActionAgent loop.
         action_result = {}
+        # Real exposure used by BOTH the recommender AND the evidence package below,
+        # so the narrative's ₹ figures stay grounded (the event carries 0). If left
+        # at 0, grounding would reject the AI figures and the card would never persist.
+        card_exposure_inr = float(event.get("estimated_impact_inr") or 0)
         if supplier_id and subflow == "classify_risk_action":
             start = time.monotonic()
-            logger.info(f"  [3/5] 💡 Prescriptive Action Agent — generating recommendations...")
+            logger.info(f"  [3/5] 💡 Prescriptive Action — grounded recommendation...")
             try:
-                action_context = {
-                    "city": city,
-                    "state": state,
-                    "risk_score": risk_score,
-                    "risk_level": risk_level,
-                    "exposure_inr": event.get("estimated_impact_inr", 0),
-                    "days_to_stockout": event.get("days_to_stockout", 7),
-                    "sku_count": event.get("sku_count", 1),
-                    "disruption_context": f"{signal_event_type} in {signal_region}",
-                    "cascade_context": f"Cascade affected: {risk_result.get('cascade_affected', 0)} suppliers",
-                    "action_type": "switch_supplier" if signal_severity == "critical" else "reorder",
-                    "signal_event_type": signal_event_type,
-                    "signal_confidence": signal_confidence,
-                    "estimated_duration_days": signal_report.get("estimated_duration_days", 7),
-                }
-                action_tasks = [
-                    self.action_agent.recommend(
-                        supplier_id=supplier_id,
-                        supplier_name=supplier_name,
-                        context=action_context,
-                    )
-                ]
-                action_results = await parallel_execute(action_tasks)
-                # Extract the first (primary) result
-                if action_results and isinstance(action_results[0], dict):
-                    if action_results[0].get("status") == "blocked":
-                        logger.warning(f"Action recommendation blocked — fallback not approved")
-                        duration_ms = (time.monotonic() - start) * 1000
-                        pipeline_metadata.append({
-                            "agent": "prescriptive_action",
-                            "duration_ms": round(duration_ms, 2),
-                            "status": "blocked",
-                            "error": action_results[0].get("error", "Fallback not approved"),
-                        })
-                    elif action_results[0].get("status") == "error":
-                        logger.warning(f"Action recommendation returned error: {action_results[0].get('error')}")
-                        duration_ms = (time.monotonic() - start) * 1000
-                        pipeline_metadata.append({
-                            "agent": "prescriptive_action",
-                            "duration_ms": round(duration_ms, 2),
-                            "status": "error",
-                            "error": action_results[0].get("error"),
-                        })
-                        # Do not assign error dict to action_result — it has no authoritative recommendations.
-                    elif action_results[0].get("partial"):
-                        logger.warning(f"Action recommendation partial failure: {action_results[0].get('error')}")
-                        duration_ms = (time.monotonic() - start) * 1000
-                        pipeline_metadata.append({
-                            "agent": "prescriptive_action",
-                            "duration_ms": round(duration_ms, 2),
-                            "status": "partial_failure",
-                            "error": action_results[0].get("error"),
-                        })
-                    else:
-                        action_result = action_results[0]
-                        duration_ms = (time.monotonic() - start) * 1000
-                        pipeline_metadata.append({
-                            "agent": "prescriptive_action",
-                            "duration_ms": round(duration_ms, 2),
-                            "status": "success",
-                        })
+                from uuid import UUID as _UUID
+                from app.routers.action_cards import _action_type_from_factors
+                from app.services.risk_intelligence import RiskIntelligenceService
+
+                action_type = _action_type_from_factors(risk_result.get("factors", {}))
+
+                # Real exposure (event carries 0); deterministic, keeps ₹ grounded.
+                try:
+                    exp = await RiskIntelligenceService(self.db)._compute_supplier_exposure_by_id(_UUID(supplier_id))
+                    if exp:
+                        card_exposure_inr = exp.total_exposure_inr
+                except Exception:
+                    pass
+
+                card = await procurement_agent.generate_action_card(
+                    supplier_name=supplier_name,
+                    city=city,
+                    state=state,
+                    risk_score=risk_score,
+                    risk_level=risk_level,
+                    exposure_inr=card_exposure_inr,
+                    days_to_stockout=int(event.get("days_to_stockout", 7)),
+                    sku_count=int(event.get("sku_count", 1)),
+                    disruption_context=f"{signal_event_type} in {signal_region} (severity {signal_severity})",
+                    cascade_context=f"{risk_result.get('cascade_affected', 0)} downstream suppliers affected",
+                    action_type=action_type,
+                )
+                duration_ms = (time.monotonic() - start) * 1000
+                if card and card.get("ai_generated"):
+                    action_result = {
+                        "action_type": action_type,
+                        "title": card.get("title"),
+                        "description": card.get("executive_summary"),
+                        "reasoning": card.get("reasoning"),
+                        "urgency_narrative": card.get("urgency_narrative"),
+                        "recommended_action": card.get("recommended_action"),
+                        "alternate_supplier_rationale": card.get("alternate_supplier_rationale", ""),
+                    }
+                    pipeline_metadata.append({
+                        "agent": "prescriptive_action",
+                        "duration_ms": round(duration_ms, 2),
+                        "status": "success",
+                    })
                 else:
-                    duration_ms = (time.monotonic() - start) * 1000
+                    # AI unavailable — keep the rule-chosen action_type, no narrative.
+                    action_result = {"action_type": action_type}
                     pipeline_metadata.append({
                         "agent": "prescriptive_action",
                         "duration_ms": round(duration_ms, 2),
                         "status": "unavailable",
+                        "error": (card or {}).get("ai_error_reason", "no_card"),
                     })
             except Exception as exc:
                 duration_ms = (time.monotonic() - start) * 1000
@@ -1503,7 +1510,9 @@ class SupervisorAgent:
             supplier_name=supplier_name,
             risk_score=risk_score if risk_score_available else 0.0,
             risk_level=risk_level,
-            exposure_inr=float(event.get("estimated_impact_inr", 0)),
+            # Same real exposure the recommender saw, so the narrative's ₹ figures
+            # are grounded and the card actually passes the grounding check + persists.
+            exposure_inr=card_exposure_inr,
             days_to_stockout=int(event.get("days_to_stockout", 7)),
             sku_count=int(event.get("sku_count", 1)),
         )
@@ -1534,7 +1543,7 @@ class SupervisorAgent:
             "risk_score": risk_score if risk_score_available else None,
             "risk_score_available": risk_score_available,
             "confidence": confidence,
-            "estimated_impact_inr": event.get("estimated_impact_inr", 0),
+            "estimated_impact_inr": card_exposure_inr,
             "reasoning": action_result.get("reasoning", ""),
             "urgency_narrative": action_result.get("urgency_narrative", ""),
             "recommended_action": action_result.get("recommended_action", ""),
@@ -1635,6 +1644,20 @@ class SupervisorAgent:
                 f"{grounding_result.violations}"
             )
 
+        # ── Step 4d: Persist to the canonical action_cards table ────────────
+        # This is what makes the Strands pipeline actually feed the visible
+        # Pending Actions list (GET /actions reads these rows). Without it the
+        # whole pipeline only emitted an ephemeral SSE event. Dedup vs
+        # sync-risks: enrich the supplier's existing unresolved card if present,
+        # else create one. Guarded so it only runs with a real supplier + AI
+        # content that passed grounding; ₹ exposure is computed by the engine.
+        if supplier_id and action_card.get("ai_generated") and grounding_result.passed:
+            try:
+                await self._persist_action_card(supplier_id, action_card)
+                logger.info(f"  [4/5] 💾 Persisted AI action card to DB for {supplier_name}")
+            except Exception as exc:
+                logger.warning(f"  [4/5] action card persist failed: {exc}")
+
         # ── Step 5: Publish ActionCard to SSE stream ────────────────────────
         logger.info(f"  [5/5] 📡 Publishing ActionCard to SSE stream...")
         try:
@@ -1656,6 +1679,65 @@ class SupervisorAgent:
         logger.info(f"═══════════════════════════════════════════════════════════════")
 
         return action_card
+
+    async def _persist_action_card(self, supplier_id: str, card: dict) -> None:
+        """
+        Write the Supervisor's AI-generated card into the canonical action_cards
+        table so it shows up in Pending Actions / the dashboard.
+
+        - Enriches the supplier's existing unresolved card (dedup vs sync-risks),
+          else creates a new one.
+        - Financial exposure is recomputed by the deterministic engine — the
+          supervisor event itself carries ₹0, and ₹ figures must stay grounded.
+        - Best-effort cache busting so the next dashboard read reflects it.
+        """
+        from uuid import UUID
+        from sqlalchemy import select
+        from app.models.action_card import ActionCard
+        from app.services.risk_intelligence import RiskIntelligenceService
+
+        try:
+            sid = UUID(supplier_id)
+        except (ValueError, TypeError):
+            return
+
+        exposure = await RiskIntelligenceService(self.db)._compute_supplier_exposure_by_id(sid)
+        impact = exposure.total_exposure_inr if exposure else float(card.get("estimated_impact_inr") or 0)
+
+        existing = (await self.db.execute(
+            select(ActionCard).where(
+                ActionCard.supplier_id == sid,
+                ActionCard.is_resolved == False,
+            )
+        )).scalars().first()
+
+        if existing:
+            # Enrich the canonical card with the AI narrative + chosen action.
+            existing.title = card.get("title") or existing.title
+            existing.description = card.get("description") or existing.description
+            existing.action_type = card.get("action_type") or existing.action_type
+            existing.priority = card.get("priority") or existing.priority
+            if impact:
+                existing.estimated_impact_inr = impact
+        else:
+            self.db.add(ActionCard(
+                title=card.get("title", "Action required"),
+                description=card.get("description", ""),
+                action_type=card.get("action_type", "reorder"),
+                priority=card.get("priority", "high"),
+                supplier_id=sid,
+                estimated_impact_inr=impact,
+            ))
+        await self.db.commit()
+
+        # Bust caches so the next dashboard/risk read reflects the new card.
+        try:
+            from app.services.risk_intelligence import clear_risk_cache
+            clear_risk_cache()
+            from app.routers.procurement import _CACHE
+            _CACHE.pop("action_cards:rp1:fp1", None)
+        except Exception:
+            pass
 
     async def process_scenario(self, scenario_name: str, preset: dict) -> dict:
         """

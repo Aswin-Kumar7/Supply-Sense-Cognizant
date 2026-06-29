@@ -163,6 +163,71 @@ class ActionProposalNarrative(BaseModel):
     alternate_supplier_rationale: str = Field(default="", max_length=400)
 
 
+# ── Dynamic mitigation plan ───────────────────────────────────────────────────
+
+MitigationActionType = Literal[
+    "switch_supplier", "expedite", "increase_stock", "substitute_sku", "reorder"
+]
+
+
+class MitigationOptionNarrative(BaseModel):
+    """
+    One AI-proposed mitigation option, tailored to the specific supplier and
+    scenario. The model chooses WHICH actions are relevant and writes
+    scenario-specific copy; it never produces the rupee figures — the financial
+    engine costs each option after validation (the AI/deterministic boundary).
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    action_type: MitigationActionType
+    title: str = Field(max_length=120, description="Action-specific title for THIS scenario")
+    description: str = Field(max_length=500, description="What this action means for this supplier/products right now")
+    rationale: str = Field(max_length=500, description="Why this action fits this specific disruption/risk")
+    tradeoff: str = Field(max_length=300, description="What you give up by choosing this option")
+
+    @field_validator("title", "description", "rationale", "tradeoff", mode="before")
+    @classmethod
+    def strip_whitespace(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
+
+
+class MitigationPlanNarrative(BaseModel):
+    """
+    AI-generated mitigation plan for a single at-risk supplier.
+
+    The AI decides the option SET (a variable subset of the supported action
+    types — not a fixed 4) and which one to recommend. All ₹ figures are added
+    afterwards by financial_engine, never by the model.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    plan_summary: str = Field(max_length=700, description="2-3 sentence situation-specific plan overview")
+    recommended_action_type: MitigationActionType
+    options: list[MitigationOptionNarrative] = Field(min_length=2, max_length=5)
+
+    @field_validator("plan_summary", mode="before")
+    @classmethod
+    def strip_summary(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def dedupe_and_cap(cls, v: object) -> object:
+        # Keep first occurrence of each action_type, cap at 5 (defends against
+        # the model repeating the same action or stuffing the array).
+        if isinstance(v, list):
+            seen: set = set()
+            out: list = []
+            for item in v:
+                at = item.get("action_type") if isinstance(item, dict) else getattr(item, "action_type", None)
+                if at in seen:
+                    continue
+                seen.add(at)
+                out.append(item)
+            return out[:5]
+        return v
+
+
 # ── Disruption event classification ──────────────────────────────────────────
 
 DisruptionEventType = Literal["weather", "geopolitical", "logistics", "labor", "infrastructure"]

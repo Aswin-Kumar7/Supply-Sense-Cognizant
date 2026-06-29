@@ -304,8 +304,14 @@ async def get_analysis_provenance(
 
 @router.post("/cache/invalidate")
 async def invalidate_cache():
-    """Force-clear in-process and DB cache."""
+    """Force-clear in-process and DB cache (AI results + risk computation)."""
     _CACHE.clear()
+    # Also drop the all-supplier risk cache so a manual Refresh is fully fresh.
+    try:
+        from app.services.risk_intelligence import clear_risk_cache
+        clear_risk_cache()
+    except Exception:
+        pass
     async with AsyncSessionLocal() as session:
         await session.execute(delete(AnalysisCache))
         await session.commit()

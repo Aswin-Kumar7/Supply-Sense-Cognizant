@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { api } from '../services/api'
 
 const STORAGE_KEY_LAST_SYNC = 'ss_last_synced_at'
 const STORAGE_KEY_BUFFER    = 'ss_cache_buffer_ms'
@@ -45,6 +46,10 @@ interface GlobalSync {
 export function useGlobalSync(): GlobalSync {
   const queryClient = useQueryClient()
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(getLastSync)
+  // Cooldown is driven by the last *manual* refresh in this session — NOT by the
+  // initial mount. Otherwise the button sits disabled for 30s right after load,
+  // which feels broken.
+  const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null)
   const [cooldownRemaining, setCooldownRemaining] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [bufferMs, setBufferMsState] = useState(getBuffer)
@@ -57,13 +62,13 @@ export function useGlobalSync(): GlobalSync {
     return () => clearInterval(id)
   }, [])
 
-  // Cooldown countdown
+  // Cooldown countdown — based on the last manual refresh only
   useEffect(() => {
-    if (!lastSyncedAt) { setCooldownRemaining(0); return }
-    const elapsed = Date.now() - lastSyncedAt.getTime()
+    if (!lastRefreshAt) { setCooldownRemaining(0); return }
+    const elapsed = Date.now() - lastRefreshAt.getTime()
     const remaining = Math.max(0, cooldownMs - elapsed)
     setCooldownRemaining(Math.ceil(remaining / 1000))
-  }, [tick, lastSyncedAt, cooldownMs])
+  }, [tick, lastRefreshAt, cooldownMs])
 
   const canRefresh = cooldownRemaining === 0 && !isRefreshing
 
@@ -71,10 +76,15 @@ export function useGlobalSync(): GlobalSync {
     if (!canRefresh) return
     setIsRefreshing(true)
     try {
+      // 1. Drop the backend's warm AI cache so cards/brief actually regenerate.
+      //    Best-effort: a failure here must not block the data refresh below.
+      try { await api.invalidateProcurementCache() } catch { /* ignore */ }
+      // 2. Invalidate + refetch all active React Query data.
       await queryClient.invalidateQueries()
       await queryClient.refetchQueries({ type: 'active' })
       const now = new Date()
       setLastSyncedAt(now)
+      setLastRefreshAt(now)
       setLastSync(now)
     } finally {
       setIsRefreshing(false)

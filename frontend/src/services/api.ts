@@ -76,6 +76,11 @@ export const api = {
     request<IntelligentActionCard[]>(`/procurement/action-cards${ttlSeconds ? `?ttl_seconds=${ttlSeconds}` : ''}`),
   getExecutiveBrief: (ttlSeconds?: number) =>
     request<ExecutiveBrief>(`/procurement/executive-brief${ttlSeconds ? `?ttl_seconds=${ttlSeconds}` : ''}`),
+  // Force the backend to drop its warm AI cache so the next fetch regenerates.
+  // Without this, "Refresh" only clears the React Query cache while the backend
+  // keeps serving its 10-min cached AI result (the cards/brief never change).
+  invalidateProcurementCache: () =>
+    request<{ status: string }>('/procurement/cache/invalidate', { method: 'POST' }),
   // Chat
   sendChatMessage: (message: string, sessionId?: string | null) =>
     request<ChatResponse>('/chat', {

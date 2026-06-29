@@ -265,6 +265,10 @@ export interface MitigationOption {
   exposure_reduction_inr: number
   time_to_effect_days: number
   confidence: number
+  // AI-generated, scenario-specific fields (present when generation_mode === 'ai_generated')
+  title?: string | null
+  rationale?: string | null
+  tradeoff?: string | null
 }
 
 export interface MitigationSimulation {
@@ -278,6 +282,12 @@ export interface MitigationSimulation {
   risk_before: number
   risk_after: number
   options: MitigationOption[]
+  // AI plan metadata (present when the plan was AI-generated)
+  plan_summary?: string | null
+  recommended_action_type?: string | null
+  generation_mode?: 'ai_generated' | 'deterministic_fallback' | 'ai_unavailable' | null
+  ai_generated?: boolean
+  ai_error?: boolean
 }
 
 // ============ Procurement Intelligence ============
@@ -295,6 +305,9 @@ export interface IntelligentActionCard {
   days_to_stockout: number
   affected_skus: number
   action_type: string
+  // Always-present, grounded explanation of WHY this action_type was chosen
+  // (tied to the supplier's dominant risk signals) — for human validation.
+  action_rationale?: string | null
   priority: RiskLevel
   title?: string | null
   executive_summary?: string | null

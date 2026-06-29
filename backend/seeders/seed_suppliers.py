@@ -15,7 +15,7 @@ import uuid
 
 SUPPLIER_IDS = [
     uuid.UUID(f"00000000-0000-0000-0000-{str(i).zfill(12)}")
-    for i in range(1, 35)
+    for i in range(1, 41)
 ]
 
 SUPPLIERS = [
@@ -334,5 +334,74 @@ SUPPLIERS = [
         "category": "FMCG", "tier": 1,
         "reliability_score": 0.91, "lead_time_days": 5,
         "risk_zone": None, "latitude": 21.145, "longitude": 79.088,
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # TIER 2 — Logistics / Transport partner per Tier-1 vendor (indices 33–39)
+    # Gives every vendor a 3rd upstream dependency type (logistics) alongside
+    # packaging + raw material, for a more realistic supply graph.
+    # ────────────────────────────────────────────────────────────────────
+    # Vikas Home Care — logistics (West)
+    {
+        "id": SUPPLIER_IDS[33],
+        "name": "Konkan Cold Chain Logistics",
+        "city": "Bhiwandi", "state": "Maharashtra", "region": "West",
+        "category": "Logistics", "tier": 2,
+        "reliability_score": 0.85, "lead_time_days": 2,
+        "risk_zone": None, "latitude": 19.296, "longitude": 73.063,
+    },
+    # Dakshin Foods — logistics (South)
+    {
+        "id": SUPPLIER_IDS[34],
+        "name": "Madras Freight Carriers",
+        "city": "Chennai", "state": "Tamil Nadu", "region": "South",
+        "category": "Logistics", "tier": 2,
+        "reliability_score": 0.72, "lead_time_days": 3,
+        "risk_zone": "cyclone_coastal", "latitude": 13.082, "longitude": 80.270,
+    },
+    # Ganga Agri — logistics (East)
+    {
+        "id": SUPPLIER_IDS[35],
+        "name": "Bengal Riverline Transport",
+        "city": "Kolkata", "state": "West Bengal", "region": "East",
+        "category": "Logistics", "tier": 2,
+        "reliability_score": 0.69, "lead_time_days": 4,
+        "risk_zone": "flood_prone", "latitude": 22.572, "longitude": 88.363,
+    },
+    # Saurashtra Naturals — logistics (West)
+    {
+        "id": SUPPLIER_IDS[36],
+        "name": "Kandla Port Logistics",
+        "city": "Gandhidham", "state": "Gujarat", "region": "West",
+        "category": "Logistics", "tier": 2,
+        "reliability_score": 0.83, "lead_time_days": 3,
+        "risk_zone": "cyclone_coastal", "latitude": 23.075, "longitude": 70.133,
+    },
+    # Arya Consumer Brands — logistics (North)
+    {
+        "id": SUPPLIER_IDS[37],
+        "name": "Delhi NCR Roadways",
+        "city": "Gurugram", "state": "Haryana", "region": "North",
+        "category": "Logistics", "tier": 2,
+        "reliability_score": 0.74, "lead_time_days": 2,
+        "risk_zone": "strike_prone", "latitude": 28.459, "longitude": 77.026,
+    },
+    # Malabar Ayur — logistics (South)
+    {
+        "id": SUPPLIER_IDS[38],
+        "name": "Malabar Coast Carriers",
+        "city": "Kochi", "state": "Kerala", "region": "South",
+        "category": "Logistics", "tier": 2,
+        "reliability_score": 0.86, "lead_time_days": 4,
+        "risk_zone": "flood_prone", "latitude": 9.931, "longitude": 76.267,
+    },
+    # Narmada Dairy — logistics / cold chain (Central)
+    {
+        "id": SUPPLIER_IDS[39],
+        "name": "Malwa Express Cold Logistics",
+        "city": "Indore", "state": "Madhya Pradesh", "region": "Central",
+        "category": "Logistics", "tier": 2,
+        "reliability_score": 0.88, "lead_time_days": 2,
+        "risk_zone": None, "latitude": 22.719, "longitude": 75.857,
     },
 ]
