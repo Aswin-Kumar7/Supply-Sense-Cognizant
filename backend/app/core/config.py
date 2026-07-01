@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     bedrock_model_id: str = "amazon.nova-lite-v1:0"
     bedrock_max_tokens: int = 2048
     bedrock_temperature: float = 0.3
+    # Planning model — used only for the rare, high-stakes "design a fitted
+    # mitigation plan" call (model routing). Falls back to bedrock_model_id when
+    # unset, so the cheap workhorse model keeps handling narration/re-checks.
+    # Set this in .env to e.g. a Claude Sonnet/Opus id to upgrade plan quality
+    # without changing code; everything else stays on the cheap model.
+    bedrock_planning_model_id: Optional[str] = None
+    bedrock_planning_max_tokens: int = 3072
+    bedrock_planning_temperature: float = 0.4
     # Guardrail ID — optional. When set, attached to every Bedrock invocation.
     # Blocks: hallucinated supplier names, rupee figures not matching engine outputs,
     #         false certainty claims when confidence is low.

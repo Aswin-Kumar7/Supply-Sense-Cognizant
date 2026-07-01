@@ -4,7 +4,8 @@ What-If Chat endpoint.
 POST /api/v1/chat
 - Accepts a message + optional session_id
 - Keeps multi-turn context in a bounded in-process session store
-- Calls the Strands ConversationalAdvisorAgent (tool-using) from strands_agents.py
+- Calls the LangGraph tool-using advisor (falls back to the Strands advisor if the
+  LangGraph stack is unavailable)
 - Returns: answer, session_id, sources
 """
 
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.logging import logger
 from app.core.guardrails import sanitize_user_input, validate_ai_output
+from app.agents.langgraph_advisor import LangGraphAdvisor, LANGGRAPH_AVAILABLE
 from app.agents.strands_agents import ConversationalAdvisorAgent
 
 # Safe canned replies for guardrail-blocked turns (no LLM call made)
@@ -95,9 +97,10 @@ async def chat(
 
     logger.info(f"Chat [{session_id[:8]}]: {clean_message[:80]}")
 
-    # Call the Strands tool-using Conversational Advisor (snapshot history before
-    # appending this turn so the agent doesn't see the current question twice).
-    advisor = ConversationalAdvisorAgent(db)
+    # Prefer the LangGraph tool-using advisor; fall back to the Strands advisor if
+    # the LangGraph stack isn't installed. Snapshot history before appending this
+    # turn so the agent doesn't see the current question twice.
+    advisor = LangGraphAdvisor(db) if LANGGRAPH_AVAILABLE else ConversationalAdvisorAgent(db)
     result = await advisor.chat(
         message=clean_message, history=list(history), session_id=session_id
     )

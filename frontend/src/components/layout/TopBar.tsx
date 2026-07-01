@@ -171,7 +171,7 @@ export function TopBar() {
           textTransform: 'uppercase',
           letterSpacing: '0.06em' 
         }}>
-          by Cognizant
+          by Cipher
         </span>
       </div>
 

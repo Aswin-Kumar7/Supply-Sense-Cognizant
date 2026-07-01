@@ -72,11 +72,16 @@ class BedrockInference:
         user_prompt: str,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        model_id: str | None = None,
     ) -> str:
         """
         Invoke Bedrock model with structured prompts.
         Returns raw text response.
         Falls back to empty string if unavailable.
+
+        model_id overrides the default model for this single call — used for
+        model routing (e.g. a stronger planning model for plan design) while the
+        cheap default model keeps handling high-frequency narration.
         """
         if not self._available:
             try:
@@ -89,7 +94,7 @@ class BedrockInference:
         max_tokens = max_tokens or settings.bedrock_max_tokens
         temperature = temperature if temperature is not None else settings.bedrock_temperature
 
-        model_id = settings.bedrock_model_id
+        model_id = model_id or settings.bedrock_model_id
         is_nova = "nova" in model_id or model_id.startswith("amazon.")
 
         if is_nova:
@@ -180,6 +185,9 @@ class BedrockInference:
         user_prompt: str,
         response_model: type[T],
         repair_attempts: int = 1,
+        model_id: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> T | None:
         """
         Invoke Bedrock and validate the response against a Pydantic model.
@@ -203,7 +211,10 @@ class BedrockInference:
             "No markdown code fences, no explanation outside the JSON object."
         )
 
-        response_text = await self.invoke(system_prompt, user_prompt + _JSON_INSTRUCTION)
+        response_text = await self.invoke(
+            system_prompt, user_prompt + _JSON_INSTRUCTION,
+            max_tokens=max_tokens, temperature=temperature, model_id=model_id,
+        )
 
         if not response_text:
             return None
@@ -227,7 +238,10 @@ class BedrockInference:
                         f"Produce ONLY a JSON object with no surrounding text. "
                         f"Previous (broken) response: {raw[:400]}"
                     )
-                    current_text = await self.invoke(system_prompt, repair + _JSON_INSTRUCTION)
+                    current_text = await self.invoke(
+                        system_prompt, repair + _JSON_INSTRUCTION,
+                        max_tokens=max_tokens, temperature=temperature, model_id=model_id,
+                    )
                     continue
                 return None
 
@@ -246,7 +260,10 @@ class BedrockInference:
                         f"{errors[:3]}. "
                         f"Produce ONLY a corrected JSON object."
                     )
-                    current_text = await self.invoke(system_prompt, repair + _JSON_INSTRUCTION)
+                    current_text = await self.invoke(
+                        system_prompt, repair + _JSON_INSTRUCTION,
+                        max_tokens=max_tokens, temperature=temperature, model_id=model_id,
+                    )
                     continue
                 return None
 

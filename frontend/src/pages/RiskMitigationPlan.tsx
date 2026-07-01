@@ -869,17 +869,29 @@ export default function RiskMitigationPlan() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
               <ShieldCheck size={14} color="#4F46E5" />
               <span style={{ fontSize: '0.6875rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748B' }}>Why This Matters</span>
-              {card && <AiBadge mode={card.generation_mode} showLabel />}
+              {/* Source the badge from the SAME analysis that produced the recovery
+                  options (sim.plan_summary). The separate procurement action card
+                  (`card`) is a second, independent AI call that can fail on its own —
+                  reading it here caused the "AI OFFLINE" badge to contradict an
+                  AI-generated plan shown right beside it. Prefer the sim; fall back
+                  to the card only when the sim has no narrative. */}
+              {(sim?.generation_mode || card?.generation_mode) && (
+                <AiBadge mode={sim?.generation_mode || card!.generation_mode} showLabel />
+              )}
             </div>
-            {card?.executive_summary ? (
+            {sim?.plan_summary ? (
+              <p style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: '#334155', fontWeight: 500, margin: 0 }}>
+                {sim.plan_summary}
+              </p>
+            ) : card?.executive_summary ? (
               <p style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: '#334155', fontWeight: 500, margin: 0 }}>
                 {card.executive_summary}
               </p>
             ) : (
               <p style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: '#94A3B8', fontStyle: 'italic', margin: 0 }}>
-                {card?.ai_error
+                {(sim?.ai_error || card?.ai_error)
                   ? 'AI analysis unavailable — AWS Bedrock could not be reached. All financial figures above are computed from live DB data.'
-                  : card ? 'Awaiting AI analysis…' : 'Loading…'}
+                  : (sim || card) ? 'Awaiting AI analysis…' : 'Loading…'}
               </p>
             )}
           </div>

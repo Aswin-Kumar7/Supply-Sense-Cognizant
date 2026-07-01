@@ -22,17 +22,22 @@ from app.services.risk_engine import risk_engine, RiskBreakdown
 from app.services.cascade_engine import cascade_engine, CascadeResult
 from app.services.stockout_engine import stockout_engine, StockoutForecast, StockoutSummary
 from app.services.financial_engine import (
-    financial_engine, SupplierExposure, FinancialSummary, MitigationSimulation
+    financial_engine, SupplierExposure, FinancialSummary, MitigationSimulation,
+    MitigationScenario,
 )
 from app.core.event_bus import event_bus, SupplyChainEvent
 from app.core.logging import logger
 
 
 # In-process cache for AI mitigation plans, keyed by a content hash of the
-# scenario inputs. Same scenario → same plan (stable across reloads + fast),
-# until inputs change or the 10-min TTL lapses. { hash: (plan_dict, ts) }
+# scenario inputs. The hash IS the change-detector: identical inputs → the same
+# plan is returned without re-calling the model (the "design once, re-check only
+# when the situation changes" model the product wants). Any change to exposure,
+# risk, disruption, demand, products or the viable action set changes the hash
+# and triggers a fresh design. The TTL is only a long safety net against
+# unbounded staleness — not a re-compute timer. { hash: (plan_dict, ts) }
 _MITIGATION_AI_CACHE: dict[str, tuple] = {}
-_MITIGATION_AI_TTL = 600.0
+_MITIGATION_AI_TTL = 86400.0  # 24h safety net; inputs unchanged ⇒ reuse, don't re-call
 
 # Short-TTL cache for the all-supplier risk computation. compute_all_supplier_risks
 # is an N+1 (~6 Neon round-trips per supplier) called by the dashboard summary,
@@ -677,14 +682,92 @@ class RiskIntelligenceService:
 
         exposure = await self._compute_supplier_exposure(supplier)
         breakdown = await self._compute_single_supplier_risk(supplier)
+
+        # ── Gather the live situation FIRST so both the engine and the AI see
+        #    the same scenario (real alternate economics, demand spike, cover). ──
+        skus_q = await self.db.execute(select(SKU).where(SKU.supplier_id == supplier.id))
+        skus = skus_q.scalars().all()
+        products = [s.name for s in skus]
+
+        disruptions_q = await self.db.execute(
+            select(Disruption).where(
+                Disruption.supplier_id == supplier.id,
+                Disruption.is_active == True,
+            )
+        )
+        active = disruptions_q.scalars().all()
+        if active:
+            d = max(active, key=lambda x: x.impact_score or 0)
+            disruption_context = f"{d.disruption_type}: {d.title} (severity {d.severity})"
+            disruption_type_raw = d.disruption_type or ""
+        else:
+            disruption_context = "No active disruption — risk is from reliability/inventory signals"
+            disruption_type_raw = ""
+
+        # Top fired risk factors → human-readable signal list
+        factors = breakdown.factor_dict
+        def _fval(v):
+            return v.get("value", 0) if isinstance(v, dict) else (float(v) if v is not None else 0)
+        fired = sorted(
+            ((k, _fval(v)) for k, v in factors.items()), key=lambda kv: kv[1], reverse=True
+        )
+        risk_factors = ", ".join(
+            f"{k.replace('_', ' ')} ({val:.0%})" for k, val in fired if val > 0.3
+        ) or "multiple low-level signals"
+
+        # Alternates for this supplier's SKUs (real cost premium, lead time, quality)
+        alts: list[dict] = []
+        if skus:
+            alt_q = await self.db.execute(
+                select(AlternateSupplier, Supplier)
+                .join(Supplier, Supplier.id == AlternateSupplier.supplier_id)
+                .where(AlternateSupplier.sku_id.in_([s.id for s in skus]))
+            )
+            seen_alt: set = set()
+            for alt, alt_sup in alt_q.all():
+                if alt_sup.id in seen_alt:
+                    continue
+                seen_alt.add(alt_sup.id)
+                alts.append({
+                    "name": alt_sup.name,
+                    "city": alt_sup.city,
+                    "cost_premium_pct": alt.cost_premium_pct,   # whole percent in DB (e.g. 8.0 = 8%)
+                    "quality_score": alt.quality_score,
+                    "lead_time_days": alt.lead_time_days,
+                })
+
+        # Days of stock cover (proxy for days-to-stockout)
+        min_days = 30
+        for s in skus:
+            if s.daily_demand_avg:
+                min_days = min(min_days, int(s.current_stock / max(1, s.daily_demand_avg)))
+
+        # Demand spike from the festival calendar (1.0 = normal)
+        demand_multiplier = await self._get_festival_multiplier(supplier.category, supplier.region)
+
+        # Best real alternate = lowest cost premium on file
+        best_alt = min(alts, key=lambda a: a["cost_premium_pct"]) if alts else None
+
+        # ── Build the scenario and let the engine cost a situation-fit option set ──
+        scenario = MitigationScenario(
+            days_to_stockout=min_days,
+            inventory_cover_days=min_days,
+            has_alternate=bool(alts),
+            # DB stores premium as whole percent; engine wants a fraction.
+            alt_cost_premium_pct=(best_alt["cost_premium_pct"] / 100.0) if best_alt else 0.15,
+            alt_lead_time_days=int(best_alt["lead_time_days"]) if best_alt else supplier.lead_time_days,
+            alt_quality=float(best_alt["quality_score"]) if best_alt else 0.80,
+            demand_multiplier=demand_multiplier,
+            disruption_type=disruption_type_raw,
+        )
         simulation = financial_engine.simulate_mitigation(
             exposure, supplier.reliability_score, supplier.lead_time_days,
-            risk_score=breakdown.overall_score,
+            risk_score=breakdown.overall_score, scenario=scenario,
         )
 
         # Deterministic numbers per action_type — the single source of ₹ truth.
-        # "reorder" isn't an engine option, so synthesise it from increase_stock
-        # (both are replenishment) but a touch faster.
+        # The engine now emits "reorder" itself when the supplier is still
+        # operational; keep the synth only as a defensive fallback.
         number_map: dict[str, dict] = {
             o.action_type: {
                 "cost_inr": o.cost_inr,
@@ -729,62 +812,11 @@ class RiskIntelligenceService:
             "ai_error": False,
         }
 
-        # ── Gather scenario context for the AI ──────────────────────────────
-        skus_q = await self.db.execute(select(SKU).where(SKU.supplier_id == supplier.id))
-        skus = skus_q.scalars().all()
-        products = [s.name for s in skus]
-
-        disruptions_q = await self.db.execute(
-            select(Disruption).where(
-                Disruption.supplier_id == supplier.id,
-                Disruption.is_active == True,
-            )
-        )
-        active = disruptions_q.scalars().all()
-        if active:
-            d = max(active, key=lambda x: x.impact_score or 0)
-            disruption_context = f"{d.disruption_type}: {d.title} (severity {d.severity})"
-        else:
-            disruption_context = "No active disruption — risk is from reliability/inventory signals"
-
-        # Top fired risk factors → human-readable signal list
-        factors = breakdown.factor_dict
-        def _fval(v):
-            return v.get("value", 0) if isinstance(v, dict) else (float(v) if v is not None else 0)
-        fired = sorted(
-            ((k, _fval(v)) for k, v in factors.items()), key=lambda kv: kv[1], reverse=True
-        )
-        risk_factors = ", ".join(
-            f"{k.replace('_', ' ')} ({val:.0%})" for k, val in fired if val > 0.3
-        ) or "multiple low-level signals"
-
-        # Alternates for this supplier's SKUs (for switch_supplier feasibility)
-        alts: list[dict] = []
-        if skus:
-            alt_q = await self.db.execute(
-                select(AlternateSupplier, Supplier)
-                .join(Supplier, Supplier.id == AlternateSupplier.supplier_id)
-                .where(AlternateSupplier.sku_id.in_([s.id for s in skus]))
-            )
-            seen_alt: set = set()
-            for alt, alt_sup in alt_q.all():
-                if alt_sup.id in seen_alt:
-                    continue
-                seen_alt.add(alt_sup.id)
-                alts.append({
-                    "name": alt_sup.name,
-                    "city": alt_sup.city,
-                    "cost_premium_pct": alt.cost_premium_pct,
-                    "quality_score": alt.quality_score,
-                })
-
-        min_days = 30
-        # cheap days-to-stockout proxy from stock cover
-        for s in skus:
-            if s.daily_demand_avg:
-                min_days = min(min_days, int(s.current_stock / max(1, s.daily_demand_avg)))
-
         # ── AI plan (cached by scenario content hash) ───────────────────────
+        # The AI may only choose from the action types the engine deemed viable
+        # for THIS scenario — so it can't recommend switching when there is no
+        # alternate, or reordering from a supplier whose site is down.
+        viable_action_types = list(number_map.keys())
         ai_plan = await self._get_ai_mitigation_plan(
             supplier=supplier,
             exposure_inr=exposure.total_exposure_inr,
@@ -795,6 +827,9 @@ class RiskIntelligenceService:
             disruption_context=disruption_context,
             risk_factors=risk_factors,
             alternates=alts,
+            demand_multiplier=demand_multiplier,
+            inventory_cover_days=min_days,
+            viable_action_types=viable_action_types,
         )
 
         if not ai_plan:
@@ -847,8 +882,19 @@ class RiskIntelligenceService:
     async def _get_ai_mitigation_plan(
         self, supplier, exposure_inr, risk_score, risk_level, days_to_stockout,
         products, disruption_context, risk_factors, alternates,
+        demand_multiplier: float = 1.0, inventory_cover_days: int = 30,
+        viable_action_types: list[str] | None = None,
     ) -> dict | None:
-        """Call the AI mitigation agent, cached by a hash of the scenario inputs."""
+        """
+        Call the AI mitigation agent, cached by a hash of the scenario inputs.
+
+        The hash includes every input that should change the plan (exposure,
+        risk, disruption, demand spike, products, alternates, the viable action
+        set). On a key hit we return the cached plan unconditionally within the
+        long safety TTL — i.e. we re-design ONLY when the situation actually
+        changes, not on a timer.
+        """
+        viable_action_types = viable_action_types or []
         key_src = "|".join([
             str(supplier.id),
             str(round(exposure_inr)),
@@ -857,6 +903,9 @@ class RiskIntelligenceService:
             risk_factors,
             ",".join(sorted(products)),
             ",".join(sorted(a["name"] for a in alternates)),
+            f"dm{round(demand_multiplier, 2)}",
+            f"cov{inventory_cover_days}",
+            ",".join(sorted(viable_action_types)),
         ])
         key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
 
@@ -878,6 +927,9 @@ class RiskIntelligenceService:
                 disruption_context=disruption_context,
                 risk_factors=risk_factors,
                 alternates=alternates,
+                demand_multiplier=demand_multiplier,
+                inventory_cover_days=inventory_cover_days,
+                viable_action_types=viable_action_types,
             )
         except Exception as exc:
             logger.warning(f"AI mitigation plan failed for {supplier.name}: {exc}")
