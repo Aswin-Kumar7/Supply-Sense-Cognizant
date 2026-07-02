@@ -41,8 +41,8 @@ export default function ExpediteOrdersPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: stockout } = useStockoutForecast()
-  const { data: suppliersData } = useSuppliers()
+  const { data: stockout, isLoading: stockoutLoading } = useStockoutForecast()
+  const { data: suppliersData, isLoading: suppliersLoading } = useSuppliers()
 
   const [contactPerson, setContactPerson]     = useState('')
   const [contactPhone, setContactPhone]       = useState('')
@@ -229,6 +229,18 @@ export default function ExpediteOrdersPage() {
             <ArrowLeft size={14} /> Back to Risks
           </button>
         </div>
+      </div>
+    )
+  }
+
+  // Loading buffer — wait for supplier + stockout data before rendering the form,
+  // so the user sees a spinner rather than an empty form with "—" placeholders.
+  if (suppliersLoading || stockoutLoading) {
+    return (
+      <div style={{ maxWidth: '1000px', margin: '0 auto', width: '100%', padding: '4rem 0', textAlign: 'center', color: '#64748B', fontFamily: "'Inter', sans-serif", fontSize: '0.9rem', fontWeight: 500 }}>
+        <div style={{ width: 28, height: 28, margin: '0 auto 14px', border: '3px solid #E2E8F0', borderTopColor: '#4F46E5', borderRadius: '50%', animation: 'expedite-spin 0.8s linear infinite' }} />
+        Loading expedite order details…
+        <style>{`@keyframes expedite-spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     )
   }

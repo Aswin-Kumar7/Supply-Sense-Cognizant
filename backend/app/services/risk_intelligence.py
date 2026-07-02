@@ -16,16 +16,12 @@ from app.core.database import AsyncSessionLocal
 from app.models.supplier import Supplier
 from app.models.sku import SKU, AlternateSupplier
 from app.models.disruption import Disruption
-from app.models.delivery import DeliveryRecord
-from app.models.festival import FestivalCalendar
 from app.services.risk_engine import risk_engine, RiskBreakdown
-from app.services.cascade_engine import cascade_engine, CascadeResult
-from app.services.stockout_engine import stockout_engine, StockoutForecast, StockoutSummary
+from app.services.cascade_engine import cascade_engine
+from app.services.stockout_engine import stockout_engine, StockoutSummary
 from app.services.financial_engine import (
-    financial_engine, SupplierExposure, FinancialSummary, MitigationSimulation,
-    MitigationScenario,
+    financial_engine, SupplierExposure, MitigationScenario,
 )
-from app.core.event_bus import event_bus, SupplyChainEvent
 from app.core.logging import logger
 
 

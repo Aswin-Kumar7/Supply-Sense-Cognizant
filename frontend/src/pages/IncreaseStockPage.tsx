@@ -44,8 +44,8 @@ export default function IncreaseStockPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: stockout } = useStockoutForecast()
-  const { data: suppliersData } = useSuppliers()
+  const { data: stockout, isLoading: stockoutLoading } = useStockoutForecast()
+  const { data: suppliersData, isLoading: suppliersLoading } = useSuppliers()
 
   const [bufferDays, setBufferDays]           = useState(30)
   const [customBuffer, setCustomBuffer]       = useState('')
@@ -288,6 +288,17 @@ export default function IncreaseStockPage() {
             <ArrowLeft size={14} /> Back to Risks
           </button>
         </div>
+      </div>
+    )
+  }
+
+  // Loading buffer — wait for supplier + stockout data before rendering the form.
+  if (suppliersLoading || stockoutLoading) {
+    return (
+      <div style={{ maxWidth: '1000px', margin: '0 auto', width: '100%', padding: '4rem 0', textAlign: 'center', color: '#64748B', fontFamily: "'Inter', sans-serif", fontSize: '0.9rem', fontWeight: 500 }}>
+        <div style={{ width: 28, height: 28, margin: '0 auto 14px', border: '3px solid #E2E8F0', borderTopColor: '#4F46E5', borderRadius: '50%', animation: 'stock-spin 0.8s linear infinite' }} />
+        Loading stock order details…
+        <style>{`@keyframes stock-spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     )
   }

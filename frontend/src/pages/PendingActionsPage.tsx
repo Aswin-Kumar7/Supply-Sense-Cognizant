@@ -67,7 +67,11 @@ function ActionCard({ risk, card }: { risk: SupplierRiskAnalysis; card: Intellig
             </p>
           ) : (
             <p style={{ fontSize: '0.8125rem', color: '#94A3B8', lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>
-              {card.ai_error ? 'AI analysis unavailable — check AWS Bedrock connectivity' : 'Awaiting AI analysis'}
+              {card.ai_error
+                ? 'AI unavailable — AWS Bedrock unreachable'
+                : card.generation_mode === 'deterministic_fallback'
+                ? 'Computed from live data — AI narrative not generated'
+                : 'Awaiting AI analysis…'}
             </p>
           )}
         </div>

@@ -25,10 +25,6 @@ Why AI here:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
-
 from app.core.bedrock import bedrock
 from app.core.logging import logger
 from app.schemas.ai_contracts import (
@@ -37,7 +33,7 @@ from app.schemas.ai_contracts import (
     AlternateSupplierNarrative,
     MitigationPlanNarrative,
 )
-from app.core.evidence import build_evidence_package, validate_grounding, EvidencePackage
+from app.core.evidence import build_evidence_package, validate_grounding
 
 
 # ============ SYSTEM PROMPT ============
@@ -179,8 +175,16 @@ Generate a JSON response with ONLY these fields:
 }}}}""".format(data_open=_DATA_OPEN, data_close=_DATA_CLOSE)
 
 
-def _ai_unavailable_action_card(reason: str = "bedrock_unavailable") -> dict:
-    """Marker returned when AI is genuinely unavailable — no fabricated text."""
+def _ai_unavailable_action_card(reason: str = "bedrock_unavailable", offline: bool = True) -> dict:
+    """Marker returned when no AI narrative is produced — no fabricated text.
+
+    Two distinct meanings, so the UI stays consistent app-wide:
+      offline=True  → Bedrock is genuinely unreachable  → "AI OFFLINE" everywhere.
+      offline=False → Bedrock is UP but this item fell back to the deterministic
+                      engine (e.g. grounding/validation failed) → "DETERMINISTIC",
+                      NOT offline. This is what stops one card showing "AI OFFLINE"
+                      while the chatbot / mitigation on the same screen work fine.
+    """
     return {
         "title": None,
         "executive_summary": None,
@@ -190,22 +194,23 @@ def _ai_unavailable_action_card(reason: str = "bedrock_unavailable") -> dict:
         "recommended_action": None,
         "escalation_window": None,
         "alternate_supplier_rationale": None,
-        "generation_mode": "ai_unavailable",
+        "generation_mode": "ai_unavailable" if offline else "deterministic_fallback",
         "ai_generated": False,
-        "ai_error": True,
+        "ai_error": offline,
         "ai_error_reason": reason,
     }
 
 
-def _ai_unavailable_executive_brief(reason: str = "bedrock_unavailable") -> dict:
-    """Marker returned when AI is unavailable for the executive brief."""
+def _ai_unavailable_executive_brief(reason: str = "bedrock_unavailable", offline: bool = True) -> dict:
+    """Marker for the executive brief. See _ai_unavailable_action_card for the
+    offline vs deterministic-fallback distinction."""
     return {
         "summary": None,
         "top_risks": [],
         "immediate_actions": [],
-        "generation_mode": "ai_unavailable",
+        "generation_mode": "ai_unavailable" if offline else "deterministic_fallback",
         "ai_generated": False,
-        "ai_error": True,
+        "ai_error": offline,
         "ai_error_reason": reason,
     }
 
@@ -284,11 +289,12 @@ class ProcurementIntelligenceAgent:
                     evidence,
                 )
                 if not grounding.passed:
+                    # Bedrock IS up — this is a safety fallback, not an outage.
                     logger.warning(
                         f"Grounding violations in action card for {supplier_name}: "
                         f"{grounding.violations}"
                     )
-                    marker = _ai_unavailable_action_card("grounding_violation")
+                    marker = _ai_unavailable_action_card("grounding_violation", offline=False)
                     marker["evidence_snapshot_id"] = evidence.snapshot_id
                     return marker
                 else:
@@ -299,9 +305,14 @@ class ProcurementIntelligenceAgent:
                     result["ai_error"] = False
                     return result
 
-        # Bedrock unavailable — return explicit error marker, no fabricated text
-        logger.warning(f"Bedrock unavailable for action card: {supplier_name}")
-        marker = _ai_unavailable_action_card("bedrock_unavailable")
+        # No usable narrative. Distinguish a genuine outage (Bedrock unreachable →
+        # "AI OFFLINE") from Bedrock being up but returning unusable output
+        # (validation/parse failed → deterministic fallback, NOT offline). This
+        # keeps the AI status consistent across the whole app.
+        offline = not bedrock.is_available
+        reason = "bedrock_unavailable" if offline else "ai_output_unusable"
+        logger.warning(f"Action card fell back for {supplier_name} (reason={reason})")
+        marker = _ai_unavailable_action_card(reason, offline=offline)
         marker["evidence_snapshot_id"] = evidence.snapshot_id
         return marker
 
@@ -464,7 +475,6 @@ class ProcurementIntelligenceAgent:
             if validated is not None:
                 result = validated.model_dump()
                 # Grounding check against total_exposure
-                evidence_amounts = [total_exposure]
                 grounding = validate_grounding(
                     {"summary": result.get("summary", "")},
                     build_evidence_package(
@@ -483,11 +493,15 @@ class ProcurementIntelligenceAgent:
                     result["ai_generated"] = True
                     result["ai_error"] = False
                     return result
+                # Bedrock is up — grounding fallback, not an outage.
                 logger.warning(f"Executive brief grounding violations: {grounding.violations}")
-                return _ai_unavailable_executive_brief("grounding_violation")
+                return _ai_unavailable_executive_brief("grounding_violation", offline=False)
+            # Bedrock up but no valid output → deterministic fallback, not offline.
+            logger.warning("Executive brief AI output unusable — deterministic fallback")
+            return _ai_unavailable_executive_brief("ai_output_unusable", offline=False)
 
         logger.warning("Bedrock unavailable for executive brief")
-        return _ai_unavailable_executive_brief("bedrock_unavailable")
+        return _ai_unavailable_executive_brief("bedrock_unavailable", offline=True)
 
     async def evaluate_alternate_suppliers(
         self,

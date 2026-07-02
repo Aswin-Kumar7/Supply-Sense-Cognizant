@@ -408,7 +408,11 @@ export default function RiskDetailPage() {
                         <p style={{ fontSize: '0.875rem', color: '#475569', lineHeight: 1.6, margin: 0 }}>{card.reasoning}</p>
                       ) : (
                         <p style={{ fontSize: '0.875rem', color: '#94A3B8', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
-                          {card.ai_error ? 'AI narrative unavailable — AWS Bedrock unreachable.' : 'Awaiting AI analysis…'}
+                          {card.ai_error
+                            ? 'AI unavailable — AWS Bedrock unreachable.'
+                            : card.generation_mode === 'deterministic_fallback'
+                            ? 'Computed from live data — AI narrative not generated.'
+                            : 'Awaiting AI analysis…'}
                         </p>
                       )}
 

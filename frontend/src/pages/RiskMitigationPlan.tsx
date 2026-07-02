@@ -890,7 +890,9 @@ export default function RiskMitigationPlan() {
             ) : (
               <p style={{ fontSize: '0.8125rem', lineHeight: 1.6, color: '#94A3B8', fontStyle: 'italic', margin: 0 }}>
                 {(sim?.ai_error || card?.ai_error)
-                  ? 'AI analysis unavailable — AWS Bedrock could not be reached. All financial figures above are computed from live DB data.'
+                  ? 'AI unavailable — AWS Bedrock could not be reached. All financial figures above are computed from live DB data.'
+                  : (sim?.generation_mode === 'deterministic_fallback' || card?.generation_mode === 'deterministic_fallback')
+                  ? 'Computed from live data — AI narrative not generated. Financial figures above are exact.'
                   : (sim || card) ? 'Awaiting AI analysis…' : 'Loading…'}
               </p>
             )}
