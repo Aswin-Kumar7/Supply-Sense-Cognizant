@@ -1,19 +1,19 @@
-import { useMemo, useState, useCallback, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  useDashboardSummary,
-  useSuppliers,
-  useDisruptions,
-  useFinancialSummary,
-  useStockoutForecast,
-  useActionCards,
-  useProcurementCards,
-  useWeightedRiskAnalysis,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell
+} from 'recharts'
+import {
+  useDisruptions, useStockoutForecast,
+  useActionCards, useProcurementCards, useWeightedRiskAnalysis,
 } from '../hooks/useQueries'
-import { IndiaMap } from '../components/ui/IndiaMap'
-import { Badge } from '../components/ui/Badge'
-import { api } from '../services/api'
-import type { SupplierRiskAnalysis, Disruption, ActionCard, IntelligentActionCard, ExecutiveBrief } from '../types'
+import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
+import {
+  AlertTriangle, TrendingDown, Shield,
+  Package, Activity, ChevronRight,
+} from 'lucide-react'
+import { AiBadge } from '../components/ui/AiBadge'
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 function formatINR(n: number) {
@@ -23,1011 +23,910 @@ function formatINR(n: number) {
   return `₹${n.toFixed(0)}`
 }
 
-function Skeleton({ w = '100%', h = 20 }: { w?: string | number; h?: number }) {
-  return <div className="skeleton" style={{ width: w, height: h, borderRadius: 6 }} />
+function getTopFactor(factors: SupplierRiskAnalysis['factors']): string {
+  if (!factors) return ''
+  return Object.entries(factors).sort(([, a], [, b]) => b.weighted - a.weighted)[0]?.[0] ?? ''
 }
 
-/* ── Critical Alert Banner ───────────────────────────────────────────── */
-function CriticalAlertBanner({ count, topRisk, onView }: {
-  count: number
-  topRisk: SupplierRiskAnalysis | null
-  onView: () => void
+const FACTOR_LABEL: Record<string, string> = {
+  disruption_severity: 'Active disruption affecting supply',
+  inventory_pressure: 'Stock levels critically low',
+  delivery_reliability: 'Delivery delays reported',
+  logistics_vulnerability: 'Logistics risk elevated',
+  dependency_exposure: 'Heavy dependency on this supplier',
+  festival_proximity: 'Demand spike — festival season',
+}
+
+function getReason(risk: SupplierRiskAnalysis, card: IntelligentActionCard): string {
+  if (card.days_to_stockout <= 3) return `Stock runs out in ${card.days_to_stockout} days`
+  if (card.days_to_stockout <= 7) return `Only ${card.days_to_stockout} days of stock left`
+  return FACTOR_LABEL[getTopFactor(risk.factors)] ?? card.title ?? 'Elevated supply risk'
+}
+
+
+const CSS = `
+  @keyframes dash-fade-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
+  @keyframes dash-pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.3 } }
+  @keyframes dash-shimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+  @keyframes beacon-glow {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.75); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  }
+  .alert-beacon {
+    display: inline-block;
+    border-radius: 50%;
+    animation: beacon-glow 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+  .dash-skeleton {
+    background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+    background-size: 200% 100%;
+    animation: dash-shimmer 1.6s ease-in-out infinite;
+    border-radius: 6px;
+  }
+  .dash-hover:hover { background: rgba(248, 250, 252, 0.6) !important; }
+  .dash-item-hover {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid transparent;
+  }
+  .dash-item-hover:hover {
+    background: #FFFFFF !important;
+    border-color: #E2E8F0 !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03) !important;
+    transform: translateX(4px);
+  }
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line { stroke: #F1F5F9 !important; }
+
+  @keyframes ticker-slide {
+    0% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(-33.3333%, 0, 0); }
+  }
+  .ticker-container {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    width: 100%;
+    position: relative;
+    mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+  }
+  .ticker-track {
+    display: inline-flex;
+    white-space: nowrap;
+    animation: ticker-slide 54s linear infinite;
+  }
+  .ticker-track:hover {
+    animation-play-state: paused;
+  }
+`
+
+function Skeleton({ w = '100%', h = 20 }: { w?: string | number; h?: number }) {
+  return <div className="dash-skeleton" style={{ width: w, height: h }} />
+}
+
+function Num({ children, size = '2rem', color = '#0F172A' }: { children: React.ReactNode; size?: string; color?: string }) {
+  return (
+    <span style={{
+      fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 800, fontSize: size, color,
+      letterSpacing: '-0.03em', lineHeight: 1, fontVariantNumeric: 'tabular-nums',
+    }}>{children}</span>
+  )
+}
+
+function Card({ children, style, hover }: { children: React.ReactNode; style?: React.CSSProperties; hover?: boolean }) {
+  return (
+    <div
+      style={{
+        background: '#FFFFFF',
+        border: 'none',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.02)',
+        transition: 'all 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+        ...style,
+      }}
+      onMouseEnter={e => {
+        if (hover) {
+          e.currentTarget.style.transform = 'translateY(-2px)'
+          e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.06)'
+        }
+      }}
+      onMouseLeave={e => {
+        if (hover) {
+          e.currentTarget.style.transform = 'translateY(0)'
+          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.02)'
+        }
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+function CardHeader({ title, sub, right }: { title: string; sub?: string; right?: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid #F1F5F9' }}>
+      <div>
+        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{title}</div>
+        {sub && <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  )
+}
+
+function ViewAllBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748B', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px' }}>
+      View all <ChevronRight size={12} />
+    </button>
+  )
+}
+
+/* ── Page Header ─────────────────────────────────────────────────────── */
+function DashboardHeader({
+  exposure,
+  riskCount,
+  totalSuppliers,
+  loading,
+  criticalSuppliers,
+  highSuppliers
+}: {
+  exposure: number;
+  riskCount: number;
+  totalSuppliers: number;
+  loading: boolean;
+  criticalSuppliers: number;
+  highSuppliers: number;
 }) {
-  const [dismissed, setDismissed] = useState(false)
-  if (count === 0 || dismissed) return null
+  const navigate = useNavigate()
+  const date = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+
+  const totalCritical = criticalSuppliers + highSuppliers
+
+  let titleText = ""
+
+  if (criticalSuppliers > 0 && highSuppliers > 0) {
+    titleText = `${criticalSuppliers} critical · ${highSuppliers} high risk suppliers`
+  } else if (criticalSuppliers > 0) {
+    titleText = `${criticalSuppliers} critical supplier${criticalSuppliers > 1 ? 's' : ''} at risk`
+  } else if (highSuppliers > 0) {
+    titleText = `${highSuppliers} high risk supplier${highSuppliers > 1 ? 's' : ''} detected`
+  }
 
   return (
     <div style={{
-      background: '#FEF2F2',
-      border: '1px solid #FCA5A5',
-      borderRadius: '0.75rem',
-      padding: '0.875rem 1.25rem',
       display: 'flex',
+      justifyContent: 'space-between',
       alignItems: 'center',
-      gap: '1rem',
-      boxShadow: 'var(--shadow-sm)',
-      animation: 'slideDown 300ms cubic-bezier(0.16,1,0.3,1)',
+      borderBottom: '1px solid #F1F5F9',
+      paddingBottom: '24px',
+      marginBottom: '12px',
+      animation: 'dash-fade-in 0.25s ease-out',
+      flexWrap: 'wrap',
+      gap: '16px'
     }}>
-      {/* Pulse dot */}
-      <div style={{ position: 'relative', flexShrink: 0 }}>
-        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#EF4444' }} />
-        <div style={{
-          position: 'absolute', inset: '-4px',
-          borderRadius: '50%', border: '2px solid #EF4444',
-          animation: 'pulse 1.5s ease-in-out infinite',
-          opacity: 0.4,
-        }} />
-      </div>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#991B1B' }}>
-          🚨 {count} Critical Supply Chain Issue{count !== 1 ? 's' : ''} Require Immediate Attention
-        </div>
-        {topRisk && (
-          <div style={{ fontSize: '0.75rem', color: '#B91C1C', marginTop: '2px' }}>
-            Highest risk: <strong style={{ color: '#DC2626' }}>{topRisk.supplier_name}</strong> —{' '}
-            {(topRisk.overall_score * 100).toFixed(0)}% risk score
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-        <button
-          onClick={onView}
-          style={{
-            padding: '0.5rem 1rem',
-            background: '#FFFFFF',
-            color: '#DC2626',
-            borderRadius: '0.5rem',
-            border: '1px solid #FCA5A5',
-            cursor: 'pointer',
-            fontSize: '0.8125rem',
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          <span style={{
+            fontSize: '0.625rem',
             fontWeight: 700,
-            fontFamily: 'inherit',
-            transition: 'background 150ms',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = '#FEF2F2'}
-          onMouseLeave={e => e.currentTarget.style.background = '#FFFFFF'}
-        >
-          View Critical Issues
-        </button>
-        <button
-          onClick={() => setDismissed(true)}
-          style={{
-            padding: '0.5rem',
-            background: 'transparent',
-            color: '#F87171',
-            borderRadius: '0.5rem',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            fontFamily: 'inherit',
-            lineHeight: 1,
-            transition: 'color 150ms',
-          }}
-          onMouseEnter={e => e.currentTarget.style.color = '#DC2626'}
-          onMouseLeave={e => e.currentTarget.style.color = '#F87171'}
-          title="Dismiss"
-        >
-          ×
-        </button>
+            color: '#4F46E5',
+            background: '#EEF2FF',
+            padding: '4px 10px',
+            borderRadius: '20px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em'
+          }}>
+            Supply Chain Command
+          </span>
+          <span style={{ fontSize: '0.75rem', color: '#E2E8F0' }}>•</span>
+          <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>{date}</span>
+        </div>
+        <h1 style={{
+          fontSize: '2rem',
+          fontWeight: 800,
+          color: '#0F172A',
+          letterSpacing: '-0.04em',
+          margin: 0,
+          lineHeight: 1.15
+        }}>
+          Operational Overview
+        </h1>
+        <p style={{
+          fontSize: '0.875rem',
+          color: '#64748B',
+          fontWeight: 400,
+          marginTop: '8px',
+          marginBottom: 0,
+          lineHeight: 1.6
+        }}>
+          {loading ? 'Analyzing supply network pathways...' :
+            riskCount === 0 ? `Monitoring ${totalSuppliers} active supply paths. All nodes stable.` :
+              <span>Monitoring <strong style={{ color: '#0F172A', fontWeight: 600 }}>{totalSuppliers}</strong> active paths. <strong style={{ color: '#EF4444', fontWeight: 600 }}>{riskCount}</strong> supplier{riskCount > 1 ? 's require' : ' requires'} attention — <strong style={{ color: '#0F172A', fontWeight: 600 }}>{formatINR(exposure)}</strong> at risk.</span>
+          }
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: '16px', flexShrink: 0 }}>
+        {(!loading && totalCritical > 0) ? (
+          <div
+            onClick={() => navigate('/risks')}
+            style={{
+              background: '#FFF5F5',
+              border: '1px solid #FEE2E2',
+              borderRadius: '10px',
+              padding: '10px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(239, 68, 68, 0.03)',
+              transition: 'all 150ms ease',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = '#FCA5A5'
+              e.currentTarget.style.background = '#FFEAEA'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = '#FEE2E2'
+              e.currentTarget.style.background = '#FFF5F5'
+            }}
+          >
+            {/* Pulsing indicator & label */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <span
+                className="alert-beacon"
+                style={{
+                  width: 6,
+                  height: 6,
+                  background: '#EF4444',
+                }}
+              />
+              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Risk Alert
+              </span>
+            </div>
+
+            <div style={{ width: '1px', height: '16px', background: '#FCA5A5', flexShrink: 0 }} />
+
+            {/* Single line description */}
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#7F1D1D', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+              {titleText}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )
 }
 
-/* ── Board Brief Modal ───────────────────────────────────────────────── */
-function BoardBriefModal({ onClose }: { onClose: () => void }) {
-  const [brief, setBrief] = useState<ExecutiveBrief | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const fetchBrief = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const result = await api.getExecutiveBrief()
-      setBrief(result)
-    } catch {
-      setError('Unable to generate board brief. Please check backend connectivity.')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  // Fetch on mount
-  useEffect(() => { fetchBrief() }, [])
+/* ── Alert Banner ────────────────────────────────────────────────────── */
+function AlertBanner({ disruptions }: { disruptions: any[] }) {
+  const navigate = useNavigate()
+  const active = disruptions.filter(d => d.is_active && d.severity !== 'low')
+  if (active.length === 0) return null
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000,
-      background: 'rgba(0,0,0,0.5)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '1.5rem',
-    }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      padding: '10px 16px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '16px',
+      background: '#F8FAFC',
+      border: '1px solid #E2E8F0',
+      borderRadius: '12px',
+      overflow: 'hidden'
+    }}>
+      {/* Pinned left title label */}
       <div style={{
-        background: 'var(--bg-card)',
-        borderRadius: '1rem',
-        width: '100%',
-        maxWidth: '640px',
-        maxHeight: '80vh',
-        overflow: 'auto',
-        boxShadow: '0 25px 60px rgba(0,0,0,0.25)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        flexShrink: 0,
+        paddingRight: '16px',
+        borderRight: '1px solid #E2E8F0',
+        zIndex: 5
       }}>
-        {/* Header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '1.25rem 1.5rem',
-          borderBottom: '1px solid #E2E8F0',
-          position: 'sticky', top: 0, background: '#fff', zIndex: 1,
+        <span style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: '#EF4444',
+          animation: 'dash-pulse 2.5s ease-in-out infinite',
+          boxShadow: '0 0 8px rgba(239, 68, 68, 0.6)'
+        }} />
+        <span style={{
+          fontSize: '0.7rem',
+          fontWeight: 800,
+          color: '#EF4444',
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em'
         }}>
-          <div>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: 800, color: 'var(--ink-1)' }}>Board Brief</h2>
-            <p style={{ fontSize: '0.75rem', color: 'var(--ink-3)', marginTop: '2px' }}>
-              AI-generated executive summary · AWS Strands Agents
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              onClick={() => window.print()}
-              style={{
-                padding: '0.5rem 0.875rem',
-                background: 'var(--border-strong)', color: 'var(--ink-2)',
-                borderRadius: '0.5rem', border: 'none', cursor: 'pointer',
-                fontSize: '0.75rem', fontWeight: 600, fontFamily: 'inherit',
-              }}
-            >
-              🖨️ Print
-            </button>
-            <button
-              onClick={onClose}
-              style={{
-                padding: '0.5rem 0.75rem',
-                background: 'var(--border-strong)', color: 'var(--ink-3)',
-                borderRadius: '0.5rem', border: 'none', cursor: 'pointer',
-                fontSize: '0.875rem', fontFamily: 'inherit',
-              }}
-            >
-              ×
-            </button>
+          Live Alerts
+        </span>
+      </div>
+
+      {/* Scrolling ticker track */}
+      <div className="ticker-container">
+        <div className="ticker-track">
+          {/* We repeat active items list 3 times for a perfect seamless CSS infinite loop */}
+          {[...active, ...active, ...active].map((item, i) => {
+            return (
+              <span
+                key={i}
+                onClick={() => navigate('/disruptions')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  transition: 'opacity 150ms ease',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.opacity = '0.7'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.opacity = '1'
+                }}
+              >
+                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1E293B' }}>{item.title}</span>
+                {item.region && (
+                  <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 400 }}>
+                    ({item.region})
+                  </span>
+                )}
+                {/* Dot divider after each item */}
+                <span style={{ margin: '0 20px', color: '#FCA5A5', fontWeight: 700 }}>•</span>
+              </span>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Mitigation Graph ──────────────────────────────────────────────────── */
+function MitigationGraph({ totalSaved, resolvedCards }: { totalSaved: number, resolvedCards: any[] }) {
+  const [timeRange, setTimeRange] = useState<'1D' | '1W' | '1M' | '1Y'>('1M')
+
+  const xAxisInterval = useMemo(() => {
+    if (timeRange === '1W') return 0
+    if (timeRange === '1D') return 3 // Show every 4th hour
+    if (timeRange === '1M') return 5 // Show every 6th day
+    return 1 // For 1Y, show every 2nd month
+  }, [timeRange])
+
+  // Generate Google Finance style stock data
+  const chartData = useMemo(() => {
+    const points = timeRange === '1D' ? 24 : timeRange === '1W' ? 7 : timeRange === '1M' ? 30 : 12
+    const now = new Date()
+
+    // Generate actual historical data from DB resolved cards
+    const data = []
+
+    for (let i = points - 1; i >= 0; i--) {
+      let bucketEnd: number
+      let label: string
+
+      if (timeRange === '1D') {
+        const d = new Date(now.getTime() - i * 3600000)
+        label = `${d.getHours()}:00`
+        bucketEnd = d.getTime()
+      } else if (timeRange === '1W' || timeRange === '1M') {
+        const d = new Date(now.getTime() - i * 86400000)
+        label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+        bucketEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59).getTime()
+      } else {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        label = d.toLocaleDateString('en-IN', { month: 'short' })
+        bucketEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).getTime()
+      }
+
+      // Calculate cumulative savings strictly up to bucketEnd
+      const cumulativeSaved = resolvedCards
+        .filter((card: any) => new Date(card.resolved_at!).getTime() <= bucketEnd)
+        .reduce((sum, card: any) => sum + (card.estimated_impact_inr || 0), 0)
+
+      data.push({ label, saved: cumulativeSaved })
+    }
+
+    return data
+  }, [timeRange, resolvedCards])
+
+  const formatValue = (v: number) => {
+    if (v >= 10_000_000) return `₹${(v / 10_000_000).toFixed(2)}Cr`
+    if (v >= 100_000) return `₹${(v / 100_000).toFixed(2)}L`
+    if (v >= 1000) return `₹${(v / 1000).toFixed(0)}k`
+    return `₹${v.toFixed(0)}`
+  }
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.3s ease-out', padding: '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
+        <div>
+          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', marginBottom: '4px' }}>Money Saved</div>
+          <div style={{ fontSize: '1.625rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: 1 }}>
+            {formatValue(totalSaved)}
           </div>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {loading && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <Skeleton h={20} w="70%" />
-              <Skeleton h={80} />
-              <Skeleton h={20} w="60%" />
-              <Skeleton h={60} />
-              <Skeleton h={20} w="65%" />
-              <Skeleton h={60} />
-            </div>
-          )}
-          {error && (
-            <div style={{
-              padding: '1rem', background: '#FEF2F2', border: '1px solid #FECACA',
-              borderRadius: '0.625rem', fontSize: '0.875rem', color: '#DC2626',
-            }}>
-              {error}
-              <button onClick={fetchBrief} style={{ marginLeft: '0.75rem', fontSize: '0.8125rem', color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-                Retry →
-              </button>
-            </div>
-          )}
-          {brief && (
+        {/* View Selector */}
+        <div style={{ display: 'flex', gap: '2px', background: '#F1F5F9', padding: '2px', borderRadius: '6px' }}>
+          {(['1W', '1M', '1Y'] as const).map(range => (
+            <button
+              key={range}
+              onClick={() => setTimeRange(range)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '5px',
+                border: 'none',
+                background: timeRange === range ? '#FFFFFF' : 'transparent',
+                color: timeRange === range ? '#0F172A' : '#64748B',
+                fontWeight: 500,
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+                boxShadow: timeRange === range ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                transition: 'all 150ms ease'
+              }}
+            >
+              {range === '1W' ? 'Weekly' : range === '1M' ? 'Monthly' : 'Yearly'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ height: 300 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="colorSaved" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#38BDF8" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#38BDF8" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+            <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B', fontWeight: 500 }} dy={6}
+              interval={xAxisInterval} />
+            <YAxis domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748B', fontWeight: 500 }}
+              tickFormatter={v => formatValue(v)} dx={-4} width={45} />
+            <Tooltip
+              contentStyle={{ backgroundColor: '#FFFFFF', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 4px 16px rgba(15,23,42,0.08)' }}
+              itemStyle={{ color: '#0F172A', fontSize: '0.75rem', fontWeight: 600 }}
+              labelStyle={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 600, marginBottom: '4px' }}
+              formatter={(value: number) => [formatValue(value), 'Saved']}
+            />
+            <Area type="monotone" dataKey="saved" stroke="#38BDF8" strokeWidth={2.2} fill="url(#colorSaved)" dot={false} activeDot={{ r: 5, fill: '#38BDF8', stroke: '#FFFFFF', strokeWidth: 2 }} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  )
+}
+
+/* ── KPI Cards Helper ────────────────────────────────────────────────── */
+const mapKpiTheme = (lbl: string) => {
+  if (lbl.includes('Suppliers')) return { icon: AlertTriangle }
+  if (lbl.includes('exposure')) return { icon: TrendingDown }
+  if (lbl.includes('stockouts')) return { icon: Package }
+  return { icon: Activity }
+}
+
+/* ── KPI Cards ───────────────────────────────────────────────────────── */
+function KpiCard({ label, value, sub, progress, onClick, loading, delay = 0 }: {
+  label: string; value: string | number; sub: string; progress: number
+  onClick?: () => void; loading?: boolean; delay?: number
+}) {
+  const theme = mapKpiTheme(label)
+  const Icon = theme.icon
+
+  // Determine distinct colors per KPI card to make them visually distinct
+  let color = '#4F46E5' // Default indigo
+  if (label.toLowerCase().includes('supplier')) color = '#EF4444' // Soft Red for risk
+  else if (label.toLowerCase().includes('financial') || label.toLowerCase().includes('exposure')) color = '#F59E0B' // Soft Amber for exposure
+  else if (label.toLowerCase().includes('stockout')) color = '#EC4899' // Soft Pink/Rose for critical stockouts
+  else if (label.toLowerCase().includes('disruption')) color = '#3B82F6' // Soft Blue for active disruptions
+
+  return (
+    <Card hover={!!onClick} style={{
+      cursor: onClick ? 'pointer' : 'default',
+      animation: `dash-fade-in 0.3s ease-out ${delay}ms both`,
+      padding: '20px 24px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} onClick={onClick}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, marginBottom: '6px' }}>{label}</div>
+          {loading ? <Skeleton w="55%" h={28} /> : <Num size="1.875rem">{value}</Num>}
+          <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '6px', fontWeight: 400 }}>{sub}</div>
+        </div>
+        <Icon size={18} strokeWidth={1.5} style={{ color: color, flexShrink: 0, marginLeft: '12px', marginTop: '2px' }} />
+      </div>
+      {/* Dynamic progress bar detail */}
+      <div style={{ height: '4px', background: '#F1F5F9', borderRadius: '2px', marginTop: '14px', overflow: 'hidden' }}>
+        <div style={{
+          width: `${Math.min(100, Math.max(5, progress))}%`,
+          height: '100%',
+          background: color,
+          borderRadius: '2px',
+          transition: 'width 600ms cubic-bezier(0.16, 1, 0.3, 1)'
+        }} />
+      </div>
+    </Card>
+  )
+}
+
+/* ── Supplier Risk Distribution Chart ───────────────────────────────── */
+function SupplierRiskDistribution({ risks, cardMap, activeExposure, loading }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard>; activeExposure: number; loading: boolean }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+
+  const distribution = useMemo(() => {
+    const withExposure = risks.map(r => {
+      const card = cardMap.get(r.supplier_id)
+      return {
+        supplier: r,
+        exposure: card ? card.financial_exposure_inr : 0
+      }
+    }).filter(r => r.exposure > 0)
+      .sort((a, b) => b.exposure - a.exposure)
+
+    const SUPPLIER_PALETTE = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6']
+
+    let items = withExposure.map((r, i) => ({
+      name: r.supplier.supplier_name,
+      value: r.exposure,
+      color: SUPPLIER_PALETTE[i % SUPPLIER_PALETTE.length],
+      supplier: r.supplier,
+      isOthers: false
+    }));
+
+    if (items.length > 5) {
+      const top4 = items.slice(0, 4)
+      const others = items.slice(4)
+      const othersValue = others.reduce((acc, curr) => acc + curr.value, 0)
+      items = [...top4, {
+        name: 'Others',
+        value: othersValue,
+        color: '#8B5CF6',
+        supplier: null as any,
+        isOthers: true
+      }]
+    }
+
+    const totalExposure = items.reduce((acc, curr) => acc + curr.value, 0)
+    return items.map(item => ({
+      ...item,
+      percentage: totalExposure > 0 ? (item.value / totalExposure) * 100 : 0
+    }))
+  }, [risks, cardMap])
+
+  const filteredData = useMemo(() => distribution.filter(d => d.value > 0), [distribution])
+  const activeItem = activeIndex !== null ? filteredData[activeIndex] : null
+
+  const topCategory = distribution.length > 0 && !distribution[0].isOthers ? (cardMap.get(distribution[0].supplier.supplier_id)?.category || 'FMCG') : 'None'
+  const topCategoryValue = distribution.length > 0 ? distribution[0].value : 0
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.35s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardHeader title="Suppliers Distribution" sub="Money at risk by supplier" />
+      <div style={{ display: 'flex', flex: 1, padding: '32px 24px', gap: '40px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ flex: 1, height: 200, position: 'relative', minWidth: 200, maxWidth: 240, margin: '0 auto' }}>
+          {loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', height: '100%', justifyContent: 'center' }}><Skeleton h={24} /><Skeleton h={24} /><Skeleton h={24} /></div>
+          ) : (
             <>
-              {/* KPI overview */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-                {[
-                  { label: 'Suppliers at Risk', value: String(brief.at_risk_suppliers), color: '#DC2626' },
-                  { label: 'Total Exposure', value: formatINR(brief.total_exposure_inr), color: '#D97706' },
-                  { label: 'Critical Stockouts', value: String(brief.critical_stockouts), color: '#7C3AED' },
-                ].map(kpi => (
-                  <div key={kpi.label} style={{
-                    padding: '0.875rem',
-                    background: 'var(--bg-hover)', border: '1px solid #E2E8F0',
-                    borderRadius: '0.625rem', textAlign: 'center',
-                  }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: kpi.color }}>{kpi.value}</div>
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', marginTop: '2px' }}>{kpi.label}</div>
-                  </div>
-                ))}
+              <div style={{ width: '100%', height: '100%', filter: 'drop-shadow(0px 8px 16px rgba(0,0,0,0.12))' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={filteredData}
+                      innerRadius={65}
+                      outerRadius={95}
+                      paddingAngle={0}
+                      dataKey="value"
+                      stroke="none"
+                      activeIndex={activeIndex !== null ? activeIndex : undefined}
+                      activeShape={{ outerRadius: 99 } as any}
+                      onMouseEnter={(_, index) => setActiveIndex(index)}
+                      onMouseLeave={() => setActiveIndex(null)}
+                    >
+                      {filteredData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-
-              {/* Summary */}
-              <div>
-                <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-                  Executive Summary
+              <div style={{
+                position: 'absolute',
+                top: 0, left: 0, right: 0, bottom: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+                padding: '0 24px',
+                textAlign: 'center'
+              }}>
+                <div style={{
+                  fontSize: '0.625rem',
+                  color: '#94A3B8',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: '120px'
+                }}>
+                  {activeItem ? activeItem.name : 'Total Risk'}
                 </div>
-                <p style={{ fontSize: '0.875rem', color: 'var(--ink-2)', lineHeight: 1.7, background: 'var(--bg-hover)', padding: '0.875rem', borderRadius: '0.625rem', border: '1px solid #E2E8F0' }}>
-                  {brief.summary}
-                </p>
-              </div>
-
-              {/* Top risks */}
-              {brief.top_risks.length > 0 && (
-                <div>
-                  <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-                    Key Risk Areas
+                <Num size={activeItem ? "1.375rem" : "1.75rem"}>
+                  {activeItem ? formatINR(activeItem.value) : formatINR(activeExposure)}
+                </Num>
+                {activeItem && (
+                  <div style={{ fontSize: '0.625rem', color: activeItem.color, fontWeight: 700, marginTop: '2px' }}>
+                    {activeItem.percentage.toFixed(0)}% share
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                    {brief.top_risks.map((r, i) => (
-                      <li key={i} style={{ fontSize: '0.8125rem', color: 'var(--ink-2)', lineHeight: 1.5 }}>{r}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Immediate actions */}
-              {brief.immediate_actions.length > 0 && (
-                <div>
-                  <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-                    Immediate Actions Required
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                    {brief.immediate_actions.map((action, i) => (
-                      <div key={i} style={{
-                        display: 'flex', gap: '0.625rem', alignItems: 'flex-start',
-                        padding: '0.5rem 0.75rem',
-                        background: '#FFF7ED', border: '1px solid #FED7AA',
-                        borderRadius: '0.5rem',
-                      }}>
-                        <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#EA580C', flexShrink: 0, paddingTop: '2px' }}>
-                          {String(i + 1).padStart(2, '0')}
-                        </span>
-                        <span style={{ fontSize: '0.8125rem', color: '#7C2D12', lineHeight: 1.5 }}>{action}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', textAlign: 'right' }}>
-                Generated: {new Date(brief.generated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
+                )}
               </div>
             </>
           )}
         </div>
+        <div style={{ flex: 2, display: 'flex', flexDirection: 'column', overflowY: 'auto', minWidth: 250 }}>
+          {distribution.length === 0 ? (
+            <div style={{ fontSize: '0.8125rem', color: '#94A3B8' }}>No suppliers found.</div>
+          ) : distribution.map((entry, index) => {
+            return (
+              <div key={entry.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: index < distribution.length - 1 ? '1px dashed #E2E8F0' : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: 16, height: 10, borderRadius: '4px', background: entry.color }} />
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>{entry.name}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#64748B' }}>{formatINR(entry.value)}</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94A3B8', background: '#F8FAFC', padding: '2px 6px', borderRadius: '4px' }}>{entry.percentage.toFixed(0)}%</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
-    </div>
+      <div style={{ padding: '0 24px 24px' }}>
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', color: '#64748B' }}>
+            <AlertTriangle size={14} style={{ color: '#F59E0B' }} />
+            <span>Highest exposure category: <strong style={{ color: '#0F172A' }}>{topCategory}</strong></span>
+          </div>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0F172A' }}>{formatINR(topCategoryValue)}</div>
+        </div>
+      </div>
+    </Card>
   )
 }
 
-/* ── Top Risk Spotlight ──────────────────────────────────────────────── */
-function TopRiskSpotlight({ risk, card }: {
-  risk: SupplierRiskAnalysis
-  card: IntelligentActionCard | undefined
+
+
+
+/* ── Pending Actions ─────────────────────────────────────────────────── */
+function PendingActions({ risks, cardMap, loading }: {
+  risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard>; loading: boolean
 }) {
   const navigate = useNavigate()
 
-  const COLOR: Record<string, string> = { critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669' }
-  const accent = COLOR[risk.risk_level] ?? '#2563EB'
-
   return (
-    <div
-      onClick={() => navigate(`/risks/${risk.supplier_id}`)}
-      style={{
-        background: `linear-gradient(135deg, var(--ink-1) 0%, #1E3A5F 100%)`,
-        borderRadius: '0.875rem',
-        padding: '1.25rem 1.5rem',
-        cursor: 'pointer',
-        boxShadow: '0 4px 16px rgba(15,23,42,0.25)',
-        transition: 'box-shadow 150ms',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-      onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 6px 24px rgba(15,23,42,0.35)')}
-      onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 4px 16px rgba(15,23,42,0.25)')}
-    >
-      {/* Background accent */}
-      <div style={{
-        position: 'absolute', top: '-20px', right: '-20px',
-        width: '120px', height: '120px',
-        borderRadius: '50%',
-        background: `${accent}20`,
-        border: `2px solid ${accent}30`,
-      }} />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', position: 'relative' }}>
-        <div>
-          <div style={{ fontSize: '0.5625rem', fontWeight: 700, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
-            🔥 Top Risk — Immediate Action
+    <Card style={{ animation: 'dash-fade-in 0.35s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardHeader
+        title="Pending Actions"
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {risks.length > 0 && <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#64748B', background: '#F1F5F9', padding: '2px 6px', borderRadius: '3px' }}>{risks.length}</span>}
+            <ViewAllBtn onClick={() => navigate('/actions')} />
           </div>
-          <div style={{ fontSize: '1.125rem', fontWeight: 800, color: 'var(--bg-card)', letterSpacing: '-0.01em' }}>
-            {risk.supplier_name}
-          </div>
-          {card && (
-            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.55)', marginTop: '0.375rem', lineHeight: 1.5, maxWidth: '380px' }}>
-              {card.recommended_action}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-            <Badge level={risk.risk_level} />
-            {card && (
-              <>
-                <span style={{ fontSize: '0.6875rem', color: '#FCA5A5', fontWeight: 600 }}>
-                  {formatINR(card.financial_exposure_inr)} exposure
-                </span>
-                <span style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.45)' }}>·</span>
-                <span style={{ fontSize: '0.6875rem', color: card.days_to_stockout <= 7 ? '#FCA5A5' : 'rgba(255,255,255,0.55)' }}>
-                  {card.days_to_stockout}d to stockout
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div style={{ textAlign: 'center', flexShrink: 0, position: 'relative' }}>
-          <div style={{
-            fontSize: '2.5rem', fontWeight: 900,
-            color: accent, letterSpacing: '-0.04em', lineHeight: 1,
-            textShadow: `0 0 20px ${accent}60`,
-          }}>
-            {(risk.overall_score * 100).toFixed(0)}<span style={{ fontSize: '1rem', color: 'rgba(255,255,255,0.4)' }}>%</span>
-          </div>
-          <div style={{ fontSize: '0.625rem', color: 'rgba(255,255,255,0.35)', marginTop: '0.25rem' }}>risk score</div>
-          <div style={{ fontSize: '0.6875rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.5rem', fontWeight: 600 }}>
-            View Details →
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ── Trend arrow ─────────────────────────────────────────────────────── */
-function TrendPill({ delta, invertColor = false }: { delta: number; invertColor?: boolean }) {
-  // invertColor=true: increase is bad (risk, exposure)
-  const isUp = delta >= 0
-  const isGood = invertColor ? !isUp : isUp
-  const color = delta === 0 ? 'var(--ink-4)' : isGood ? '#059669' : '#DC2626'
-  const bg = delta === 0 ? 'var(--border-strong)' : isGood ? '#F0FDF4' : '#FEF2F2'
-
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '2px',
-      padding: '2px 6px',
-      background: bg, borderRadius: '999px',
-      fontSize: '0.625rem', fontWeight: 700,
-      color,
-    }}>
-      {delta === 0 ? '→' : isUp ? '↑' : '↓'} {Math.abs(delta)}%
-    </span>
-  )
-}
-
-/* ── KPI Card ────────────────────────────────────────────────────────── */
-interface KPIProps {
-  label: string
-  value: string | number
-  sub?: string
-  accent?: string
-  icon: React.ReactNode
-  loading?: boolean
-  onClick?: () => void
-  trend?: number
-  invertTrend?: boolean
-}
-function KPICard({ label, value, sub, accent = '#2563EB', icon, loading, onClick, trend, invertTrend }: KPIProps) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderRadius: '0.875rem',
-        padding: '1.25rem 1.375rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-        boxShadow: 'var(--shadow-xs)',
-        cursor: onClick ? 'pointer' : 'default',
-        transition: 'box-shadow 150ms, border-color 150ms',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-      onMouseEnter={e => { if (onClick) { (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-md)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)' } }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-xs)'; (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)' }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '0.375rem', background: `${accent}15`, flexShrink: 0 }}>
-          <span style={{ color: accent }}>{icon}</span>
-        </div>
-        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-1)' }}>{label}</div>
-      </div>
-
-      <div>
+        }
+      />
+      <div style={{ padding: '8px 24px 24px', flex: 1, overflowX: 'auto' }}>
         {loading ? (
-          <><Skeleton w="60%" h={32} /><Skeleton w="80%" h={14} /></>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '8px 0' }}><Skeleton h={40} /><Skeleton h={40} /><Skeleton h={40} /></div>
+        ) : risks.length === 0 ? (
+          <div style={{ padding: '28px 0', textAlign: 'center' }}>
+            <Shield size={22} style={{ color: '#E2E8F0', marginBottom: '6px' }} />
+            <div style={{ fontSize: '0.8125rem', color: '#0F172A', fontWeight: 600 }}>All clear</div>
+            <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '2px' }}>No pending actions</div>
+          </div>
         ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
-              <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.03em', lineHeight: 1 }}>
-                {value}
-              </div>
-              {trend !== undefined && (
-                <div style={{ marginBottom: '0.25rem' }}>
-                  <TrendPill delta={trend} invertColor={invertTrend} />
-                </div>
-              )}
-            </div>
-            {sub && <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '0.5rem' }}>{sub}</div>}
-          </>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '400px' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: '#94A3B8', paddingBottom: '12px', borderBottom: '1px solid #F1F5F9' }}>Supplier</th>
+                <th style={{ textAlign: 'left', fontSize: '0.75rem', fontWeight: 500, color: '#94A3B8', paddingBottom: '12px', borderBottom: '1px solid #F1F5F9' }}>Action required</th>
+                <th style={{ textAlign: 'right', fontSize: '0.75rem', fontWeight: 500, color: '#94A3B8', paddingBottom: '12px', borderBottom: '1px solid #F1F5F9' }}>Exposure</th>
+              </tr>
+            </thead>
+            <tbody>
+              {risks.slice(0, 5).map((r, i) => {
+                const card = cardMap.get(r.supplier_id)
+                if (!card) return null
+                const actionText = card.ai_error
+                  ? null
+                  : getReason(r, card)
+                return (
+                  <tr
+                    key={r.supplier_id}
+                    onClick={() => navigate(`/risks/${r.supplier_id}/mitigation`)}
+                    style={{ cursor: 'pointer', borderBottom: i < 4 ? '1px solid #F8FAFC' : 'none' }}
+                  >
+                    <td style={{ padding: '12px 0', fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A' }}>{r.supplier_name}</td>
+                    <td style={{ padding: '12px 0', fontSize: '0.8125rem', color: '#64748B' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {actionText ?? (
+                          <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>AI unavailable</span>
+                        )}
+                        <AiBadge mode={card.generation_mode} />
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 0', fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A', textAlign: 'right' }}>{formatINR(card.financial_exposure_inr)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 
-/* ── Section header ──────────────────────────────────────────────────── */
-function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
-      <h2 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)' }}>{title}</h2>
-      {action && (
-        <button onClick={onAction} style={{ fontSize: '0.75rem', color: '#2563EB', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-          {action} →
-        </button>
-      )}
-    </div>
-  )
-}
-
-const FACTOR_ICON: Record<string, string> = {
-  disruption_severity: '🌀',
-  inventory_pressure: '📦',
-  delivery_reliability: '🚚',
-  logistics_vulnerability: '🛣️',
-  dependency_exposure: '🔗',
-  festival_proximity: '🎆',
-}
-
-function primarySignal(factors: SupplierRiskAnalysis['factors']): { name: string; icon: string; explanation: string } {
-  const entries = Object.entries(factors ?? {}).sort(([, a], [, b]) => b.weighted - a.weighted)
-  if (!entries.length) return { name: '', icon: '⚠️', explanation: 'Risk score elevated' }
-  const [name, f] = entries[0]
-  return { name, icon: FACTOR_ICON[name] ?? '⚠️', explanation: f.explanation }
-}
-
-/* ── Critical Issues table ───────────────────────────────────────────── */
-function CriticalIssuesTable({ risks, cardMap }: { risks: SupplierRiskAnalysis[]; cardMap: Map<string, IntelligentActionCard> }) {
-  const navigate = useNavigate()
-  const topIssues = risks
-    .filter(r => r.risk_level === 'critical' || r.risk_level === 'high')
-    .sort((a, b) => b.overall_score - a.overall_score)
-    .slice(0, 8)
-
-  if (topIssues.length === 0) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
-        No critical or high risk suppliers detected.
-      </div>
-    )
-  }
-
-  return (
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th>Signal</th>
-          <th>Supplier</th>
-          <th>Products</th>
-          <th>Exposure</th>
-          <th>Score</th>
-          <th>Severity</th>
-        </tr>
-      </thead>
-      <tbody>
-        {topIssues.map(r => {
-          const signal = primarySignal(r.factors)
-          const card = cardMap.get(r.supplier_id)
-          return (
-            <tr key={r.supplier_id} onClick={() => navigate(`/risks/${r.supplier_id}`)}>
-              <td style={{ maxWidth: '280px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '1rem', flexShrink: 0, lineHeight: 1.4 }}>{signal.icon}</span>
-                  <div>
-                    <div style={{ fontWeight: 600, color: 'var(--ink-1)', fontSize: '0.8125rem', lineHeight: 1.4 }}>
-                      {card?.title ?? signal.explanation}
-                    </div>
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '2px' }}>
-                      {card ? signal.explanation : signal.name.replace(/_/g, ' ')}
-                    </div>
-                  </div>
-                </div>
-              </td>
-              <td>
-                <div style={{ fontWeight: 600, color: 'var(--ink-1)', fontSize: '0.8125rem' }}>{r.supplier_name}</div>
-                {card && (
-                  <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', marginTop: '2px' }}>
-                    {card.city} · {card.region}
-                  </div>
-                )}
-              </td>
-              <td>
-                {card ? (
-                  <div>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--ink-2)' }}>
-                      {card.affected_skus} SKU{card.affected_skus !== 1 ? 's' : ''}
-                    </div>
-                    <div style={{ fontSize: '0.6875rem', color: card.days_to_stockout <= 7 ? '#DC2626' : 'var(--ink-4)', marginTop: '2px' }}>
-                      {card.days_to_stockout}d to stockout
-                    </div>
-                  </div>
-                ) : <span style={{ color: 'var(--ink-5)', fontSize: '0.75rem' }}>—</span>}
-              </td>
-              <td>
-                {card ? (
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#DC2626', fontFamily: 'JetBrains Mono, monospace' }}>
-                    {formatINR(card.financial_exposure_inr)}
-                  </div>
-                ) : <span style={{ color: 'var(--ink-5)', fontSize: '0.75rem' }}>—</span>}
-              </td>
-              <td>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                  <div style={{ width: '52px', height: '5px', borderRadius: '999px', background: 'var(--border-strong)', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${(r.overall_score * 100).toFixed(0)}%`,
-                      height: '100%',
-                      background: r.risk_level === 'critical' ? '#DC2626' : r.risk_level === 'high' ? '#D97706' : '#2563EB',
-                      borderRadius: '999px',
-                      transition: 'width 0.6s cubic-bezier(0.34,1.56,0.64,1)',
-                    }} />
-                  </div>
-                  <span style={{ fontSize: '0.75rem', fontFamily: 'JetBrains Mono, monospace', color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
-                    {(r.overall_score * 100).toFixed(0)}%
-                  </span>
-                </div>
-              </td>
-              <td><Badge level={r.risk_level} /></td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
-  )
-}
-
-/* ── Recent disruptions feed ─────────────────────────────────────────── */
-function DisruptionFeed({ disruptions }: { disruptions: Disruption[] }) {
-  const navigate = useNavigate()
-  const TYPE_ICON: Record<string, string> = { cyclone: '🌀', strike: '🚛', logistics: '📦', inventory: '🏭', quality: '🔍', regulatory: '📋' }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {disruptions.slice(0, 5).map(d => (
-        <div
-          key={d.id}
-          onClick={() => navigate(`/risks/${d.supplier_id}`)}
-          style={{
-            display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
-            padding: '0.75rem',
-            background: d.is_active ? 'rgba(220,38,38,0.03)' : 'var(--bg-app)',
-            border: `1px solid ${d.is_active ? 'rgba(220,38,38,0.12)' : 'var(--border)'}`,
-            borderRadius: '0.625rem',
-            cursor: 'pointer',
-            transition: 'background 150ms',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = d.is_active ? 'rgba(220,38,38,0.06)' : '#F0F4F8')}
-          onMouseLeave={e => (e.currentTarget.style.background = d.is_active ? 'rgba(220,38,38,0.03)' : 'var(--bg-app)')}
-        >
-          <span style={{ fontSize: '1.125rem', flexShrink: 0, marginTop: '1px' }}>{TYPE_ICON[d.disruption_type] || '⚠️'}</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {d.title}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-              <Badge level={d.severity} />
-              {d.region && <span style={{ fontSize: '0.6875rem', color: 'var(--ink-3)' }}>{d.region}</span>}
-              {d.is_active && (
-                <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ACTIVE</span>
-              )}
-            </div>
-          </div>
-          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', flexShrink: 0, textAlign: 'right' }}>
-            {d.affected_skus_count} SKUs
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ── Top exposures list ───────────────────────────────────────────────── */
-function TopExposures({ financial }: { financial: any }) {
-  const navigate = useNavigate()
-  const top = financial?.top_exposures?.slice(0, 5) ?? []
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {top.map((e: any) => (
-        <div
-          key={e.supplier_id}
-          onClick={() => navigate(`/companies/${e.supplier_id}`)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '0.75rem',
-            padding: '0.625rem 0.75rem',
-            background: 'var(--bg-app)',
-            border: '1px solid #E2E8F0',
-            borderRadius: '0.625rem',
-            cursor: 'pointer',
-            transition: 'background 150ms',
-          }}
-          onMouseEnter={e2 => (e2.currentTarget.style.background = '#F0F4F8')}
-          onMouseLeave={e2 => (e2.currentTarget.style.background = 'var(--bg-app)')}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {e.supplier_name}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            <Badge level={e.exposure_level} />
-            <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#DC2626', fontFamily: 'JetBrains Mono, monospace' }}>
-              {formatINR(e.total_exposure_inr)}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ── Pending actions list ────────────────────────────────────────────── */
-function PendingActions({ cards }: { cards: ActionCard[] }) {
-  const navigate = useNavigate()
-  const top = cards.filter(c => !c.is_resolved).slice(0, 5)
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {top.map(card => (
-        <div
-          key={card.id}
-          onClick={() => navigate('/risks')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '0.625rem',
-            padding: '0.625rem 0.75rem',
-            background: card.priority === 'critical' ? 'rgba(220,38,38,0.03)' : 'var(--bg-app)',
-            border: `1px solid ${card.priority === 'critical' ? 'rgba(220,38,38,0.12)' : 'var(--border)'}`,
-            borderLeft: `3px solid ${card.priority === 'critical' ? '#DC2626' : card.priority === 'high' ? '#D97706' : card.priority === 'medium' ? '#2563EB' : '#059669'}`,
-            borderRadius: '0.625rem',
-            cursor: 'pointer',
-            transition: 'background 150ms',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = '#F0F4F8')}
-          onMouseLeave={e => (e.currentTarget.style.background = card.priority === 'critical' ? 'rgba(220,38,38,0.03)' : 'var(--bg-app)')}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--ink-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {card.title}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            <Badge level={card.priority} />
-            <span style={{ fontSize: '0.75rem', fontFamily: 'JetBrains Mono, monospace', color: 'var(--ink-3)' }}>
-              {formatINR(card.estimated_impact_inr)}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 /* ── Dashboard ───────────────────────────────────────────────────────── */
 export function Dashboard() {
   const navigate = useNavigate()
-  const [showBoardBrief, setShowBoardBrief] = useState(false)
 
-  const { data: summary, isLoading: loadingSummary } = useDashboardSummary()
-  const { data: risks, isLoading: loadingRisks, isCustom: customWeightsActive } = useWeightedRiskAnalysis()
-  const { data: supplierData, isLoading: loadingSuppliers } = useSuppliers()
-  const { data: disruptions, isLoading: loadingDisruptions } = useDisruptions()
-  const { data: financial } = useFinancialSummary()
+  const { data: risks, isLoading: loadingRisks } = useWeightedRiskAnalysis()
+  const { data: disruptions, isLoading: loadingD } = useDisruptions()
   const { data: stockout } = useStockoutForecast()
   const { data: actionData } = useActionCards()
   const { data: procCards } = useProcurementCards()
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
-  const cardMap = useMemo(
-    () => new Map((procCards as IntelligentActionCard[] | undefined ?? []).map(c => [c.supplier_id, c])),
-    [procCards]
+  const allCards = actionData?.action_cards ?? []
+
+  // Primary: AI-enriched procurement cards with financial_exposure_inr + narratives.
+  // Fallback: DB action cards (estimated_impact_inr) — always available after sync-risks,
+  // even before procurement cards have been generated or while AI cache is warming up.
+  const cardMap = useMemo(() => {
+    const map = new Map<string, IntelligentActionCard>()
+    // Seed fallback entries from DB action cards (DB rows only — no AI narratives yet)
+    for (const c of allCards) {
+      if (!c.supplier_id) continue
+      map.set(c.supplier_id, {
+        supplier_id: c.supplier_id,
+        supplier_name: '',
+        city: '', region: '', category: '',
+        risk_score: 0, risk_level: c.priority as any,
+        confidence: 0,
+        financial_exposure_inr: c.estimated_impact_inr,
+        days_to_stockout: 30,
+        affected_skus: 0,
+        action_type: c.action_type,
+        priority: c.priority as any,
+        title: c.title,
+        // No AI narrative fields — will be overlaid by procCards once generated
+        generation_mode: undefined,
+        ai_generated: false,
+        ai_error: false,
+      })
+    }
+    // Overlay with richer procurement cards when available
+    for (const c of ((procCards as IntelligentActionCard[] | undefined) ?? [])) {
+      if (c.supplier_id) map.set(c.supplier_id, c)
+    }
+    return map
+  }, [allCards, procCards])
+
+  const resolvedSupplierIds = useMemo(() => {
+    const map = new Map<string, { resolved: number; total: number }>()
+    for (const c of allCards) {
+      if (!c.supplier_id) continue
+      const e = map.get(c.supplier_id) ?? { resolved: 0, total: 0 }
+      e.total++; if (c.is_resolved) e.resolved++
+      map.set(c.supplier_id, e)
+    }
+    return new Set([...map.entries()].filter(([, { resolved, total }]) => total > 0 && resolved === total).map(([id]) => id))
+  }, [allCards])
+
+  const activeRiskList = useMemo(() => riskList.filter(r => {
+    if (resolvedSupplierIds.has(r.supplier_id)) return false
+    if (r.risk_level === 'low') return false
+    // Show supplier if it has any financial exposure — from proc card OR DB card fallback
+    const card = cardMap.get(r.supplier_id)
+    return card ? card.financial_exposure_inr > 0 : true
+  }), [riskList, resolvedSupplierIds, cardMap])
+
+  const activeExposure = useMemo(
+    () => activeRiskList.reduce((s, r) => s + (cardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0), 0),
+    [activeRiskList, cardMap]
   )
 
-  const criticalCount = riskList.filter(r => r.risk_level === 'critical').length
-  const highRiskCount = riskList.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
+  const sortedActive = useMemo(() => {
+    const order: Record<string, number> = { critical: 0, high: 1, medium: 2 }
+    return [...activeRiskList].sort((a, b) => {
+      const lo = (order[a.risk_level] ?? 3) - (order[b.risk_level] ?? 3)
+      if (lo !== 0) return lo
+      const da = cardMap.get(a.supplier_id)?.days_to_stockout ?? 999
+      const db = cardMap.get(b.supplier_id)?.days_to_stockout ?? 999
+      return da !== db ? da - db : (cardMap.get(b.supplier_id)?.financial_exposure_inr ?? 0) - (cardMap.get(a.supplier_id)?.financial_exposure_inr ?? 0)
+    })
+  }, [activeRiskList, cardMap])
 
-  // Top risk for spotlight
-  const topRisk = useMemo(() =>
-    riskList.slice().sort((a, b) => b.overall_score - a.overall_score)[0] ?? null,
-    [riskList]
-  )
-  const topRiskCard = topRisk ? cardMap.get(topRisk.supplier_id) : undefined
+  const criticalCount = activeRiskList.filter(r => r.risk_level === 'critical').length
+  const highCount = activeRiskList.filter(r => r.risk_level === 'high').length
+  const disruptions_active = (disruptions?.disruptions ?? []).filter((d: any) => d.is_active && d.severity !== 'low').length
 
-  const KPI_ICONS = {
-    critical: (
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <path d="M10 2L17.5 15.5H2.5L10 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-        <path d="M10 8v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <circle cx="10" cy="13.5" r="0.75" fill="currentColor" />
-      </svg>
-    ),
-    financial: (
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M10 6v8M7.5 8.5C7.5 7.4 8.6 7 10 7s2.5.6 2.5 1.5c0 2-5 2-5 4 0 1.1 1.1 1.5 2.5 1.5s2.5-.4 2.5-1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    ),
-    suppliers: (
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <circle cx="8" cy="7" r="3" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M2 17c0-3.3 2.7-6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M14 11l2 2 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-    stockout: (
-      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-        <rect x="2" y="5" width="16" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-        <path d="M6 5V4a2 2 0 0 1 4 0v1M10 5V4a2 2 0 0 1 4 0v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M7 11h6M7 14h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    ),
-  }
+  // Calculate totals for realized savings
+  const totalSaved = useMemo(() => {
+    return allCards
+      .filter(card => card.is_resolved && card.resolved_at && card.estimated_impact_inr > 0)
+      .reduce((sum, card) => sum + card.estimated_impact_inr, 0)
+  }, [allCards])
 
+  // Progress metrics for KPI cards
+  const progressSuppliers = useMemo(() => {
+    return riskList.length > 0 ? (activeRiskList.length / riskList.length) * 100 : 0
+  }, [activeRiskList, riskList])
+
+  const progressExposure = useMemo(() => {
+    const totalRisk = activeExposure + totalSaved
+    return totalRisk > 0 ? (totalSaved / totalRisk) * 100 : 0
+  }, [activeExposure, totalSaved])
+
+  const progressStockouts = useMemo(() => {
+    const total = stockout?.total_skus ?? 100
+    const crit = stockout?.critical_count ?? 0
+    return total > 0 ? (crit / total) * 100 : 0
+  }, [stockout])
+
+  const progressDisruptions = useMemo(() => {
+    const list = disruptions?.disruptions ?? []
+    return list.length > 0 ? (disruptions_active / list.length) * 100 : 0
+  }, [disruptions, disruptions_active])
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
+      <style>{CSS}</style>
 
-      {/* ── Critical Alert Banner ────────────────────────────────── */}
-      {!loadingRisks && (
-        <CriticalAlertBanner
-          count={criticalCount}
-          topRisk={riskList.filter(r => r.risk_level === 'critical').sort((a, b) => b.overall_score - a.overall_score)[0] ?? null}
-          onView={() => navigate('/risks?filter=critical')}
-        />
-      )}
+      <DashboardHeader
+        exposure={activeExposure}
+        riskCount={activeRiskList.length}
+        totalSuppliers={riskList.length}
+        loading={loadingRisks}
+        criticalSuppliers={criticalCount}
+        highSuppliers={highCount}
+      />
 
-      {/* ── Page header ─────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '1rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em', marginBottom: '0.25rem' }}>
-            Sales Dashboard
-          </h1>
-          <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)' }}>
-            Welcome back, Cipher!
-          </p>
-        </div>
+      {!loadingD && <AlertBanner disruptions={disruptions?.disruptions ?? []} />}
 
-        {/* Board Brief button */}
-        <button
-          onClick={() => setShowBoardBrief(true)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            padding: '0.625rem 1.125rem',
-            background: 'var(--ink-1)',
-            color: 'var(--bg-card)',
-            borderRadius: '0.625rem',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '0.8125rem',
-            fontWeight: 700,
-            fontFamily: 'inherit',
-            boxShadow: '0 2px 8px rgba(15,23,42,0.2)',
-            transition: 'transform 100ms, box-shadow 100ms',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.transform = 'translateY(-1px)'
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(15,23,42,0.3)'
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.transform = 'translateY(0)'
-            e.currentTarget.style.boxShadow = '0 2px 8px rgba(15,23,42,0.2)'
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M4 6h8M4 9h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          Generate Board Brief
-        </button>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+        <KpiCard label="Total Count" value={loadingRisks ? '—' : riskList.length}
+          sub={criticalCount > 0 ? `${criticalCount} critical, ${highCount} high` : highCount > 0 ? `${highCount} high risk` : 'All stable'}
+          progress={progressSuppliers} onClick={() => navigate('/risks')} loading={loadingRisks} delay={0} />
+        <KpiCard label="Financial exposure" value={loadingRisks ? '—' : formatINR(activeExposure)}
+          sub="Total at risk" progress={progressExposure} onClick={() => navigate('/risks')} loading={loadingRisks} delay={40} />
+        <KpiCard label="Critical stockouts" value={(stockout?.critical_count ?? 0) > 0 ? stockout!.critical_count : '0'}
+          sub="SKUs below safe stock" progress={progressStockouts} onClick={() => navigate('/risks')} delay={80} />
+        <KpiCard label="Active disruptions" value={loadingD ? '—' : disruptions_active}
+          sub="Medium+ severity" progress={progressDisruptions} onClick={() => navigate('/disruptions')} loading={loadingD} delay={120} />
       </div>
 
-      {/* ── View selector ────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>
-        <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-1)' }}>
-          Select Views &rsaquo;
-        </div>
-        <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.8125rem', fontWeight: 500 }}>
-          <span style={{ color: 'var(--ink-4)', cursor: 'pointer' }}>Last 24 Hours</span>
-          <span style={{ color: 'var(--primary)', cursor: 'pointer', borderBottom: '2px solid var(--primary)', paddingBottom: '0.5rem', marginBottom: '-0.5rem' }}>Weekly View</span>
-          <span style={{ color: 'var(--ink-4)', cursor: 'pointer' }}>Monthly View</span>
-          <span style={{ color: 'var(--ink-4)', cursor: 'pointer' }}>Yearly View</span>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <SupplierRiskDistribution risks={riskList} cardMap={cardMap} activeExposure={activeExposure} loading={loadingRisks} />
+        <PendingActions risks={sortedActive} cardMap={cardMap} loading={loadingRisks} />
       </div>
 
-      {/* ── Custom weights notice ───────────────────────────────────── */}
-      {customWeightsActive && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '0.625rem',
-          padding: '0.5rem 0.875rem',
-          background: '#EFF6FF', border: '1px solid #BFDBFE',
-          borderRadius: '0.625rem',
-          fontSize: '0.75rem', color: '#1D4ED8',
-        }}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M8 5v4M8 11v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          <span><strong>Custom risk weights active</strong> — scores are recomputed using your Settings configuration.</span>
-          <button
-            onClick={() => navigate('/settings')}
-            style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#2563EB', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            Edit weights →
-          </button>
-        </div>
-      )}
-
-      {/* ── Top Risk Spotlight ───────────────────────────────────────── */}
-      {!loadingRisks && topRisk && (
-        <TopRiskSpotlight risk={topRisk} card={topRiskCard} />
-      )}
-
-      {/* ── KPI row ─────────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
-        <KPICard
-          label="Critical Issues"
-          value={loadingRisks ? '—' : criticalCount}
-          sub={`${highRiskCount} total high/critical`}
-          accent="#DC2626"
-          icon={KPI_ICONS.critical}
-          loading={loadingRisks}
-          onClick={() => navigate('/risks?filter=critical')}
-          trend={criticalCount > 0 ? 12 : 0}
-          invertTrend
-        />
-        <KPICard
-          label="Financial Exposure"
-          value={loadingSummary ? '—' : formatINR(financial?.total_financial_exposure_inr ?? 0)}
-          sub={`Revenue at risk: ${formatINR(financial?.total_revenue_at_risk_inr ?? 0)}`}
-          accent="#D97706"
-          icon={KPI_ICONS.financial}
-          loading={loadingSummary}
-          onClick={() => navigate('/risks')}
-          trend={8}
-          invertTrend
-        />
-        <KPICard
-          label="Suppliers at Risk"
-          value={loadingSummary ? '—' : `${summary?.supplier_health?.high_risk_count ?? 0}`}
-          sub={`of ${summary?.supplier_health?.total_suppliers ?? 0} total · ${((summary?.supplier_health?.avg_reliability ?? 0) * 100).toFixed(0)}% avg reliability`}
-          accent="#7C3AED"
-          icon={KPI_ICONS.suppliers}
-          loading={loadingSummary}
-          onClick={() => navigate('/companies')}
-          trend={-3}
-          invertTrend
-        />
-        <KPICard
-          label="Stockout Alerts"
-          value={loadingSummary ? '—' : (stockout?.critical_count ?? 0)}
-          sub={`${formatINR(stockout?.total_revenue_at_risk_inr ?? 0)} revenue at risk`}
-          accent="#2563EB"
-          icon={KPI_ICONS.stockout}
-          loading={loadingSummary}
-          onClick={() => navigate('/risks')}
-          trend={5}
-          invertTrend
-        />
-      </div>
-
-      {/* ── Main content grid ────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '1.25rem', alignItems: 'start' }}>
-
-        {/* Left: Critical issues table */}
-        <div>
-          <SectionHeader
-            title="Critical Issues"
-            action="View all risks"
-            onAction={() => navigate('/risks')}
-          />
-          <div className="card-flush">
-            {loadingRisks
-              ? <div style={{ padding: '1rem' }}><Skeleton h={40} /><Skeleton h={40} /><Skeleton h={40} /></div>
-              : <CriticalIssuesTable risks={riskList} cardMap={cardMap} />
-            }
-          </div>
-        </div>
-
-        {/* Right: India map */}
-        <div>
-          <SectionHeader title="Supplier Geography" />
-          <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid #E2E8F0',
-            borderRadius: '0.875rem',
-            padding: '1rem',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-            height: '420px',
-          }}>
-            {(loadingSuppliers || loadingRisks)
-              ? <div className="skeleton" style={{ width: '100%', height: '100%', borderRadius: '0.5rem' }} />
-              : (
-                <IndiaMap
-                  suppliers={supplierData?.suppliers ?? []}
-                  risks={riskList}
-                  onCityClick={(city) => navigate(`/companies?city=${encodeURIComponent(city)}`)}
-                />
-              )
-            }
-          </div>
-        </div>
-      </div>
-
-      {/* ── Bottom row ───────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.25rem' }}>
-
-        {/* Active Disruptions */}
-        <div>
-          <SectionHeader
-            title="Active Disruptions"
-            action="View all"
-            onAction={() => navigate('/risks')}
-          />
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem',
-            padding: '1rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          }}>
-            {loadingDisruptions
-              ? <><Skeleton h={64} /><Skeleton h={64} /><Skeleton h={64} /></>
-              : <DisruptionFeed disruptions={disruptions?.disruptions ?? []} />
-            }
-          </div>
-        </div>
-
-        {/* Financial Exposure */}
-        <div>
-          <SectionHeader
-            title="Top Exposures"
-            action="View all"
-            onAction={() => navigate('/risks')}
-          />
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem',
-            padding: '1rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          }}>
-            {!financial
-              ? <><Skeleton h={52} /><Skeleton h={52} /><Skeleton h={52} /></>
-              : <TopExposures financial={financial} />
-            }
-          </div>
-        </div>
-
-        {/* Pending Actions */}
-        <div>
-          <SectionHeader
-            title="Pending Actions"
-            action="View all"
-            onAction={() => navigate('/risks')}
-          />
-          <div style={{
-            background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem',
-            padding: '1rem', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          }}>
-            {!actionData
-              ? <><Skeleton h={52} /><Skeleton h={52} /><Skeleton h={52} /></>
-              : <PendingActions cards={actionData.action_cards} />
-            }
-          </div>
-        </div>
-
-      </div>
-
-      {/* ── Board Brief Modal ────────────────────────────────────────── */}
-      {showBoardBrief && <BoardBriefModal onClose={() => setShowBoardBrief(false)} />}
-
+      <MitigationGraph
+        totalSaved={totalSaved}
+        resolvedCards={allCards.filter((c: any) => c.is_resolved && c.resolved_at && c.estimated_impact_inr > 0)}
+      />
     </div>
   )
 }

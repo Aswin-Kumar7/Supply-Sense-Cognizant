@@ -1,30 +1,23 @@
 /**
  * Loading skeleton displayed while a lazy-loaded route is being fetched.
- * Matches the dark theme with subtle pulse animation.
  */
 export function RouteLoadingSkeleton() {
   return (
-    <div className="flex flex-col gap-4 p-6 animate-pulse">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem' }}>
       {/* Header skeleton */}
-      <div className="h-6 w-48 rounded bg-slate-700/50" />
+      <div className="skeleton" style={{ height: '1.75rem', width: '12rem', borderRadius: '0.375rem' }} />
 
-      {/* Panel skeletons */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-48 rounded-lg bg-slate-800/60 border border-slate-700/30"
-          />
+      {/* Three-column card skeletons */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+        {[1, 2, 3].map(i => (
+          <div key={i} className="skeleton" style={{ height: '8rem', borderRadius: '0.75rem' }} />
         ))}
       </div>
 
-      {/* Additional row skeleton */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {[4, 5].map((i) => (
-          <div
-            key={i}
-            className="h-36 rounded-lg bg-slate-800/60 border border-slate-700/30"
-          />
+      {/* Two-column row */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        {[4, 5].map(i => (
+          <div key={i} className="skeleton" style={{ height: '5rem', borderRadius: '0.75rem' }} />
         ))}
       </div>
     </div>

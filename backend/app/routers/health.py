@@ -3,6 +3,7 @@ Health check endpoint for container orchestration and frontend status indicator.
 Also exposes /health/metrics for CloudWatch-style observability.
 """
 
+import os
 import time
 import asyncio
 from fastapi import APIRouter, Depends
@@ -26,21 +27,37 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     """
     # Database
     db_status = "ok"
+    db_error = None
     try:
         # If the DB host is unreachable, this can otherwise hang the request.
         await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=2)
-    except Exception:
+    except Exception as e:
+        from app.core.logging import logger
+        logger.error(f"Database health check query failed: {e}", exc_info=True)
         db_status = "error"
+        db_error = str(e)
 
-    # Bedrock — check if AWS creds are configured (no actual call)
+    # Bedrock — verify creds and model access with a real (cheap) API call
     bedrock_status = "ok"
     try:
         import boto3
-        session = boto3.session.Session()
-        creds = session.get_credentials()
-        if creds is None:
-            bedrock_status = "unavailable"
-    except Exception:
+        _session = boto3.Session(
+            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+            region_name=os.environ.get("AWS_REGION", "ap-south-1"),
+        )
+        # Use bedrock (not bedrock-runtime) to list models — proves creds are
+        # valid and region is reachable without needing model-access approval.
+        _client = _session.client("bedrock", verify=False)
+        _resp = await asyncio.wait_for(
+            asyncio.to_thread(_client.list_foundation_models),
+            timeout=5,
+        )
+        if _resp.get("ResponseMetadata", {}).get("HTTPStatusCode") != 200:
+            bedrock_status = "degraded"
+    except Exception as _bedrock_exc:
+        from app.core.logging import logger
+        logger.warning(f"Bedrock health check failed: {type(_bedrock_exc).__name__}: {_bedrock_exc}")
         bedrock_status = "unavailable"
 
     # Strands agents
@@ -81,6 +98,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         "status": overall,
         "service": "supplysense-api",
         "database": db_status,
+        "db_error": db_error,
         "bedrock": bedrock_status,
         "strands_agents": strands_status,
         "synthetic_engine": synthetic_status,

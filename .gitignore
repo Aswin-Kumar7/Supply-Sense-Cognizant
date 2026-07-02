@@ -11,7 +11,9 @@ venv/
 build/
 *.pyo
 *.pyd
+.agents
 .pytest_cache/
+skills-lock.json
 .mypy_cache/
 .ruff_cache/
 htmlcov/
@@ -29,7 +31,7 @@ dist/
 .env.local
 .env.*.local
 *.env
-
+CLAUDE.md
 # ── AWS credentials (never commit) ────────────────────────────────────────
 .aws/
 credentials
@@ -57,6 +59,7 @@ desktop.ini
 *.log
 logs/
 *.log.*
+projectinfo/
 
 # ── Docker volumes ────────────────────────────────────────────────────────
 postgres_data/
@@ -75,3 +78,8 @@ check_db.py
 scratch/
 tmp/
 .kiro
+
+
+# ── CI/CD ────────────────────────────────────────────────────────
+.github/
+# Excluded this GitHub configuration directory due to active local development

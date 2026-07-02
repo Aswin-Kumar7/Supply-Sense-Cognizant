@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useWeightedRiskAnalysis, useProcurementCards, useDisruptions, useFinancialSummary } from '../hooks/useQueries'
-import { Badge } from '../components/ui/Badge'
+import { useNavigate } from 'react-router-dom'
+import { useWeightedRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
+import {
+  Search, AlertOctagon, CheckCircle2
+} from 'lucide-react'
 import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
 
 function formatINR(n: number) {
@@ -11,225 +13,198 @@ function formatINR(n: number) {
   return `₹${n.toFixed(0)}`
 }
 
-function Skeleton({ h = 80 }: { h?: number }) {
-  return <div className="skeleton" style={{ width: '100%', height: h, borderRadius: 10 }} />
-}
+const LEVEL_CONFIG = {
+  critical: { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.12)', label: 'Critical' },
+  high:     { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.12)', label: 'High' },
+  medium:   { color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.05)', border: '1px solid rgba(59, 130, 246, 0.12)', label: 'Medium' },
+  low:      { color: '#10B981', bg: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.12)', label: 'Low' },
+} as const
 
-const FILTER_LEVELS = ['all', 'critical', 'high', 'medium', 'low'] as const
+const FILTER_LEVELS = ['all', 'critical', 'high', 'medium'] as const
 type FilterLevel = typeof FILTER_LEVELS[number]
 
-const RISK_BORDER: Record<string, string> = {
-  critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669',
-}
-const RISK_BG: Record<string, string> = {
-  critical: 'rgba(220,38,38,0.03)', high: 'rgba(217,119,6,0.02)', medium: 'rgba(37,99,235,0.02)', low: 'rgba(5,150,105,0.02)',
-}
-
-const FACTOR_ICON: Record<string, string> = {
-  disruption_severity:      '🌀',
-  inventory_pressure:       '📦',
-  delivery_reliability:     '🚚',
-  logistics_vulnerability:  '🛣️',
-  dependency_exposure:      '🔗',
-  festival_proximity:       '🎆',
-}
-
-/* ── Risk card ──────────────────────────────────────────────────────── */
-function RiskCard({ risk, card }: { risk: SupplierRiskAnalysis; card?: IntelligentActionCard }) {
-  const navigate = useNavigate()
-  const [hovered, setHovered] = useState(false)
-
-  const border = RISK_BORDER[risk.risk_level] ?? 'var(--border)'
-  const bg     = hovered ? 'var(--bg-hover)' : RISK_BG[risk.risk_level] ?? 'var(--bg-card)'
-
-  const sortedFactors = Object.entries(risk.factors ?? {})
-    .sort(([, a], [, b]) => b.weighted - a.weighted)
-
-  const [primaryName, primaryFactor] = sortedFactors[0] ?? ['', null]
-  const primaryIcon = FACTOR_ICON[primaryName] ?? '⚠️'
-  const secondaryFactors = sortedFactors.slice(1, 4)
-
+function Skeleton() {
   return (
-    <div
-      onClick={() => navigate(`/risks/${risk.supplier_id}`)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        background: 'var(--bg-card)',
-        border: `1px solid ${hovered ? border : 'var(--border)'}`,
-        borderLeft: `4px solid ${border}`,
-        borderRadius: '0.875rem',
-        padding: '1.125rem 1.25rem',
-        cursor: 'pointer',
-        transition: 'all 150ms cubic-bezier(0.16,1,0.3,1)',
-        boxShadow: hovered ? '0 4px 16px rgba(0,0,0,0.08)' : '0 1px 3px rgba(0,0,0,0.05)',
-        backgroundColor: bg,
-      }}
-    >
-      {/* Header row: signal headline + score */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-
-          {/* Signal badges row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <Badge level={risk.risk_level} />
-            <span style={{
-              fontSize: '0.625rem', padding: '2px 7px', borderRadius: '999px',
-              background: 'var(--border-strong)', color: 'var(--ink-3)', fontWeight: 600, textTransform: 'capitalize',
-            }}>
-              {primaryIcon} {primaryName.replace(/_/g, ' ')}
-            </span>
-            <span style={{ fontSize: '0.6875rem', color: 'var(--ink-4)' }}>
-              {(risk.confidence * 100).toFixed(0)}% confidence
-            </span>
-            {risk.human_review_required && (
-              <span style={{
-                fontSize: '0.625rem', padding: '1px 6px', borderRadius: '999px',
-                background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A', fontWeight: 600,
-              }}>
-                Review Required
-              </span>
-            )}
-          </div>
-
-          {/* Event/issue title as headline */}
-          <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--ink-1)', marginTop: '0.375rem', lineHeight: 1.4 }}>
-            {card?.title ?? (primaryFactor?.explanation ?? 'Risk score elevated')}
-          </h3>
-
-          {/* Supplier meta row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.375rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--ink-2)' }}>{risk.supplier_name}</span>
-            {card && (
-              <>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--ink-5)' }}>·</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--ink-3)' }}>{card.city}, {card.region}</span>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--ink-5)' }}>·</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--ink-3)' }}>{card.category}</span>
-              </>
-            )}
-          </div>
-
-          {/* Primary signal explanation (secondary detail) */}
-          {primaryFactor && (
-            <p style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', marginTop: '0.375rem', lineHeight: 1.5 }}>
-              {primaryFactor.explanation}
-            </p>
-          )}
-        </div>
-
-        {/* Score */}
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: border, letterSpacing: '-0.03em', lineHeight: 1 }}>
-            {(risk.overall_score * 100).toFixed(0)}
-            <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--ink-4)' }}>%</span>
-          </div>
-          <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '0.125rem' }}>risk score</div>
-        </div>
-      </div>
-
-      {/* Secondary signals */}
-      {secondaryFactors.length > 0 && (
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.875rem', flexWrap: 'wrap' }}>
-          {secondaryFactors.map(([name, f]) => (
-            <div key={name} style={{
-              flex: '1 1 150px',
-              background: 'var(--bg-hover)',
-              border: '1px solid #E2E8F0',
-              borderRadius: '0.5rem',
-              padding: '0.5rem 0.625rem',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '4px' }}>
-                <span style={{ fontSize: '0.75rem' }}>{FACTOR_ICON[name] ?? '·'}</span>
-                <div style={{ fontSize: '0.625rem', fontWeight: 600, color: 'var(--ink-3)', textTransform: 'capitalize' }}>
-                  {name.replace(/_/g, ' ')}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <div style={{ flex: 1, height: '4px', background: 'var(--border)', borderRadius: '999px', overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${(f.value * 100).toFixed(0)}%`,
-                    height: '100%',
-                    background: border,
-                    borderRadius: '999px',
-                    transition: 'width 0.5s ease',
-                  }} />
-                </div>
-                <span style={{ fontSize: '0.6875rem', fontFamily: 'JetBrains Mono, monospace', color: 'var(--ink-2)', flexShrink: 0 }}>
-                  {(f.value * 100).toFixed(0)}%
-                </span>
-              </div>
-              <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {f.explanation}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Footer: products + financial context + action */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.875rem', paddingTop: '0.75rem', borderTop: '1px solid #F1F5F9' }}>
-        <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
-          {card ? (
-            <>
-              <div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500 }}>Exposure</div>
-                <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#DC2626', fontFamily: 'JetBrains Mono, monospace' }}>
-                  {formatINR(card.financial_exposure_inr)}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500 }}>Stockout in</div>
-                <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: card.days_to_stockout <= 7 ? '#DC2626' : card.days_to_stockout <= 14 ? '#D97706' : 'var(--ink-2)' }}>
-                  {card.days_to_stockout}d
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500 }}>Products</div>
-                <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--ink-2)' }}>
-                  {card.affected_skus} SKU{card.affected_skus !== 1 ? 's' : ''}
-                </div>
-              </div>
-              {card.escalation_window && (
-                <div>
-                  <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500 }}>Escalate by</div>
-                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#D97706' }}>{card.escalation_window}</div>
-                </div>
-              )}
-            </>
-          ) : (
-            <span style={{ fontSize: '0.75rem', color: 'var(--ink-4)' }}>No procurement data available</span>
-          )}
-        </div>
-        <span style={{ fontSize: '0.75rem', color: '#2563EB', fontWeight: 600, flexShrink: 0 }}>View details →</span>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="skeleton" style={{ height: 60, borderRadius: '8px' }} />
+      ))}
     </div>
   )
 }
 
-/* ── Risks page ─────────────────────────────────────────────────────── */
-export default function RisksPage() {
-  const [searchParams] = useSearchParams()
-  const initFilter = (searchParams.get('filter') ?? 'all') as FilterLevel
-  const [filter, setFilter] = useState<FilterLevel>(initFilter)
-  const [search, setSearch] = useState(searchParams.get('q') ?? '')
+function priorityScore(riskScore: number, exposureInr: number): number {
+  const normExposure = Math.min(exposureInr / 500_000, 1)
+  return riskScore * 0.5 + normExposure * 0.5
+}
 
-  const { data: risks, isLoading: loadingRisks, isCustom: customWeightsActive } = useWeightedRiskAnalysis()
+/* ── Risk Row ───────────────────────────────────────────────────────────── */
+function RiskRow({ risk, card }: { risk: SupplierRiskAnalysis; card?: IntelligentActionCard }) {
+  const navigate = useNavigate()
+  const cfg = LEVEL_CONFIG[risk.risk_level] ?? LEVEL_CONFIG.low
+  const urgent = card && card.days_to_stockout <= 7
+  const needsAction = risk.risk_level === 'critical' || risk.risk_level === 'high'
+  const priority = priorityScore(risk.overall_score, card?.financial_exposure_inr ?? 0)
+
+  return (
+    <tr
+      onClick={() => navigate(`/risks/${risk.supplier_id}`)}
+      style={{ cursor: 'pointer' }}
+      className="table-row-hover"
+    >
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: cfg.bg, border: cfg.border, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8125rem' }}>
+              {risk.supplier_name.charAt(0)}
+            </div>
+            {risk.risk_level === 'critical' && (
+              <span style={{ 
+                position: 'absolute', 
+                top: -1, 
+                right: -1, 
+                width: 9, 
+                height: 9, 
+                background: '#EF4444', 
+                borderRadius: '50%', 
+                border: '2px solid #FFFFFF',
+                boxShadow: '0 0 4px rgba(239, 68, 68, 0.4)' 
+              }} />
+            )}
+          </div>
+          <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{risk.supplier_name}</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
+              {card ? `${card.category} · ${card.region}` : 'Supplier'}
+            </div>
+          </div>
+        </div>
+      </td>
+
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'left' }}>
+        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 750, color: '#0F172A', letterSpacing: '-0.02em' }}>
+            {Math.round(priority * 100)}%
+          </span>
+          <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 500 }}>Priority</span>
+        </div>
+      </td>
+
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <span style={{ display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: '4px', fontSize: '0.6875rem', fontWeight: 700, padding: '2px 8px', color: cfg.color, borderRadius: '20px', background: cfg.bg, border: cfg.border, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            {cfg.label}
+          </span>
+          <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, paddingLeft: '2px' }}>
+            {(risk.overall_score * 100).toFixed(0)}% Risk Score
+          </span>
+        </div>
+      </td>
+
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'left' }}>
+        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+          {card ? (
+            <>
+              <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', fontVariantNumeric: 'tabular-nums' }}>
+                {formatINR(card.financial_exposure_inr)}
+              </span>
+              <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 500 }}>Exposure</span>
+            </>
+          ) : (
+            <span style={{ fontSize: '0.875rem', color: '#CBD5E1' }}>—</span>
+          )}
+        </div>
+      </td>
+
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
+        {card ? (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: urgent ? '#EF4444' : '#0F172A', fontVariantNumeric: 'tabular-nums' }}>
+              {card.days_to_stockout} {card.days_to_stockout === 1 ? 'day' : 'days'}
+            </span>
+          </div>
+        ) : (
+          <span style={{ fontSize: '0.875rem', color: '#CBD5E1' }}>—</span>
+        )}
+      </td>
+
+      <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'right' }}>
+        <button className="btn-table-action" style={{
+          background: needsAction ? '#0F172A' : '#FFFFFF',
+          color: needsAction ? '#FFFFFF' : '#334155',
+          border: needsAction ? '1px solid #0F172A' : '1px solid #E2E8F0',
+          fontWeight: 600,
+        }}>
+          {needsAction ? 'Act Now' : 'Review'}
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+/* ── Risks Page ─────────────────────────────────────────────────────────── */
+export default function RisksPage() {
+  const navigate = useNavigate()
+  const [viewMode, setViewMode] = useState<'active' | 'resolved'>('active')
+  const [filter, setFilter] = useState<FilterLevel>('all')
+  const [search, setSearch] = useState('')
+
+  const { data: risks, isLoading, isCustom: customWeightsActive } = useWeightedRiskAnalysis()
   const { data: cards } = useProcurementCards()
-  const { data: disruptions } = useDisruptions()
-  const { data: financial } = useFinancialSummary()
+  const { data: actionData } = useActionCards()
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
   const cardMap = useMemo(
-    () => new Map((cards as IntelligentActionCard[] | undefined ?? []).map(c => [c.supplier_id, c])),
+    () => new Map(((cards as IntelligentActionCard[] | undefined) ?? []).map(c => [c.supplier_id, c])),
     [cards]
   )
 
+  // A supplier is "resolved" only when ALL of its action cards are resolved.
+  // Using ANY-resolved caused split-brain: supplier appeared in both Active
+  // and Resolved lists when it had mixed resolved/unresolved cards.
+  const resolvedSupplierIds = useMemo(() => {
+    const cardsList = actionData?.action_cards ?? []
+    const bySupplier = new Map<string, boolean[]>()
+    for (const c of cardsList) {
+      if (!c.supplier_id) continue
+      if (!bySupplier.has(c.supplier_id)) bySupplier.set(c.supplier_id, [])
+      bySupplier.get(c.supplier_id)!.push(c.is_resolved)
+    }
+    const resolved = new Set<string>()
+    for (const [sid, statuses] of bySupplier) {
+      if (statuses.length > 0 && statuses.every(s => s)) resolved.add(sid)
+    }
+    return resolved
+  }, [actionData])
+
+  const activeRisks = useMemo(() => riskList.filter(r => {
+    if (r.risk_level === 'low') return false
+    const card = cardMap.get(r.supplier_id)
+    if (!card || card.financial_exposure_inr === 0) return false
+    
+    // Also ensure they actually have an unresolved action card
+    const hasUnresolved = (actionData?.action_cards ?? []).some(c => c.supplier_id === r.supplier_id && !c.is_resolved)
+    if (!hasUnresolved) return false
+
+    return true
+  }), [riskList, cardMap, actionData])
+
+  const resolvedRisks = useMemo(() => riskList.filter(r => {
+    if (!resolvedSupplierIds.has(r.supplier_id)) return false
+    return true
+  }), [riskList, resolvedSupplierIds])
+
+  const counts = useMemo(() => ({
+    critical: activeRisks.filter(r => r.risk_level === 'critical').length,
+    high:     activeRisks.filter(r => r.risk_level === 'high').length,
+    medium:   activeRisks.filter(r => r.risk_level === 'medium').length,
+  }), [activeRisks])
+
   const filtered = useMemo(() => {
-    let list = [...riskList].sort((a, b) => {
-      const ORDER = { critical: 3, high: 2, medium: 1, low: 0 }
-      const lvlDiff = (ORDER[b.risk_level as keyof typeof ORDER] ?? 0) - (ORDER[a.risk_level as keyof typeof ORDER] ?? 0)
-      return lvlDiff !== 0 ? lvlDiff : b.overall_score - a.overall_score
+    let list = [...activeRisks].sort((a, b) => {
+      const expA = cardMap.get(a.supplier_id)?.financial_exposure_inr ?? 0
+      const expB = cardMap.get(b.supplier_id)?.financial_exposure_inr ?? 0
+      return expB - expA
     })
     if (filter !== 'all') list = list.filter(r => r.risk_level === filter)
     if (search.trim()) {
@@ -237,134 +212,412 @@ export default function RisksPage() {
       list = list.filter(r => r.supplier_name.toLowerCase().includes(q))
     }
     return list
-  }, [riskList, filter, search])
+  }, [activeRisks, cardMap, filter, search])
 
-  const counts = useMemo(() => ({
-    critical: riskList.filter(r => r.risk_level === 'critical').length,
-    high:     riskList.filter(r => r.risk_level === 'high').length,
-    medium:   riskList.filter(r => r.risk_level === 'medium').length,
-    low:      riskList.filter(r => r.risk_level === 'low').length,
-  }), [riskList])
+  const filteredResolved = useMemo(() => {
+    let list = [...resolvedRisks]
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(r => r.supplier_name.toLowerCase().includes(q))
+    }
+    return list
+  }, [resolvedRisks, search])
+
+  const actionNeeded = activeRisks.filter(r => r.risk_level === 'critical' || r.risk_level === 'high').length
+
+  const totalActiveExposure = useMemo(
+    () => activeRisks.reduce((sum, r) => sum + (cardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0), 0),
+    [activeRisks, cardMap]
+  )
+
+  function getResolvedCardId(supplierId: string): string | null {
+    const cardsList = actionData?.action_cards ?? []
+    return cardsList
+      .filter(c => c.supplier_id === supplierId && c.is_resolved)
+      .sort((a: any, b: any) => new Date(b.resolved_at ?? b.created_at).getTime() - new Date(a.resolved_at ?? a.created_at).getTime())[0]?.id ?? null
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        borderBottom: '1px solid #F1F5F9',
+        paddingBottom: '20px',
+        marginBottom: '4px',
+        flexWrap: 'wrap',
+        gap: '16px'
+      }}>
         <div>
-          <h1 style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em' }}>Risks</h1>
-          <p style={{ fontSize: '0.875rem', color: 'var(--ink-3)', marginTop: '0.25rem' }}>
-            {filtered.length} supplier{filtered.length !== 1 ? 's' : ''} · sorted by severity
-          </p>
+          <div style={{ 
+            fontSize: '0.75rem', 
+            color: '#64748B', 
+            fontWeight: 500, 
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}>
+            <span 
+              onClick={() => navigate('/')} 
+              style={{ cursor: 'pointer', transition: 'color 150ms ease' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+              onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+            >
+              Dashboard
+            </span>
+            <span>/</span>
+            <span style={{ color: '#0F172A', fontWeight: 600 }}>Risk Analysis</span>
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1.1, margin: 0 }}>
+              Risk Analysis
+            </h1>
+            <p style={{ fontSize: '0.875rem', color: '#64748B', marginTop: '6px', marginBottom: 0 }}>
+              Suppliers ranked by risk severity · take action before exposure grows
+            </p>
+          </div>
         </div>
 
-        {/* Summary pills */}
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {financial && (
-            <div style={{ padding: '0.5rem 0.875rem', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '0.625rem' }}>
-              <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500 }}>Total Exposure</div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#DC2626', lineHeight: 1.2 }}>
-                {formatINR(financial.total_financial_exposure_inr)}
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-end' }}>
+          {totalActiveExposure > 0 && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.625rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Unresolved Exposure</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#EF4444', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                {formatINR(totalActiveExposure)}
               </div>
             </div>
           )}
-          {disruptions && disruptions.total_active > 0 && (
-            <div style={{ padding: '0.5rem 0.875rem', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '0.625rem' }}>
-              <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', fontWeight: 500 }}>Active Disruptions</div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#D97706', lineHeight: 1.2 }}>
-                {disruptions.total_active}
+          {activeRisks.length > 0 && (
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.625rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Suppliers at Risk</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#F59E0B', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+                {activeRisks.length}
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Custom weights notice */}
-      {customWeightsActive && (
-        <div style={{
-          padding: '0.625rem 1rem',
-          background: '#EFF6FF',
-          border: '1px solid #BFDBFE',
-          borderRadius: '0.625rem',
-          fontSize: '0.8125rem',
-          color: '#1D4ED8',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-        }}>
-          <span>⚖️</span>
-          <span><strong>Custom risk weights active</strong> — scores shown are recomputed using your Settings configuration.</span>
+      {/* View Mode Toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: '2px', background: '#F1F5F9', padding: '2px', borderRadius: '6px' }}>
+          <button
+            onClick={() => { setViewMode('active'); setSearch('') }}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '5px',
+              border: 'none',
+              background: viewMode === 'active' ? '#FFFFFF' : 'transparent',
+              color: viewMode === 'active' ? '#0F172A' : '#64748B',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: viewMode === 'active' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+              transition: 'all 150ms ease',
+            }}
+          >
+            Active Risks
+          </button>
+          <button
+            onClick={() => { setViewMode('resolved'); setSearch('') }}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '5px',
+              border: 'none',
+              background: viewMode === 'resolved' ? '#FFFFFF' : 'transparent',
+              color: viewMode === 'resolved' ? '#0F172A' : '#64748B',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: viewMode === 'resolved' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+              transition: 'all 150ms ease',
+            }}
+          >
+            Resolved History ({resolvedRisks.length})
+          </button>
         </div>
-      )}
 
-      {/* Filter bar + search */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '0.375rem', background: 'var(--border-strong)', borderRadius: '0.625rem', padding: '0.25rem' }}>
-          {FILTER_LEVELS.map(level => {
-            const count = level === 'all' ? riskList.length : counts[level as keyof typeof counts]
-            const isActive = filter === level
-            return (
-              <button
-                key={level}
-                onClick={() => setFilter(level)}
-                style={{
-                  padding: '0.3125rem 0.75rem',
-                  borderRadius: '0.375rem',
-                  fontSize: '0.8125rem',
-                  fontWeight: isActive ? 600 : 500,
-                  background: isActive ? 'var(--bg-card)' : 'transparent',
-                  color: isActive
-                    ? (level === 'all' ? 'var(--ink-1)' : RISK_BORDER[level] ?? 'var(--ink-1)')
-                    : 'var(--ink-3)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  transition: 'all 150ms',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.375rem',
-                  fontFamily: 'inherit',
-                }}
-              >
-                <span style={{ textTransform: 'capitalize' }}>{level}</span>
-                <span style={{
-                  fontSize: '0.6875rem',
-                  background: isActive ? (level === 'all' ? 'var(--border)' : `${RISK_BORDER[level ?? '']}20`) : 'var(--border)',
-                  color: isActive ? (level === 'all' ? 'var(--ink-2)' : RISK_BORDER[level]) : 'var(--ink-4)',
-                  padding: '0 5px', borderRadius: '999px', fontWeight: 600,
-                }}>
-                  {count}
+        {viewMode === 'resolved' && (
+          <div style={{ position: 'relative' }}>
+            <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search resolved history…"
+              style={{
+                paddingLeft: '2rem', paddingRight: '1rem', height: '36px',
+                border: '1px solid #E2E8F0', borderRadius: '20px',
+                fontSize: '0.75rem', outline: 'none', background: '#FFFFFF', width: '240px',
+                boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.02)',
+                color: '#0F172A',
+                transition: 'border-color 150ms ease'
+              }}
+              onFocus={e => e.target.style.borderColor = '#0F172A'}
+              onBlur={e => e.target.style.borderColor = '#E2E8F0'}
+            />
+          </div>
+        )}
+      </div>
+
+      {viewMode === 'active' && (
+        <>
+          {/* Action-needed banner */}
+          {actionNeeded > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '10px 16px',
+              background: '#FFF5F5', border: '1px solid #FEE2E2', borderRadius: '10px',
+              fontSize: '0.75rem',
+            }}>
+              {/* Pulsing Dot & label */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                <span 
+                  className="alert-beacon"
+                  style={{ 
+                    width: 6, 
+                    height: 6, 
+                    background: '#EF4444', 
+                  }} 
+                />
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#991B1B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Risk Alert
                 </span>
-              </button>
-            )
-          })}
-        </div>
+              </div>
 
-        <input
-          className="input"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search supplier name…"
-          style={{ width: '240px' }}
-        />
-      </div>
+              <div style={{ width: '1px', height: '16px', background: '#FCA5A5', flexShrink: 0 }} />
 
-      {/* Cards */}
-      {loadingRisks ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} h={130} />)}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
-          No risks match the current filter.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-          {filtered.map(r => (
-            <RiskCard key={r.supplier_id} risk={r} card={cardMap.get(r.supplier_id)} />
-          ))}
+              <span style={{ color: '#7F1D1D', fontWeight: 700 }}>
+                {actionNeeded} supplier{actionNeeded !== 1 ? 's' : ''} require immediate action
+              </span>
+              <span style={{ color: '#B91C1C' }}>—</span>
+              <span style={{ color: '#B91C1C', fontWeight: 600 }}>
+                {counts.critical > 0 && `${counts.critical} critical`}
+                {counts.critical > 0 && counts.high > 0 && ' · '}
+                {counts.high > 0 && `${counts.high} high risk`}
+              </span>
+            </div>
+          )}
+
+          {customWeightsActive && (
+            <div style={{ padding: '10px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '0.75rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <AlertOctagon size={14} style={{ color: '#F59E0B' }} />
+              <span><strong>Custom weights active</strong> — risk scores reflect your settings profile.</span>
+            </div>
+          )}
+
+          {/* Filter tabs + search */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #F1F5F9', paddingBottom: '0' }}>
+            <div style={{ display: 'flex', gap: '1.5rem' }}>
+              {FILTER_LEVELS.map(level => {
+                const count = level === 'all' ? activeRisks.length : counts[level as keyof typeof counts]
+                const cfg = level !== 'all' ? LEVEL_CONFIG[level] : null
+                const isActive = filter === level
+                return (
+                  <button
+                    key={level}
+                    onClick={() => setFilter(level)}
+                    style={{
+                      padding: '12px 0',
+                      background: 'none', border: 'none',
+                      borderBottom: `2px solid ${isActive ? '#0F172A' : 'transparent'}`,
+                      fontSize: '0.875rem', fontWeight: 600,
+                      color: isActive ? '#0F172A' : '#64748B',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      marginBottom: '-1px', transition: 'all 150ms ease',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {level}
+                    {count > 0 && (
+                      <span style={{
+                        fontSize: '0.6875rem', fontWeight: 700,
+                        padding: '2px 8px', borderRadius: '20px',
+                        background: isActive && cfg ? cfg.bg : '#F1F5F9',
+                        color: isActive && cfg ? cfg.color : '#64748B',
+                        border: isActive && cfg ? cfg.border : 'none',
+                      }}>{count}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ position: 'relative', marginBottom: '8px' }}>
+              <Search size={14} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search active suppliers…"
+                style={{
+                  paddingLeft: '2rem', paddingRight: '1rem', height: '36px',
+                  border: '1px solid #E2E8F0', borderRadius: '20px',
+                  fontSize: '0.75rem', outline: 'none', background: '#FFFFFF', width: '240px',
+                  boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.02)',
+                  color: '#0F172A',
+                  transition: 'border-color 150ms ease'
+                }}
+                onFocus={e => e.target.style.borderColor = '#0F172A'}
+                onBlur={e => e.target.style.borderColor = '#E2E8F0'}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Active Risks Table Wrapper */}
+      {viewMode === 'active' && (
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#FFFFFF', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.02)' }}>
+          {isLoading ? (
+            <div style={{ padding: '1.25rem' }}><Skeleton /></div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: '4rem 2rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.875rem' }}>
+              {activeRisks.length === 0 && resolvedRisks.length > 0
+                ? '🎉 All risks have been resolved.'
+                : 'No active suppliers match the current filter.'}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFAFA' }}>
+                    <th style={{ width: '30%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Action Priority</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk Score</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Money at Risk</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Days of Stock Left</th>
+                    <th style={{ width: '10%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(r => (
+                    <RiskRow key={r.supplier_id} risk={r} card={cardMap.get(r.supplier_id)} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Resolved History Table Wrapper */}
+      {viewMode === 'resolved' && (
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#FFFFFF', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.02)' }}>
+          {isLoading ? (
+            <div style={{ padding: '1.25rem' }}><Skeleton /></div>
+          ) : filteredResolved.length === 0 ? (
+            <div style={{ padding: '4rem 2rem', textAlign: 'center', color: '#94A3B8', fontSize: '0.875rem' }}>
+              No resolved suppliers match your search.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFAFA' }}>
+                    <th style={{ width: '40%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Supplier</th>
+                    <th style={{ width: '20%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Money Protected</th>
+                    <th style={{ width: '25%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Risk Score at Time of Issue</th>
+                    <th style={{ width: '15%', padding: '12px 20px', fontSize: '0.6875rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredResolved.map(r => {
+                    const cardId = getResolvedCardId(r.supplier_id)
+                    return (
+                      <tr
+                        key={r.supplier_id}
+                        onClick={() => navigate(cardId ? `/activity/${cardId}` : `/risks/${r.supplier_id}`)}
+                        style={{ cursor: 'pointer' }}
+                        className="table-row-hover"
+                      >
+                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                              <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#D1FAE5', color: '#047857', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8125rem' }}>
+                                {r.supplier_name.charAt(0)}
+                              </div>
+                              <div style={{ position: 'absolute', bottom: -1, right: -1, width: 14, height: 14, borderRadius: '50%', background: '#059669', border: '2px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <CheckCircle2 size={10} color="#FFFFFF" />
+                              </div>
+                            </div>
+                            <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>{r.supplier_name}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
+                                Supplier
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'left' }}>
+                          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A', fontVariantNumeric: 'tabular-nums' }}>
+                              {formatINR((actionData?.action_cards ?? []).filter(c => c.supplier_id === r.supplier_id && c.is_resolved).reduce((acc, curr) => acc + (curr.estimated_impact_inr || 0), 0))}
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 500 }}>Resolved</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ display: 'inline-flex', alignSelf: 'flex-start', fontSize: '0.6875rem', fontWeight: 700, padding: '2px 8px', background: '#F1F5F9', color: '#334155', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              Mitigated
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, paddingLeft: '2px' }}>
+                              {(r.overall_score * 100).toFixed(0)}% Risk Score
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px 20px', verticalAlign: 'middle', borderBottom: '1px solid #F1F5F9', textAlign: 'right' }}>
+                          <button className="btn-table-action" style={{ fontWeight: 600 }}>
+                            View Detail
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      <style>{`
+        .table-row-hover td {
+          transition: background 150ms ease;
+        }
+        .table-row-hover:hover td {
+          background: #F8FAFC;
+        }
+        .btn-table-action {
+          background: #FFFFFF;
+          color: #334155;
+          border: 1px solid #E2E8F0;
+          cursor: pointer;
+          transition: all 150ms ease;
+          outline: none;
+          padding: 6px 14px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          box-shadow: 0 1px 2px rgba(15,23,42,0.02);
+        }
+        .btn-table-action:hover {
+          background: #F8FAFC;
+          border-color: #CBD5E1;
+        }
+        @keyframes beacon-glow {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.75); }
+          70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .alert-beacon {
+          display: inline-block;
+          border-radius: 50%;
+          animation: beacon-glow 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        }
+      `}</style>
     </div>
   )
 }

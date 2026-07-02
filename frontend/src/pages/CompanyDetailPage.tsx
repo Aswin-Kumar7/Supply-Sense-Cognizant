@@ -1,42 +1,88 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
-import { useSuppliers, useRiskAnalysis, useSKUs, useDisruptions } from '../hooks/useQueries'
-import { Badge } from '../components/ui/Badge'
-import type { Supplier, SupplierRiskAnalysis, SKURisk, Disruption } from '../types'
+import { useSuppliers, useSKUs, useDisruptions, useActionCards } from '../hooks/useQueries'
+import { Package, Globe, ChevronRight, MapPin, Truck, ShieldAlert, Star, Box, Activity, CalendarDays, TrendingDown } from 'lucide-react'
+import type { Supplier, SKURisk, Disruption } from '../types'
 
 function Skeleton({ h = 20, w = '100%' }: { h?: number; w?: string | number }) {
   return <div className="skeleton" style={{ height: h, width: w, borderRadius: 6 }} />
 }
 
-function StatBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+const STOCK_COLORS: Record<string, string> = { critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669' }
+const STOCK_BG: Record<string, string> = { critical: '#FEF2F2', high: '#FFFBEB', medium: '#EFF6FF', low: '#ECFDF5' }
+const STOCK_BORDER: Record<string, string> = { critical: '#FCA5A5', high: '#FDE68A', medium: '#BFDBFE', low: '#A7F3D0' }
+
+/* ── SKU Inventory Cards ──────────────────────────────────────────────── */
+function SKUInventoryGrid({ skus }: { skus: SKURisk[] }) {
+  if (skus.length === 0) {
+    return <div style={{ padding: '32px', textAlign: 'center', color: '#64748B', fontSize: '0.875rem' }}>No products provisioned for this vendor.</div>
+  }
+
   return (
-    <div style={{ background: 'var(--bg-hover)', border: '1px solid #E2E8F0', borderRadius: '0.625rem', padding: '0.875rem' }}>
-      <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', fontWeight: 500, marginBottom: '0.25rem' }}>{label}</div>
-      <div style={{ fontSize: '1.125rem', fontWeight: 700, color: color ?? 'var(--ink-1)', lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '0.25rem' }}>{sub}</div>}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', padding: '16px' }}>
+      {skus.map(sku => {
+        const color = STOCK_COLORS[sku.stockout_risk] ?? '#059669'
+        const bg = STOCK_BG[sku.stockout_risk] ?? '#ECFDF5'
+        const borderCol = STOCK_BORDER[sku.stockout_risk] ?? '#A7F3D0'
+        const runwayPct = Math.min(100, Math.max(5, (sku.days_of_stock / 30) * 100))
+
+        return (
+          <div key={sku.id} style={{ border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px', background: '#FFF', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)' }}>
+            {/* Title & Tag */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+              <div>
+                <h4 style={{ fontWeight: 805, color: '#0F172A', fontSize: '0.875rem', margin: 0, lineHeight: 1.25, letterSpacing: '-0.01em' }}>{sku.name}</h4>
+                <div style={{ fontSize: '0.6875rem', color: '#64748B', fontFamily: 'monospace', marginTop: '2px' }}>{sku.sku_code} • {sku.category}</div>
+              </div>
+              <span style={{ 
+                fontSize: '0.625rem', fontWeight: 800, color: color, background: bg, border: `1px solid ${borderCol}`,
+                padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0
+              }}>
+                {sku.days_of_stock}d stock
+              </span>
+            </div>
+
+            {/* Progress indicator */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', fontWeight: 600, color: '#64748B' }}>
+                <span>Runway Progress</span>
+                <span style={{ color: color, fontWeight: 700 }}>{sku.days_of_stock} days remaining</span>
+              </div>
+              <div style={{ width: '100%', height: '6px', background: '#F1F5F9', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ width: `${runwayPct}%`, height: '100%', background: color, borderRadius: '3px', transition: 'width 300ms ease' }} />
+              </div>
+            </div>
+
+            {/* Details */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', borderTop: '1px solid #F1F5F9', paddingTop: '12px', marginTop: '4px' }}>
+              <div>
+                <span style={{ fontSize: '0.5625rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Stock On Hand</span>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 750, color: '#0F172A', fontFamily: 'monospace', marginTop: '1px' }}>{sku.current_stock.toLocaleString()} u</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.5625rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Daily Demand</span>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 750, color: '#0F172A', fontFamily: 'monospace', marginTop: '1px' }}>{sku.daily_demand_avg.toLocaleString()}/d</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.5625rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Unit Cost</span>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 750, color: '#0F172A', fontFamily: 'monospace', marginTop: '1px' }}>₹{sku.unit_cost_inr.toLocaleString()}</div>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.5625rem', color: '#64748B', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Total Value</span>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 750, color: '#0F172A', fontFamily: 'monospace', marginTop: '1px' }}>₹{(sku.current_stock * sku.unit_cost_inr).toLocaleString()}</div>
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-/* ── Runway bar ─────────────────────────────────────────────────────── */
-function RunwayBar({ days, risk }: { days: number; risk: string }) {
-  const pct = Math.min(100, (days / 30) * 100)
-  const color: Record<string, string> = { critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669' }
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-      <div style={{ flex: 1, height: '5px', background: 'var(--border)', borderRadius: '999px', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color[risk] ?? '#059669', borderRadius: '999px', transition: 'width 0.6s ease' }} />
-      </div>
-      <span style={{ fontSize: '0.75rem', fontVariantNumeric: 'tabular-nums', color: 'var(--ink-3)', minWidth: '28px', textAlign: 'right' }}>
-        {days}d
-      </span>
-    </div>
-  )
-}
-
-/* ── Alternate suppliers section ─────────────────────────────────────── */
-function AlternatesSection({ supplierId }: { supplierId: string }) {
+/* ── Alternate Suppliers section ──────────────────────────────────────── */
+function AlternatesSection({ supplierId, actionCardId }: { supplierId: string; actionCardId: string | undefined }) {
+  const navigate = useNavigate()
   const { data, isLoading } = useQuery({
     queryKey: ['alternates', supplierId],
     queryFn: () => api.getAlternateSuppliersDirect(supplierId),
@@ -44,35 +90,50 @@ function AlternatesSection({ supplierId }: { supplierId: string }) {
   })
 
   if (isLoading) return <Skeleton h={80} />
-  if (!data || data.count === 0) {
-    return <p style={{ fontSize: '0.875rem', color: 'var(--ink-4)' }}>No alternate suppliers on record.</p>
-  }
+  if (!data || data.count === 0) return <p style={{ fontSize: '0.75rem', color: '#64748B', margin: 0 }}>No approved alternates found.</p>
+
+  const seen = new Set<string>()
+  const unique = data.alternates.filter(alt => {
+    if (seen.has(alt.alternate_id)) return false
+    seen.add(alt.alternate_id)
+    return true
+  }).slice(0, 4)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {data.alternates.slice(0, 5).map(alt => (
-        <div key={alt.alternate_id} style={{
-          display: 'flex', alignItems: 'center', gap: '0.75rem',
-          padding: '0.625rem 0.875rem',
-          background: 'var(--bg-hover)', border: '1px solid #E2E8F0', borderRadius: '0.625rem',
-        }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {unique.map(alt => (
+        <button
+          key={alt.alternate_id}
+          onClick={() => navigate(`/alternate-suppliers/${alt.supplier_id}`, {
+            state: { primarySupplierId: supplierId, actionCardId },
+          })}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 14px', background: '#FFFFFF',
+            border: '1px solid #E2E8F0', borderRadius: '8px',
+            cursor: 'pointer', textAlign: 'left', width: '100%',
+            transition: 'all 150ms ease'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#F8FAFC'; e.currentTarget.style.borderColor = '#CBD5E1' }}
+          onMouseLeave={e => { e.currentTarget.style.background = '#FFFFFF'; e.currentTarget.style.borderColor = '#E2E8F0' }}
+        >
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--ink-1)' }}>{alt.supplier_name}</div>
-            <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', marginTop: '2px' }}>{alt.city}, {alt.state}</div>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem', flexShrink: 0 }}>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#059669' }}>{(alt.reliability_score * 100).toFixed(0)}%</div>
-              <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)' }}>Reliability</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: alt.cost_premium_pct > 10 ? '#D97706' : 'var(--ink-1)' }}>
-                {alt.cost_premium_pct > 0 ? `+${alt.cost_premium_pct}%` : `${alt.cost_premium_pct}%`}
-              </div>
-              <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)' }}>Cost premium</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 800, color: '#0F172A', marginBottom: '2px', letterSpacing: '-0.01em' }}>{alt.supplier_name}</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', gap: '6px', alignItems: 'center', fontWeight: 500 }}>
+              <MapPin size={11} color="#94A3B8" /> {alt.city} <span style={{ color: '#E2E8F0' }}>|</span> 
+              <span style={{ color: '#D97706', fontWeight: 700 }}>+{alt.cost_premium_pct.toFixed(0)}% premium</span>
             </div>
           </div>
-        </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <span style={{ 
+              fontSize: '0.75rem', fontWeight: 800, color: '#059669', background: '#ECFDF5', border: '1px solid #A7F3D0',
+              padding: '2px 8px', borderRadius: '6px', fontFamily: 'monospace', whiteSpace: 'nowrap'
+            }}>
+              {(alt.reliability_score * 100).toFixed(0)}% reliable
+            </span>
+            <ChevronRight size={14} color="#94A3B8" />
+          </div>
+        </button>
       ))}
     </div>
   )
@@ -84,159 +145,200 @@ export default function CompanyDetailPage() {
   const navigate = useNavigate()
 
   const { data: supplierData } = useSuppliers()
-  const { data: risks } = useRiskAnalysis()
   const { data: skuData } = useSKUs()
   const { data: disruptions } = useDisruptions()
+  const { data: actionData } = useActionCards()
 
   const supplier: Supplier | undefined = supplierData?.suppliers.find(s => s.id === id)
-  const risk: SupplierRiskAnalysis | undefined = ((risks as SupplierRiskAnalysis[] | undefined) ?? []).find(r => r.supplier_id === id)
   const supplierSKUs: SKURisk[] = (skuData?.skus ?? []).filter(s => s.supplier_name === supplier?.name)
-  const supplierDisruptions: Disruption[] = (disruptions?.disruptions ?? []).filter(d => d.supplier_id === id)
+  
+  const activeDisruptions: Disruption[] = (disruptions?.disruptions ?? [])
+    .filter(d => d.supplier_id === id && d.is_active)
+    .sort((a, b) => b.impact_score - a.impact_score)
+
+  const supplierActionCardId = (actionData?.action_cards ?? [])
+    .find(c => c.supplier_id === id && !c.is_resolved)?.id
 
   if (!id) return null
 
-  const RISK_BORDER: Record<string, string> = { critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669' }
-  const accent = RISK_BORDER[risk?.risk_level ?? 'low'] ?? '#059669'
-  const initials = supplier?.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() ?? '??'
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
-      {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <button onClick={() => navigate('/companies')} style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-          ← Companies
-        </button>
-        <span style={{ color: 'var(--ink-5)' }}>/</span>
-        <span style={{ fontSize: '0.8125rem', color: 'var(--ink-1)', fontWeight: 500 }}>{supplier?.name ?? '…'}</span>
-      </div>
-
-      {/* Hero */}
-      <div style={{
-        background: 'var(--bg-card)', border: '1px solid #E2E8F0',
-        borderRadius: '0.875rem', padding: '1.5rem',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+    <div style={{ 
+      display: 'flex', flexDirection: 'column', minHeight: '100%', 
+      background: '#F8FAFC', color: '#0F172A', 
+      fontFamily: "'Inter', system-ui, -apple-system, sans-serif"
+    }}>
+      {/* ── Top Navigation Bar ────────────────────────────────────────── */}
+      <div style={{ 
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+        padding: '14px 24px', background: '#FFF', borderBottom: '1px solid #E2E8F0',
+        position: 'sticky', top: 0, zIndex: 10,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
       }}>
-        {supplier ? (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
-              <div style={{
-                width: '56px', height: '56px', borderRadius: '0.875rem',
-                background: `linear-gradient(135deg, ${accent}25, ${accent}10)`,
-                border: `2px solid ${accent}30`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '1.125rem', fontWeight: 800, color: accent,
-                flexShrink: 0,
-              }}>
-                {initials}
-              </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <h1 style={{ fontSize: '1.375rem', fontWeight: 800, color: 'var(--ink-1)' }}>{supplier.name}</h1>
-                  {risk && <Badge level={risk.risk_level} />}
-                </div>
-                <div style={{ fontSize: '0.875rem', color: 'var(--ink-3)', marginTop: '0.25rem' }}>
-                  {supplier.city}, {supplier.state} · {supplier.region} · {supplier.category} · Tier {supplier.tier}
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem' }}>
-              <StatBox label="Reliability" value={`${(supplier.reliability_score * 100).toFixed(0)}%`} color={supplier.reliability_score >= 0.85 ? '#059669' : '#D97706'} />
-              <StatBox label="Lead Time"   value={`${supplier.lead_time_days}d`} />
-              <StatBox label="Risk Score"  value={`${((risk?.overall_score ?? 0) * 100).toFixed(0)}%`} color={accent} />
-              <StatBox label="Active Issues" value={String(supplierDisruptions.filter(d => d.is_active).length)} color={supplierDisruptions.some(d => d.is_active) ? '#DC2626' : '#059669'} />
-              <StatBox label="SKUs"        value={String(supplierSKUs.length)} />
-            </div>
-          </>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <Skeleton h={56} />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '0.75rem' }}>
-              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} h={64} />)}
-            </div>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
+          <span 
+            onClick={() => navigate('/')} 
+            style={{ cursor: 'pointer', transition: 'color 150ms ease' }}
+            onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+            onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+          >
+            Dashboard
+          </span>
+          <span>/</span>
+          <span 
+            onClick={() => navigate('/companies')} 
+            style={{ cursor: 'pointer', transition: 'color 150ms ease' }}
+            onMouseEnter={e => e.currentTarget.style.color = '#0F172A'}
+            onMouseLeave={e => e.currentTarget.style.color = '#64748B'}
+          >
+            Suppliers
+          </span>
+          <span>/</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0F172A' }}>{supplier?.name ?? <Skeleton w={120} h={16} />}</span>
+        </div>
+        <button 
+          onClick={() => navigate('/companies')}
+          style={{
+            background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px',
+            padding: '4px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#64748B',
+            cursor: 'pointer', transition: 'all 150ms ease'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#CBD5E1'; e.currentTarget.style.color = '#0F172A' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.color = '#64748B' }}
+        >
+          Back to Directory
+        </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+      {/* Main Page Layout Wrapper */}
+      <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-        {/* SKU table */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #F1F5F9' }}>
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)' }}>Products / SKUs</h3>
-          </div>
-          {supplierSKUs.length === 0 ? (
-            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--ink-4)', fontSize: '0.875rem' }}>
-              No SKUs linked to this supplier.
+        {/* Hero / Supplier Profile Header Card */}
+        {supplier ? (
+          <div style={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.03em' }}>{supplier.name}</h1>
+                {supplier.risk_zone && (
+                  <span style={{ fontSize: '0.625rem', fontWeight: 800, color: '#D97706', background: '#FFFBEB', padding: '2px 8px', borderRadius: '4px', border: '1px solid #FDE68A', letterSpacing: '0.04em' }}>
+                    {supplier.risk_zone.toUpperCase()} ZONE
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', color: '#64748B', fontSize: '0.8125rem', fontWeight: 500 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={13} color="#94A3B8" /> {supplier.city}, {supplier.state}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Box size={13} color="#94A3B8" /> {supplier.category} (Tier {supplier.tier})</span>
+              </div>
             </div>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th style={{ textAlign: 'right' }}>Stock</th>
-                  <th style={{ minWidth: '90px' }}>Runway</th>
-                  <th style={{ textAlign: 'center' }}>Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {supplierSKUs.map(sku => (
-                  <tr key={sku.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        {sku.is_critical && (
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#DC2626', flexShrink: 0 }} />
-                        )}
-                        <div>
-                          <div style={{ fontWeight: 600, color: 'var(--ink-1)', fontSize: '0.8125rem', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {sku.name}
+            
+            <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '0.625rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Reliability Score</span>
+                <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                  <Star size={16} color="#F59E0B" fill="#F59E0B" /> {(supplier.reliability_score * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div style={{ width: '1px', height: '36px', background: '#E2E8F0' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '0.625rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Avg Lead Time</span>
+                <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+                  <Truck size={16} color="#64748B" /> {supplier.lead_time_days} days
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : <Skeleton h={100} />}
+
+        {/* 2-Column Suite Layout */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '20px', alignItems: 'start' }}>
+
+          {/* Left Column: SKU Inventory Details */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
+              <div style={{ padding: '14px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Package size={16} color="#64748B" />
+                  <h3 style={{ fontSize: '0.875rem', fontWeight: 850, color: '#0F172A', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Product Inventory Status</h3>
+                </div>
+                <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 700 }}>
+                  {supplierSKUs.length} Provisioned SKUs
+                </span>
+              </div>
+              <SKUInventoryGrid skus={supplierSKUs} />
+            </div>
+          </div>
+
+          {/* Right Column: Alternates & Active Disruptions */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            
+            {/* Approved Alternates */}
+            <div style={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <Globe size={16} color="#64748B" />
+                <h3 style={{ fontSize: '0.875rem', fontWeight: 850, color: '#0F172A', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Approved Alternates</h3>
+              </div>
+              {id && <AlternatesSection supplierId={id} actionCardId={supplierActionCardId} />}
+            </div>
+
+            {/* Active Factual Disruptions */}
+            <div style={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <Activity size={16} color="#EF4444" />
+                <h3 style={{ fontSize: '0.875rem', fontWeight: 850, color: '#0F172A', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Active Disruptions</h3>
+              </div>
+              
+              {activeDisruptions.length === 0 ? (
+                <div style={{ padding: '24px 0', textAlign: 'center' }}>
+                  <ShieldAlert size={32} color="#CBD5E1" style={{ margin: '0 auto 8px' }} />
+                  <p style={{ fontSize: '0.8125rem', color: '#64748B', margin: 0, fontWeight: 500 }}>No active disruptions impacting this supplier.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {activeDisruptions.map((d, i) => (
+                    <div key={d.id} style={{
+                      paddingBottom: i === activeDisruptions.length - 1 ? 0 : '14px',
+                      borderBottom: i === activeDisruptions.length - 1 ? 'none' : '1px solid #F1F5F9',
+                    }}>
+                      {/* Factual Event Header */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '0.5625rem', fontWeight: 800, color: '#DC2626', background: '#FEF2F2', padding: '2px 6px', borderRadius: '4px', border: '1px solid #FCA5A5', letterSpacing: '0.05em' }}>
+                          ACTIVE EVENT
+                        </span>
+                        <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase' }}>
+                          {d.disruption_type}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '0.9375rem', fontWeight: 800, color: '#0F172A', marginBottom: '6px', lineHeight: 1.3, letterSpacing: '-0.01em' }}>{d.title}</div>
+                      
+                      {/* Factual Data Points */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: '#F8FAFC', padding: '12px', borderRadius: '8px', border: '1px solid #E2E8F0', marginTop: '10px' }}>
+                        {d.region && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#475569', fontWeight: 500 }}>
+                            <MapPin size={12} color="#94A3B8" /> <strong style={{ color: '#0F172A' }}>Region:</strong> {d.region}
                           </div>
-                          <div style={{ fontSize: '0.625rem', color: 'var(--ink-4)' }}>{sku.sku_code}</div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#475569', fontWeight: 500 }}>
+                          <CalendarDays size={12} color="#94A3B8" /> <strong style={{ color: '#0F172A' }}>Reported:</strong> {new Date(d.start_date).toLocaleDateString()}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#475569', fontWeight: 500 }}>
+                          <TrendingDown size={12} color="#94A3B8" /> <strong style={{ color: '#0F172A' }}>Impact:</strong> {(d.impact_score * 100).toFixed(0)}%
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#475569', fontWeight: 500 }}>
+                          <Box size={12} color="#94A3B8" /> <strong style={{ color: '#0F172A' }}>Affected SKUs:</strong> {d.affected_skus_count} SKUs
                         </div>
                       </div>
-                    </td>
-                    <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.75rem' }}>
-                      {sku.current_stock.toLocaleString('en-IN')}
-                    </td>
-                    <td><RunwayBar days={sku.days_of_stock} risk={sku.stockout_risk} /></td>
-                    <td style={{ textAlign: 'center' }}><Badge level={sku.stockout_risk} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Active disruptions */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem', padding: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)', marginBottom: '0.875rem' }}>Disruptions</h3>
-            {supplierDisruptions.length === 0 ? (
-              <p style={{ fontSize: '0.875rem', color: 'var(--ink-4)' }}>No disruptions recorded.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {supplierDisruptions.slice(0, 4).map(d => (
-                  <div key={d.id} style={{
-                    padding: '0.625rem 0.75rem',
-                    background: d.is_active ? 'rgba(220,38,38,0.04)' : 'var(--bg-app)',
-                    border: `1px solid ${d.is_active ? 'rgba(220,38,38,0.15)' : 'var(--border)'}`,
-                    borderRadius: '0.5rem',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <Badge level={d.severity} />
-                      {d.is_active && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#DC2626', textTransform: 'uppercase' }}>ACTIVE</span>}
+                      {d.description && (
+                        <p style={{ fontSize: '0.8125rem', color: '#475569', lineHeight: 1.5, marginTop: '10px', marginBottom: 0 }}>
+                          {d.description}
+                        </p>
+                      )}
                     </div>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--ink-1)', marginTop: '0.25rem' }}>{d.title}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          {/* Alternate suppliers */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem', padding: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)', marginBottom: '0.875rem' }}>Alternate Suppliers</h3>
-            {id && <AlternatesSection supplierId={id} />}
           </div>
         </div>
       </div>

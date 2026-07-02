@@ -17,7 +17,6 @@ from app.models.supplier import Supplier
 from app.models.sku import SKU
 from app.models.disruption import Disruption
 from app.models.action_card import ActionCard
-from app.models.risk import RiskSnapshot
 from app.schemas.dashboard import (
     DashboardSummary,
     SupplierHealthSummary,
@@ -25,6 +24,7 @@ from app.schemas.dashboard import (
     DisruptionSummary,
     ActionSummary,
 )
+from app.services.risk_intelligence import RiskIntelligenceService
 
 
 class DashboardService:
@@ -46,23 +46,19 @@ class DashboardService:
         )
 
     async def _compute_supplier_health(self) -> SupplierHealthSummary:
-        """Aggregate supplier risk levels from risk snapshots."""
+        """Aggregate supplier risk levels using the LIVE risk engine (not stale snapshots)."""
         total_q = await self.db.execute(select(func.count(Supplier.id)))
         total = total_q.scalar() or 0
 
         avg_rel_q = await self.db.execute(select(func.avg(Supplier.reliability_score)))
         avg_reliability = round(avg_rel_q.scalar() or 0.0, 3)
 
-        # Count by risk level from snapshots
-        high_q = await self.db.execute(
-            select(func.count(RiskSnapshot.id)).where(RiskSnapshot.risk_level == "critical")
-        )
-        high_risk = high_q.scalar() or 0
+        # Use live risk computation so counts match what the Risks page shows
+        risk_svc = RiskIntelligenceService(self.db)
+        live_risks = await risk_svc.compute_all_supplier_risks()
 
-        med_q = await self.db.execute(
-            select(func.count(RiskSnapshot.id)).where(RiskSnapshot.risk_level.in_(["high", "medium"]))
-        )
-        medium_risk = med_q.scalar() or 0
+        high_risk = sum(1 for r in live_risks if r["risk_level"] in ("critical", "high"))
+        medium_risk = sum(1 for r in live_risks if r["risk_level"] == "medium")
 
         return SupplierHealthSummary(
             total_suppliers=total,
@@ -140,29 +136,26 @@ class DashboardService:
         )
 
     async def _compute_action_summary(self) -> ActionSummary:
-        """Compute pending action metrics."""
-        pending_q = await self.db.execute(
-            select(func.count(ActionCard.id)).where(ActionCard.is_resolved == False)
+        """Compute pending action metrics — counts unique suppliers, not individual cards."""
+        cards_q = await self.db.execute(
+            select(ActionCard).where(ActionCard.is_resolved == False)
         )
-        pending = pending_q.scalar() or 0
+        unresolved_cards = cards_q.scalars().all()
 
-        critical_q = await self.db.execute(
-            select(func.count(ActionCard.id)).where(
-                ActionCard.is_resolved == False,
-                ActionCard.priority == "critical",
-            )
-        )
-        critical = critical_q.scalar() or 0
-
-        savings_q = await self.db.execute(
-            select(func.sum(ActionCard.estimated_impact_inr)).where(
-                ActionCard.is_resolved == False
-            )
-        )
-        savings = round(savings_q.scalar() or 0.0, 2)
+        # A supplier is "pending" when it has at least one unresolved card.
+        # Count unique supplier IDs so the badge matches the Risks / Pending Actions page count.
+        pending_supplier_ids: set = set()
+        critical_supplier_ids: set = set()
+        savings = 0.0
+        for card in unresolved_cards:
+            sid = str(card.supplier_id) if card.supplier_id else str(card.id)
+            pending_supplier_ids.add(sid)
+            if card.priority == "critical":
+                critical_supplier_ids.add(sid)
+            savings += card.estimated_impact_inr
 
         return ActionSummary(
-            pending_actions=pending,
-            critical_actions=critical,
-            estimated_savings_inr=savings,
+            pending_actions=len(pending_supplier_ids),
+            critical_actions=len(critical_supplier_ids),
+            estimated_savings_inr=round(savings, 2),
         )

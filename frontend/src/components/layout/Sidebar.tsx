@@ -1,77 +1,35 @@
+import { useMemo, useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
-import { useRiskAnalysis, useDisruptions } from '../../hooks/useQueries'
+import { useDisruptions, useActionCards, useProcurementCards } from '../../hooks/useQueries'
+import { useWeightedRiskAnalysis } from '../../hooks/useRiskWeights'
+import {
+  LayoutDashboard,
+  ShieldAlert,
+  Building2,
+  ArrowLeftRight,
+  Settings,
+  HelpCircle,
+  Activity,
+  Menu,
+  ClipboardList,
+  History,
+  ChevronsLeft,
+} from 'lucide-react'
+import type { IntelligentActionCard } from '../../types'
 
-/* ── Icon primitives ────────────────────────────────────────────────── */
-function Icon({ children, size = 16 }: { children: React.ReactNode; size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0 }}>
-      {children}
-    </svg>
-  )
-}
-
-const Icons = {
-  dashboard: (
-    <Icon>
-      <rect x="2" y="2" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-      <rect x="11" y="2" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-      <rect x="2" y="11" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-      <rect x="11" y="11" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-    </Icon>
-  ),
-  risk: (
-    <Icon>
-      <path d="M10 2L17.5 15.5H2.5L10 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-      <path d="M10 8v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      <circle cx="10" cy="13" r="0.75" fill="currentColor"/>
-    </Icon>
-  ),
-  companies: (
-    <Icon>
-      <path d="M3 17V7l7-4 7 4v10" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-      <rect x="8" y="12" width="4" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M6 9.5h.5M9.5 9.5H10M13.5 9.5H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </Icon>
-  ),
-  alternates: (
-    <Icon>
-      <circle cx="5" cy="10" r="3" stroke="currentColor" strokeWidth="1.5"/>
-      <circle cx="15" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
-      <circle cx="15" cy="15" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M8 9l4.5-3M8 11l4.5 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </Icon>
-  ),
-  advisor: (
-    <Icon>
-      <path d="M3 4h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H7l-4 3V5a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-      <path d="M7 9h6M7 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </Icon>
-  ),
-  settings: (
-    <Icon>
-      <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.5"/>
-      <path d="M10 2v1.5M10 16.5V18M2 10h1.5M16.5 10H18M4.1 4.1l1.1 1.1M14.8 14.8l1.1 1.1M4.1 15.9l1.1-1.1M14.8 5.2l1.1-1.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    </Icon>
-  ),
-}
-
-/* ── Badge pill ─────────────────────────────────────────────────────── */
-function NavBadge({ count }: { count: number }) {
-  if (count === 0) return null
+function NavBadge({ count, collapsed }: { count: number; collapsed: boolean }) {
+  if (count === 0 || collapsed) return null
   return (
     <span style={{
       marginLeft: 'auto',
-      minWidth: '18px',
-      height: '18px',
-      padding: '0 5px',
-      borderRadius: '9px',
-      background: '#DC2626',
-      color: '#fff',
-      fontSize: '0.5625rem',
-      fontWeight: 700,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
+      minWidth: '18px', height: '16px', padding: '0 5px',
+      borderRadius: '10px',
+      background: 'rgba(239, 68, 68, 0.08)',
+      color: '#EF4444',
+      border: '1px solid rgba(239, 68, 68, 0.15)',
+      fontSize: '0.625rem', fontWeight: 600,
+      fontVariantNumeric: 'tabular-nums',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
       lineHeight: 1,
     }}>
       {count > 99 ? '99+' : count}
@@ -79,14 +37,13 @@ function NavBadge({ count }: { count: number }) {
   )
 }
 
-/* ── Section separator ──────────────────────────────────────────────── */
-function SidebarSection({ label }: { label: string }) {
+function SidebarSection({ label, collapsed }: { label: string; collapsed: boolean }) {
+  if (collapsed) return null
   return (
     <div style={{
-      padding: '0.75rem 0.75rem 0.25rem',
-      fontSize: '0.625rem',
-      fontWeight: 700,
-      color: 'var(--ink-4)',
+      padding: '18px 16px 5px',
+      fontSize: '0.625rem', fontWeight: 700,
+      color: '#94A3B8',
       textTransform: 'uppercase',
       letterSpacing: '0.1em',
     }}>
@@ -95,104 +52,211 @@ function SidebarSection({ label }: { label: string }) {
   )
 }
 
-/* ── Nav item ───────────────────────────────────────────────────────── */
 function SidebarLink({
-  to, icon, label, badge, end,
+  to, icon: Icon, label, badge, end, collapsed
 }: {
-  to: string
-  icon: React.ReactNode
-  label: string
-  badge?: number
-  end?: boolean
+  to: string; icon: any; label: string; badge?: number; end?: boolean; collapsed: boolean
 }) {
   return (
     <NavLink
       to={to}
       end={end}
+      title={collapsed ? label : undefined}
       style={({ isActive }) => ({
         display: 'flex',
         alignItems: 'center',
-        gap: '0.625rem',
-        padding: '0.625rem 0.75rem',
-        borderRadius: '0.5rem',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        gap: collapsed ? '0' : '8px',
+        padding: collapsed ? '7px' : isActive ? '7px 10px 7px 7px' : '7px 10px',
         fontSize: '0.8125rem',
-        fontWeight: isActive ? 600 : 500,
-        color: isActive ? 'var(--primary)' : 'var(--ink-3)',
-        background: isActive ? '#EFF6FF' : 'transparent',
-        border: `1px solid ${isActive ? '#BFDBFE' : 'transparent'}`,
+        fontWeight: isActive ? 600 : 400,
+        color: isActive ? '#0F172A' : '#64748B',
+        background: isActive ? '#F1F5F9' : 'transparent',
+        borderLeft: isActive ? '3px solid #0F172A' : '3px solid transparent',
+        borderRadius: isActive ? '0 6px 6px 0' : '6px',
         textDecoration: 'none',
-        transition: 'all 150ms cubic-bezier(0.16,1,0.3,1)',
+        transition: 'all 120ms ease',
         cursor: 'pointer',
         lineHeight: 1,
+        width: collapsed ? '36px' : 'auto',
+        margin: collapsed ? '1px auto' : '1px 8px',
       })}
-      onMouseEnter={e => {
-        const el = e.currentTarget
-        if (!el.classList.contains('active')) {
-          el.style.color = 'var(--ink-1)'
-          el.style.background = 'var(--bg-hover)'
-        }
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget
-        if (!el.classList.contains('active')) {
-          el.style.color = 'var(--ink-3)'
-          el.style.background = 'transparent'
-        }
-      }}
     >
-      {icon}
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      {badge !== undefined && <NavBadge count={badge} />}
+      {({ isActive }) => (
+        <>
+          <Icon size={16} strokeWidth={isActive ? 1.75 : 1.25} style={{ flexShrink: 0, color: isActive ? '#0F172A' : '#94A3B8' }} />
+          {!collapsed && (
+            <>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+              {badge !== undefined && <NavBadge count={badge} collapsed={collapsed} />}
+            </>
+          )}
+        </>
+      )}
     </NavLink>
   )
 }
 
-/* ── Sidebar ────────────────────────────────────────────────────────── */
-export function Sidebar() {
-  const { data: risks } = useRiskAnalysis()
+export function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean; setCollapsed: (c: boolean) => void }) {
   const { data: disruptions } = useDisruptions()
+  const { data: actionData } = useActionCards()
+  const { data: risks } = useWeightedRiskAnalysis()
+  const { data: procCards } = useProcurementCards()
 
-  const criticalCount = (risks as any[] | undefined)?.filter((r: any) => r.risk_level === 'critical' || r.risk_level === 'high').length ?? 0
-  const activeDisruptions = disruptions?.total_active ?? 0
-  const riskBadge = Math.max(criticalCount, activeDisruptions)
+  const procCardMap = useMemo(
+    () => new Map((procCards as IntelligentActionCard[] ?? []).map(c => [c.supplier_id, c])),
+    [procCards]
+  )
+
+  const resolvedSupplierIds = useMemo(() => {
+    const bySupplier = new Map<string, { resolved: number; total: number }>()
+    for (const c of actionData?.action_cards ?? []) {
+      if (!c.supplier_id) continue
+      const entry = bySupplier.get(c.supplier_id) ?? { resolved: 0, total: 0 }
+      entry.total++
+      if (c.is_resolved) entry.resolved++
+      bySupplier.set(c.supplier_id, entry)
+    }
+    return new Set(
+      [...bySupplier.entries()]
+        .filter(([, { resolved, total }]) => total > 0 && resolved === total)
+        .map(([id]) => id)
+    )
+  }, [actionData])
+
+  const activeSupplierCount = useMemo(() => {
+    const riskList = (risks as any[] | undefined) ?? []
+    return riskList.filter(r => {
+      if (resolvedSupplierIds.has(r.supplier_id)) return false
+      if (r.risk_level === 'low') return false
+      const card = procCardMap.get(r.supplier_id)
+      if (!card || (card as IntelligentActionCard).financial_exposure_inr === 0) return false
+      return true
+    }).length
+  }, [risks, resolvedSupplierIds, procCardMap])
+
+  const riskBadge = activeSupplierCount
+  const pendingActions = activeSupplierCount
+
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
+    try {
+      const s = localStorage.getItem('ss_read_disruptions')
+      return s ? new Set(JSON.parse(s) as string[]) : new Set<string>()
+    } catch { return new Set<string>() }
+  })
+
+  useEffect(() => {
+    const handleStorage = () => {
+      try {
+        const s = localStorage.getItem('ss_read_disruptions')
+        setReadIds(s ? new Set(JSON.parse(s) as string[]) : new Set<string>())
+      } catch { setReadIds(new Set<string>()) }
+    }
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('ss_read_disruptions_changed', handleStorage)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('ss_read_disruptions_changed', handleStorage)
+    }
+  }, [])
+
+  const activeDisruptions = (disruptions?.disruptions ?? [])
+    .filter((d: any) => d.is_active && d.severity !== 'low' && !readIds.has(d.id)).length
 
   return (
     <aside style={{
-      width: '240px',
-      minWidth: '240px',
-      background: 'var(--bg-sidebar)',
-      borderRight: '1px solid var(--border)',
+      width: collapsed ? '56px' : '220px',
+      minWidth: collapsed ? '56px' : '220px',
+      background: '#FFFFFF',
+      borderRight: '1px solid #E2E8F0',
       display: 'flex',
       flexDirection: 'column',
-      padding: '1.25rem 1rem',
-      gap: '0.25rem',
+      padding: '6px 0',
+      transition: 'width 200ms ease, min-width 200ms ease',
       overflowY: 'auto',
       overflowX: 'hidden',
     }}>
-      <div style={{ padding: '0 0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <div style={{ width: '28px', height: '28px', background: 'var(--primary)', borderRadius: '0.375rem', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>
-          S
-        </div>
-        <span style={{ fontSize: '1.125rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.02em' }}>SupplySense</span>
+      <style>{`
+        .sb-link a:hover { 
+          background: #F8FAFC !important; 
+          color: #0F172A !important;
+        }
+        .sb-link a.active:hover {
+          background: #F1F5F9 !important;
+        }
+        .sb-toggle:hover { background: #F8FAFC !important; color: #0F172A !important; }
+      `}</style>
+
+      <div style={{
+        display: 'flex',
+        justifyContent: collapsed ? 'center' : 'flex-end',
+        padding: collapsed ? '2px 0 6px' : '2px 10px 6px',
+      }}>
+        <button
+          className="sb-toggle"
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: '#94A3B8', padding: '5px', borderRadius: '5px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 120ms ease, color 120ms ease',
+          }}
+        >
+          {collapsed ? <Menu size={16} /> : <ChevronsLeft size={16} />}
+        </button>
       </div>
 
-      <SidebarSection label="Dashboard" />
-      <SidebarLink to="/" icon={Icons.dashboard} label="Overview" end />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', flex: 1 }}>
+        <SidebarSection label="Home" collapsed={collapsed} />
+        <div className="sb-link"><SidebarLink to="/" icon={LayoutDashboard} label="Dashboard" end collapsed={collapsed} /></div>
 
-      <SidebarSection label="General" />
-      <SidebarLink to="/risks" icon={Icons.risk} label="Analytics" badge={riskBadge} />
-      <SidebarLink to="/companies" icon={Icons.companies} label="Suppliers" />
-      <SidebarLink to="/alternate-suppliers" icon={Icons.alternates} label="Sales Report" />
+        <SidebarSection label="Supply Chain" collapsed={collapsed} />
+        <div className="sb-link"><SidebarLink to="/risks" icon={ShieldAlert} label="Risks" badge={riskBadge} collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/companies" icon={Building2} label="Suppliers" collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/alternate-suppliers" icon={ArrowLeftRight} label="Tier 2 Dependencies" collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/disruptions" icon={Activity} label="Disruptions" badge={activeDisruptions} collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/actions" icon={ClipboardList} label="Pending Actions" badge={pendingActions} collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/activity" icon={History} label="Activity Log" collapsed={collapsed} /></div>
 
+        {!collapsed && <div style={{ margin: '10px 14px', height: '1px', background: '#E2E8F0' }} />}
 
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
+        <SidebarSection label="App" collapsed={collapsed} />
+        <div className="sb-link"><SidebarLink to="/settings" icon={Settings} label="Settings" collapsed={collapsed} /></div>
+        <div className="sb-link"><SidebarLink to="/help" icon={HelpCircle} label="Help" collapsed={collapsed} /></div>
+      </div>
 
-      <div style={{ height: '1px', background: 'var(--border)', margin: '1rem 0' }} />
-      
-      <SidebarSection label="Support" />
-      <SidebarLink to="/settings" icon={Icons.settings} label="Settings" />
-      <SidebarLink to="/help" icon={<svg width={16} height={16} viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 14.5v.5M10 7c0-1.5 2-1.5 2 0 0 1.5-2 1.5-2 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>} label="Help Center" />
+      {!collapsed && (
+        <div style={{ padding: '10px 16px', borderTop: '1px solid #E2E8F0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ 
+              width: 6, height: 6, borderRadius: '50%', 
+              background: '#10B981',
+              boxShadow: '0 0 4px #10B981',
+              animation: 'dash-pulse 2s ease-in-out infinite'
+            }} />
+            <span style={{ fontSize: '0.6875rem', color: '#64748B', fontWeight: 500 }}>
+              System Live
+            </span>
+            <span style={{
+              fontSize: '0.5625rem', color: '#CBD5E1',
+              fontVariantNumeric: 'tabular-nums', marginLeft: 'auto',
+            }}>
+              v1.4.2
+            </span>
+          </div>
+        </div>
+      )}
+
+      {collapsed && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0' }}>
+          <div style={{ 
+            width: 6, height: 6, borderRadius: '50%', 
+            background: '#10B981',
+            boxShadow: '0 0 4px #10B981',
+            animation: 'dash-pulse 2s ease-in-out infinite'
+          }} />
+        </div>
+      )}
     </aside>
   )
 }

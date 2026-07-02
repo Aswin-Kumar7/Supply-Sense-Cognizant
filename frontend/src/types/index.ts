@@ -30,6 +30,14 @@ export interface SupplierListResponse {
   total: number
 }
 
+export interface SupplierDependency {
+  id: string
+  supplier_id: string
+  depends_on_id: string
+  dependency_type: string
+  criticality: number
+}
+
 // ============ SKU Domain ============
 
 export interface SKURisk {
@@ -87,6 +95,7 @@ export interface ActionCard {
   sku_id: string | null
   estimated_impact_inr: number
   is_resolved: boolean
+  resolution_note: string | null
   created_at: string
   resolved_at: string | null
 }
@@ -256,17 +265,29 @@ export interface MitigationOption {
   exposure_reduction_inr: number
   time_to_effect_days: number
   confidence: number
+  // AI-generated, scenario-specific fields (present when generation_mode === 'ai_generated')
+  title?: string | null
+  rationale?: string | null
+  tradeoff?: string | null
 }
 
 export interface MitigationSimulation {
   supplier_id: string
   supplier_name: string
   current_exposure_inr: number
-  mitigated_exposure_inr: number
-  savings_inr: number
+  mitigated_exposure_inr: number  // exposure remaining after best action
+  savings_inr: number             // gross reduction = current - mitigated
+  mitigation_cost_inr: number     // cost to execute best action
+  net_saving_inr: number          // savings - cost (true financial gain)
   risk_before: number
   risk_after: number
   options: MitigationOption[]
+  // AI plan metadata (present when the plan was AI-generated)
+  plan_summary?: string | null
+  recommended_action_type?: string | null
+  generation_mode?: 'ai_generated' | 'deterministic_fallback' | 'ai_unavailable' | null
+  ai_generated?: boolean
+  ai_error?: boolean
 }
 
 // ============ Procurement Intelligence ============
@@ -284,15 +305,24 @@ export interface IntelligentActionCard {
   days_to_stockout: number
   affected_skus: number
   action_type: string
+  // Always-present, grounded explanation of WHY this action_type was chosen
+  // (tied to the supplier's dominant risk signals) — for human validation.
+  action_rationale?: string | null
   priority: RiskLevel
-  title: string
-  executive_summary: string
-  reasoning: string
-  urgency_narrative: string
-  cost_of_delay_narrative: string
-  recommended_action: string
-  escalation_window: string
-  alternate_supplier_rationale: string
+  title?: string | null
+  executive_summary?: string | null
+  reasoning?: string | null
+  urgency_narrative?: string | null
+  cost_of_delay_narrative?: string | null
+  recommended_action?: string | null
+  escalation_window?: string | null
+  alternate_supplier_rationale?: string | null
+  // AI status indicators
+  generation_mode?: 'ai_generated' | 'ai_unavailable' | 'signal_only' | 'deterministic_fallback'
+  ai_generated?: boolean
+  ai_error?: boolean
+  ai_error_reason?: string | null
+  evidence_snapshot_id?: string | null
 }
 
 export interface ExecutiveBrief {
@@ -302,10 +332,14 @@ export interface ExecutiveBrief {
   high_stockouts: number
   cascade_count: number
   avg_days_to_stockout: number
-  summary: string
-  top_risks: string[]
-  immediate_actions: string[]
+  summary?: string | null
+  top_risks?: string[]
+  immediate_actions?: string[]
   generated_at: string
+  generation_mode?: 'ai_generated' | 'ai_unavailable' | 'deterministic_fallback'
+  ai_generated?: boolean
+  ai_error?: boolean
+  ai_error_reason?: string | null
 }
 
 // ============ Chat ============

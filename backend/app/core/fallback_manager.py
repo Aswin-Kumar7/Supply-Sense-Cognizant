@@ -5,7 +5,7 @@ Publishes SSE events requesting user confirmation before falling back to Bedrock
 
 import asyncio
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.event_bus import event_bus, SupplyChainEvent
 from app.core.logging import logger
@@ -40,7 +40,7 @@ async def request_fallback_approval(
             "agent_name": agent_name,
             "operation": operation,
             "reason": reason,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     ))
 

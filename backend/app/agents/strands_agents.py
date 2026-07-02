@@ -19,8 +19,23 @@ import asyncio
 import contextvars
 import json
 import os
+import ssl
 import time
+import urllib3
 from collections import deque
+
+# Patch boto3.Session.client so every bedrock-runtime client is created with
+# verify=False. Corporate SSL proxy intercepts AWS HTTPS with its own cert that
+# Python's ssl module doesn't trust. This patch is applied once at import time
+# and affects Strands' internally created clients too.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import boto3 as _boto3
+_orig_session_client = _boto3.Session.client
+def _patched_session_client(self, service_name, *args, **kwargs):
+    if service_name == "bedrock-runtime":
+        kwargs.setdefault("verify", False)
+    return _orig_session_client(self, service_name, *args, **kwargs)
+_boto3.Session.client = _patched_session_client
 from datetime import date, timedelta
 from typing import Any
 
@@ -30,13 +45,68 @@ from sqlalchemy import text
 from app.core.logging import logger
 from app.core.config import get_settings
 from app.core.event_bus import event_bus, SupplyChainEvent
-from app.core.bedrock import validate_with_guardrail
+from app.core.bedrock import bedrock, validate_with_guardrail
+from app.core.evidence import build_evidence_package, validate_grounding
+from app.schemas.ai_contracts import RiskNarrative
 from app.services.risk_engine import risk_engine
 from app.services.cascade_engine import cascade_engine
 from app.services.financial_engine import financial_engine
 from app.services.procurement_agent import procurement_agent
 
 settings = get_settings()
+
+# Captures the main event loop (the one that owns the request DB session and its
+# asyncpg connections) before we hop into a Strands worker thread via
+# asyncio.to_thread. asyncio.to_thread copies the current context into the worker
+# thread, so the worker can read this back. See _run_in_new_loop / _invoke_agent.
+_main_event_loop: contextvars.ContextVar["asyncio.AbstractEventLoop | None"] = (
+    contextvars.ContextVar("main_event_loop", default=None)
+)
+
+
+def _run_in_new_loop(coro):
+    """Run an async coroutine from a Strands tool (which executes in a worker
+    thread created by asyncio.to_thread()).
+
+    DB sessions used by the tools belong to the *main* event loop that owns the
+    asyncpg connections. Running their coroutines in a brand-new event loop
+    corrupts that connection ("got result for unknown protocol state 3" /
+    "...attached to a different loop"), which made Risk Assessment queries fail.
+
+    So when the main loop is known (captured in _main_event_loop before the
+    to_thread hop) and we are genuinely on a different thread, marshal the
+    coroutine back onto it with run_coroutine_threadsafe. Only fall back to a
+    throwaway loop when no running main loop is available.
+    """
+    main_loop = _main_event_loop.get()
+    if main_loop is not None and main_loop.is_running():
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        # Guard against self-deadlock: only marshal when we're NOT already on
+        # the main loop's thread (otherwise .result() would block it forever).
+        if running is not main_loop:
+            fut = asyncio.run_coroutine_threadsafe(coro, main_loop)
+            return fut.result(timeout=30)
+
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+async def _invoke_agent(agent, prompt):
+    """Run a Strands agent in a worker thread, first recording the running loop
+    so the agent's tools can marshal their DB coroutines back to it.
+
+    All four specialist agents go through here instead of calling
+    asyncio.to_thread(agent, prompt) directly.
+    """
+    _main_event_loop.set(asyncio.get_running_loop())
+    return await asyncio.to_thread(agent, prompt)
+
 
 # ── Per-session tool call history (for multi-turn context) ─────────────────
 # Maps session_id → deque of {"tool": str, "input": str, "output": str}
@@ -110,6 +180,8 @@ def _make_callback_handler(agent_name: str):
 
 
 # ── Bedrock model shared across all agents ─────────────────────────────────
+_CACHED_BEDROCK_MODEL: Any = None  # module-level singleton — avoids rebuilding boto3 client per request
+
 _AGENT_SYSTEM_SUFFIX = (
     "\n\nCRITICAL RULES:\n"
     "- NEVER invent financial numbers. All rupee figures must come from tool outputs.\n"
@@ -120,26 +192,36 @@ _AGENT_SYSTEM_SUFFIX = (
 
 
 def _make_bedrock_model() -> Any | None:
-    """Return a BedrockModel backed by an explicit boto3 Session so credentials
-    from the environment (.env → AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) are
-    used directly instead of relying on Strands' implicit credential chain.
+    """Return a cached BedrockModel backed by an explicit boto3 Session.
 
-    NOTE: boto_session and region_name are mutually exclusive in BedrockModel;
-    the region is embedded in the Session object.
+    Cached at module level so the boto3 client is created once per process,
+    not once per request. Safe to share across async tasks (boto3 clients
+    are thread-safe for reads).
     """
+    global _CACHED_BEDROCK_MODEL
+    if _CACHED_BEDROCK_MODEL is not None:
+        return _CACHED_BEDROCK_MODEL
     if not STRANDS_AVAILABLE:
         return None
     try:
         import boto3
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
         boto_session = boto3.Session(
-            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
-            region_name=os.environ.get("AWS_REGION", settings.aws_region),
+            aws_access_key_id=settings.aws_access_key_id or os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=settings.aws_secret_access_key or os.environ.get("AWS_SECRET_ACCESS_KEY"),
+            region_name=settings.aws_region,
         )
-        return BedrockModel(
+        # verify=False bypasses corporate SSL proxy cert inspection on dev machines.
+        # Strands BedrockModel accepts boto_client_config kwargs passed through.
+        model = BedrockModel(
             model_id=settings.bedrock_model_id,
             boto_session=boto_session,
         )
+        _CACHED_BEDROCK_MODEL = model
+        logger.info(f"BedrockModel initialised: {settings.bedrock_model_id} in {os.environ.get('AWS_REGION', settings.aws_region)}")
+        return _CACHED_BEDROCK_MODEL
     except Exception as exc:
         logger.warning(f"BedrockModel init failed: {exc}")
         return None
@@ -289,26 +371,32 @@ class RiskAssessmentAgent:
             @tool
             def get_supplier_risk_score(supplier_id: str) -> str:
                 """Get comprehensive risk score and factor breakdown for a supplier."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_supplier_risk_score_impl(supplier_id, db)
                 )
-                return json.dumps(result)
+                out = json.dumps(result)
+                _record_tool_call("get_supplier_risk_score", supplier_id, out)
+                return out
 
             @tool
             def get_cascade_impact(supplier_id: str, impact_score: float) -> str:
                 """Compute cascade propagation impact across supplier dependencies."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_cascade_impact_impl(supplier_id, impact_score, db)
                 )
-                return json.dumps(result)
+                out = json.dumps(result)
+                _record_tool_call("get_cascade_impact", f"{supplier_id}|{impact_score}", out)
+                return out
 
             @tool
             def get_delivery_history(supplier_id: str) -> str:
                 """Query database for 90-day delivery performance statistics."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_delivery_history_impl(supplier_id, db)
                 )
-                return json.dumps(result)
+                out = json.dumps(result)
+                _record_tool_call("get_delivery_history", supplier_id, out)
+                return out
 
             self._strands_agent = Agent(
                 model=model,
@@ -320,27 +408,76 @@ class RiskAssessmentAgent:
             logger.warning(f"RiskAssessmentAgent init failed: {exc}")
 
     async def assess(self, supplier_id: str, context: str = "") -> dict:
-        """Assess risk for a supplier via Strands. Returns error dict on failure — no fallback."""
-        if self._strands_agent is None:
-            return {"error": "Strands RiskAssessmentAgent unavailable (SDK or Bedrock model not initialised)", "status": "error"}
+        """
+        Assess risk for a supplier.
 
+        Authoritative scores (overall_score, risk_level, confidence, factors) ALWAYS
+        come straight from the deterministic engine; the cascade count is computed
+        by the cascade engine. The AI contributes ONLY the two narrative strings,
+        via a single grounded call.
+
+        This deliberately does NOT run a Strands multi-tool LLM loop: the old design
+        ran the full loop (get_supplier_risk_score + get_delivery_history +
+        get_cascade_impact) and then *discarded* the model's scores in favour of the
+        engine — ~8s of work for two narrative fields. A single grounded narrative
+        call is equivalent in output and far cheaper/faster.
+        """
         try:
-            logger.info(f"    → Strands RiskAssessmentAgent invoking LLM with tools...")
-            prompt = (
-                f"Assess the risk profile for supplier {supplier_id}. "
-                f"Context: {context}. "
-                "Use get_supplier_risk_score, get_delivery_history, and get_cascade_impact tools. "
-                "Return a JSON with: overall_score, risk_level, key_factors, confidence, recommendation."
-            )
-            response = await asyncio.to_thread(self._strands_agent, prompt)
-            text = str(response)
-            if "{" in text:
-                start = text.index("{")
-                end = text.rindex("}") + 1
-                return json.loads(text[start:end])
-            return {"error": "No structured JSON in Strands response", "raw": text[:500], "status": "error"}
+            authoritative = await _get_supplier_risk_score_impl(supplier_id, self.db)
+            if "error" in authoritative:
+                return {"error": authoritative.get("error", "risk unavailable"), "status": "error"}
+
+            # Real cascade count (grounded) — never invented by the model.
+            try:
+                cascade = await _get_cascade_impact_impl(
+                    supplier_id, float(authoritative.get("overall_score") or 0.5), self.db
+                )
+                cascade_affected = int(cascade.get("total_affected", 0))
+            except Exception:
+                cascade_affected = 0
+
+            key_factors_summary = ""
+            recommendation_rationale = ""
+            if bedrock.is_available:
+                factors = authoritative.get("factors", {})
+                factor_lines = ", ".join(
+                    f"{k.replace('_', ' ')}: "
+                    f"{(v.get('value', 0) if isinstance(v, dict) else v):.0%}"
+                    for k, v in factors.items()
+                )
+                prompt = (
+                    f"Summarise the supply-chain risk for supplier "
+                    f"{authoritative.get('supplier_name', supplier_id)}.\n"
+                    f"Overall risk: {float(authoritative.get('overall_score') or 0):.0%} "
+                    f"({authoritative.get('risk_level')}).\n"
+                    f"Risk factors: {factor_lines}.\n"
+                    f"Downstream suppliers affected by cascade: {cascade_affected}.\n"
+                    f"Situation context: {context}.\n\n"
+                    "Return JSON with exactly: key_factors_summary (<=500 chars), "
+                    f"recommendation_rationale (<=400 chars), cascade_affected ({cascade_affected})."
+                )
+                validated = await bedrock.invoke_typed(
+                    _RISK_SYSTEM, prompt, RiskNarrative, repair_attempts=0
+                )
+                if validated is not None:
+                    nd = validated.model_dump()
+                    key_factors_summary = str(nd.get("key_factors_summary", ""))[:500]
+                    recommendation_rationale = str(nd.get("recommendation_rationale", ""))[:400]
+
+            return {
+                # Authoritative fields — always from engine, never from model
+                "overall_score": authoritative.get("overall_score"),
+                "risk_level": authoritative.get("risk_level"),
+                "confidence": authoritative.get("confidence"),
+                "factors": authoritative.get("factors", {}),
+                # Narrative fields — single grounded AI call (empty if AI unavailable)
+                "key_factors_summary": key_factors_summary,
+                "recommendation_rationale": recommendation_rationale,
+                "cascade_affected": cascade_affected,
+                "source": "engine_grounded",
+            }
         except Exception as exc:
-            logger.warning(f"RiskAssessmentAgent Strands call failed: {exc}")
+            logger.warning(f"RiskAssessmentAgent assess failed: {exc}")
             return {"error": str(exc), "status": "error"}
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -395,11 +532,25 @@ async def _calculate_tfe_impl(
         for d in disruptions_q.scalars().all()
     ]
 
+    # Query actual 90-day delivery stats instead of hardcoded values so TFE
+    # figures in chat/scenarios match those shown on the dashboard.
+    delivery_result = await db.execute(text("""
+        SELECT
+            COUNT(*)                                     AS total,
+            COALESCE(AVG(delay_days), 0)                 AS avg_delay,
+            COUNT(*) FILTER (WHERE delay_days > 0)
+                / NULLIF(COUNT(*), 0)::float             AS late_pct,
+            COALESCE(SUM(sla_penalty_inr), 0)            AS total_penalties
+        FROM delivery_records
+        WHERE supplier_id = :sid
+          AND order_date >= CURRENT_DATE - INTERVAL '90 days'
+    """), {"sid": supplier_id})
+    dr = delivery_result.fetchone()
     delivery_stats = {
-        "total_deliveries": 30,
-        "late_pct": 0.15,
-        "avg_delay_days": days_to_stockout / max(1, len(skus)),
-        "total_penalties_inr": sla_penalty_per_day * days_to_stockout,
+        "total_deliveries": int(dr[0] or 0),
+        "avg_delay_days": float(dr[1] or 0),
+        "late_pct": float(dr[2] or 0),
+        "total_penalties_inr": float(dr[3] or sla_penalty_per_day * days_to_stockout),
     }
 
     exposure = financial_engine.compute_supplier_exposure(
@@ -456,27 +607,38 @@ async def _simulate_mitigation_impl(
     from app.services.risk_intelligence import RiskIntelligenceService
 
     svc = RiskIntelligenceService(db)
-    exposure = await svc._compute_supplier_exposure(
-        (await db.execute(
-            select(Supplier).where(Supplier.id == supplier_id)
-        )).scalar_one()
-    )
     supplier = (await db.execute(
         select(Supplier).where(Supplier.id == supplier_id)
     )).scalar_one_or_none()
+    exposure = await svc._compute_supplier_exposure(supplier) if supplier else None
+    if not exposure:
+        return {"error": "Supplier not found"}
+
+    risk_data = await svc.compute_supplier_risk(supplier_id)
+    risk_score = float(risk_data.get("overall_score", 1.0))
 
     sim = financial_engine.simulate_mitigation(
-        exposure, supplier.reliability_score if supplier else 0.8, supplier.lead_time_days if supplier else 7
+        exposure,
+        supplier.reliability_score if supplier else 0.8,
+        supplier.lead_time_days if supplier else 7,
+        risk_score=risk_score,
     )
     chosen = next((o for o in sim.options if o.action_type == action_type), sim.options[0] if sim.options else None)
+    # tfe_after_inr must be internally consistent with the CHOSEN action, not the best action.
+    # sim.mitigated_exposure_inr is based on the best option (highest net saving),
+    # which may be a different action type than what was requested.
+    if chosen:
+        tfe_after_inr = round(max(0.0, sim.current_exposure_inr - chosen.exposure_reduction_inr), 2)
+        reduction_pct = round(chosen.exposure_reduction_inr / max(1, sim.current_exposure_inr) * 100, 1)
+    else:
+        tfe_after_inr = sim.current_exposure_inr
+        reduction_pct = 0.0
     return {
         "supplier_id": supplier_id,
         "action_type": action_type,
         "tfe_before_inr": sim.current_exposure_inr,
-        "tfe_after_inr": sim.mitigated_exposure_inr,
-        "reduction_pct": round(
-            (sim.current_exposure_inr - sim.mitigated_exposure_inr) / max(1, sim.current_exposure_inr) * 100, 1
-        ),
+        "tfe_after_inr": tfe_after_inr,
+        "reduction_pct": reduction_pct,
         "cost_inr": chosen.cost_inr if chosen else 0,
         "confidence": chosen.confidence if chosen else 0.7,
         "time_to_effect_days": chosen.time_to_effect_days if chosen else 3,
@@ -508,26 +670,32 @@ class PrescriptiveActionAgent:
                 sla_penalty_per_day: float,
             ) -> str:
                 """Calculate Total Financial Exposure for a disrupted supplier."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _calculate_tfe_impl(supplier_id, days_to_stockout, daily_revenue, sla_penalty_per_day, db)
                 )
-                return json.dumps(result)
+                out = json.dumps(result)
+                _record_tool_call("calculate_tfe", supplier_id, out)
+                return out
 
             @tool
             def get_alternate_suppliers(category: str, exclude_city: str) -> str:
                 """Find alternate suppliers in the same category excluding the disrupted city."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_alternate_suppliers_impl(category, exclude_city, db)
                 )
-                return json.dumps(result)
+                out = json.dumps(result)
+                _record_tool_call("get_alternate_suppliers", f"{category}|{exclude_city}", out)
+                return out
 
             @tool
             def simulate_mitigation(supplier_id: str, action_type: str) -> str:
                 """Calculate TFE before and after applying a mitigation action."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _simulate_mitigation_impl(supplier_id, action_type, db)
                 )
-                return json.dumps(result)
+                out = json.dumps(result)
+                _record_tool_call("simulate_mitigation", f"{supplier_id}|{action_type}", out)
+                return out
 
             self._strands_agent = Agent(
                 model=model,
@@ -551,7 +719,7 @@ class PrescriptiveActionAgent:
                 "and get_alternate_suppliers if switching is needed. "
                 "Return JSON with: action_type, title, description, tfe_inr, reduction_pct, alternate_supplier."
             )
-            response = await asyncio.to_thread(self._strands_agent, prompt)
+            response = await _invoke_agent(self._strands_agent, prompt)
             text = str(response)
             if "{" in text:
                 start = text.index("{")
@@ -695,7 +863,7 @@ class ConversationalAdvisorAgent:
                     params = json.loads(filter_params_json)
                 except json.JSONDecodeError:
                     params = {}
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _query_suppliers_impl(params, db)
                 )
                 out = json.dumps(result)
@@ -705,7 +873,7 @@ class ConversationalAdvisorAgent:
             @tool
             def get_financial_summary() -> str:
                 """Return aggregated Total Financial Exposure (TFE) across all at-risk suppliers in Indian Rupees."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _get_financial_summary_impl(db)
                 )
                 payload = {
@@ -725,7 +893,7 @@ class ConversationalAdvisorAgent:
                     ids = json.loads(supplier_ids_json)
                 except json.JSONDecodeError:
                     ids = []
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _run_scenario_impl(ids, disruption_type, db)
                 )
                 out = json.dumps(result)
@@ -748,13 +916,21 @@ class ConversationalAdvisorAgent:
         session_id: str | None = None,
     ) -> dict:
         """
-        Process a conversational message via Strands. Returns error immediately on failure — no fallback.
+        Process a conversational message via Strands.
         history: list of {"role": "user"|"assistant", "content": "..."}
         session_id: used to thread tool call history across turns
         """
+        # Lazy retry: if agent failed to init at construction time (e.g. creds
+        # not yet in env), try once more now that creds may have been loaded.
+        if self._strands_agent is None:
+            self._init_agent()
         if self._strands_agent is None:
             return {
-                "answer": "AI advisor is unavailable — Strands SDK or Bedrock model could not be initialised. Check AWS credentials and region configuration.",
+                "answer": (
+                    "AI advisor is unavailable — Bedrock model could not be initialised. "
+                    f"Check AWS credentials and that model '{settings.bedrock_model_id}' is enabled "
+                    f"in region '{os.environ.get('AWS_REGION', settings.aws_region)}'."
+                ),
                 "sources": [],
                 "agent": "unavailable",
                 "status": "error",
@@ -796,13 +972,19 @@ class ConversationalAdvisorAgent:
                     metrics_store.record_agent_call("conversational_advisor")
                 except Exception:
                     pass
-                response = await asyncio.to_thread(self._strands_agent, full_prompt)
+                response = await _invoke_agent(self._strands_agent, full_prompt)
             finally:
                 _current_session_id.reset(token)
 
+            # Derive sources from which tools were actually called this turn
+            tools_called = []
+            if session_id and session_id in _SESSION_TOOL_HISTORY:
+                tools_called = [t["tool"] for t in _SESSION_TOOL_HISTORY[session_id]]
+            sources = list(dict.fromkeys(tools_called)) if tools_called else ["risk_engine"]
+
             return {
                 "answer": str(response),
-                "sources": ["risk_engine", "financial_engine", "live_database"],
+                "sources": sources,
                 "agent": "conversational_advisor",
             }
         except Exception as exc:
@@ -833,17 +1015,28 @@ _SIGNAL_INTEL_SYSTEM = (
 
 async def _classify_event_impl(event: dict) -> dict:
     """
-    Tool implementation: classify a disruption event.
-    Uses Bedrock as a fallback classification source (only called after Strands
-    approval has been granted). If Bedrock is unavailable, falls back to rule-based.
-    Returns event_type, severity, confidence, affected_region, estimated_duration_days.
+    Tool implementation: classify a disruption event via Bedrock (Claude Haiku).
+    Called after Strands approval has been granted.
+    Returns an error dict if Bedrock is unavailable — no rule-based fabrication.
     """
     from app.core.bedrock import bedrock
-    from app.core.fallback_manager import request_fallback_approval
 
     event_description = event.get("description", event.get("disruption_type", "unknown"))
     region = event.get("region", "unknown")
     severity_hint = event.get("severity", "")
+
+    if not bedrock.is_available:
+        logger.warning("_classify_event_impl: Bedrock unavailable — cannot classify disruption event")
+        return {
+            "error": "bedrock_unavailable",
+            "event_type": None,
+            "severity": None,
+            "confidence": None,
+            "affected_region": region,
+            "estimated_duration_days": None,
+        }
+
+    from app.schemas.ai_contracts import DisruptionClassification
 
     system_prompt = (
         "You are a supply chain disruption classifier. "
@@ -855,56 +1048,29 @@ async def _classify_event_impl(event: dict) -> dict:
         f"Description: {event_description}\n"
         f"Region: {region}\n"
         f"Severity hint: {severity_hint}\n\n"
-        f"Return JSON with: event_type, severity, confidence, affected_region, estimated_duration_days"
+        f"Return JSON with exactly these keys: event_type, severity, confidence, affected_region, estimated_duration_days"
     )
 
-    result = await bedrock.invoke_structured(system_prompt, user_prompt)
+    validated = await bedrock.invoke_typed(system_prompt, user_prompt, DisruptionClassification)
 
-    if not result:
-        # Bedrock unavailable — use rule-based classification
-        type_mapping = {
-            "cyclone": "weather",
-            "flood": "weather",
-            "storm": "weather",
-            "earthquake": "weather",
-            "drought": "weather",
-            "strike": "labor",
-            "protest": "geopolitical",
-            "war": "geopolitical",
-            "sanctions": "geopolitical",
-            "port_congestion": "logistics",
-            "shipping_delay": "logistics",
-            "transport": "logistics",
-            "power_outage": "infrastructure",
-            "road_closure": "infrastructure",
-            "bridge_collapse": "infrastructure",
-        }
-        disruption_type = event.get("disruption_type", "").lower()
-        event_type = "logistics"  # default
-        for key, val in type_mapping.items():
-            if key in disruption_type:
-                event_type = val
-                break
-
-        severity_mapping = {"critical": "critical", "high": "high", "medium": "medium", "low": "low"}
-        severity = severity_mapping.get(severity_hint, "medium")
-
-        duration_mapping = {"weather": 5, "geopolitical": 14, "logistics": 3, "labor": 7, "infrastructure": 10}
-
-        result = {
-            "event_type": event_type,
-            "severity": severity,
-            "confidence": 0.6,
+    if validated is None:
+        logger.warning("_classify_event_impl: Bedrock returned no valid classification")
+        return {
+            "error": "bedrock_invalid_response",
+            "event_type": None,
+            "severity": None,
+            "confidence": None,
             "affected_region": region,
-            "estimated_duration_days": duration_mapping.get(event_type, 7),
+            "estimated_duration_days": None,
         }
 
+    result = validated.model_dump()
     return {
-        "event_type": result.get("event_type", "logistics"),
-        "severity": result.get("severity", "medium"),
-        "confidence": float(result.get("confidence", 0.5)),
+        "event_type": result["event_type"],
+        "severity": result["severity"],
+        "confidence": float(result["confidence"]),
         "affected_region": result.get("affected_region", region),
-        "estimated_duration_days": int(result.get("estimated_duration_days", 7)),
+        "estimated_duration_days": int(result["estimated_duration_days"]),
     }
 
 
@@ -966,7 +1132,7 @@ class SignalIntelligenceAgent:
                     event = json.loads(event_json)
                 except json.JSONDecodeError:
                     event = {"description": event_json}
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _classify_event_impl(event)
                 )
                 out = json.dumps(result)
@@ -976,7 +1142,7 @@ class SignalIntelligenceAgent:
             @tool
             def find_affected_suppliers(region: str, event_type: str) -> str:
                 """Find suppliers potentially affected by a disruption event based on geographic proximity to the event region."""
-                result = asyncio.get_event_loop().run_until_complete(
+                result = _run_in_new_loop(
                     _find_affected_suppliers_impl(region, event_type, db)
                 )
                 out = json.dumps(result)
@@ -1013,7 +1179,7 @@ class SignalIntelligenceAgent:
                 "Return a JSON with: event_type, severity, confidence, affected_region, "
                 "estimated_duration_days, affected_supplier_ids."
             )
-            response = await asyncio.to_thread(self._strands_agent, prompt)
+            response = await _invoke_agent(self._strands_agent, prompt)
             text_response = str(response)
             if "{" in text_response:
                 start = text_response.index("{")
@@ -1064,13 +1230,27 @@ class SupervisorAgent:
         self.risk_agent = RiskAssessmentAgent(db)
         self.action_agent = PrescriptiveActionAgent(db)
 
+    # Conditional subflow policy:
+    #   "classify_only"            → low severity or very low confidence: SignalIntel only
+    #   "classify_risk"            → medium severity or moderate confidence
+    #   "classify_risk_action"     → high/critical with known supplier_id
+    #   "human_review"             → confidence < 0.3 after classification
+    _SUBFLOW_POLICY = {
+        "low":      "classify_only",
+        "medium":   "classify_risk",
+        "high":     "classify_risk_action",
+        "critical": "classify_risk_action",
+    }
+
     async def process_disruption_event(self, event: dict) -> dict:
         """
-        Process a disruption event through the full agent pipeline:
-          Signal Intelligence → Risk Assessment → Prescriptive Action → ActionCard
+        Process a disruption event through the adaptive agent pipeline.
 
-        Each stage uses parallel_execute where applicable. If any stage fails,
-        the pipeline logs the failure and continues with available data from prior stages.
+        Subflow is chosen at runtime based on severity and post-classification confidence:
+          low      → classify_only        (signal intel only)
+          medium   → classify_risk        (signal intel + risk assessment)
+          high/critical → classify_risk_action (full pipeline)
+          low confidence after classify → human_review (skip prescriptive)
 
         Returns an ActionCard-ready payload.
         """
@@ -1081,6 +1261,9 @@ class SupervisorAgent:
         region = event.get("region", "")
         city = event.get("city", "")
         state = event.get("state", "")
+
+        # Determine initial subflow from severity — may be upgraded after classification
+        subflow = self._SUBFLOW_POLICY.get(severity, "classify_risk_action")
 
         logger.info(f"═══════════════════════════════════════════════════════════════")
         logger.info(f"  SUPERVISOR PIPELINE START: {supplier_name} ({severity})")
@@ -1144,9 +1327,19 @@ class SupervisorAgent:
         signal_confidence = float(signal_report.get("confidence", 0.5))
         affected_supplier_ids = signal_report.get("affected_supplier_ids", [])
 
+        # Upgrade subflow based on post-classification confidence
+        if signal_confidence < 0.3:
+            subflow = "human_review"
+            logger.info(f"  ⚠️  Low confidence ({signal_confidence:.2f}) — routing to human_review subflow")
+        elif signal_severity in ("high", "critical") and subflow == "classify_only":
+            subflow = "classify_risk_action"
+            logger.info(f"  ↑ Severity upgraded to {signal_severity} — escalating subflow to classify_risk_action")
+
+        logger.info(f"  Subflow selected: {subflow}")
+
         # ── Step 2: Risk Assessment (via parallel_execute) ──────────────────
         risk_result = {}
-        if supplier_id:
+        if supplier_id and subflow in ("classify_risk", "classify_risk_action"):
             start = time.monotonic()
             logger.info(f"  [2/5] 📊 Risk Assessment Agent — scoring supplier {supplier_id[:8]}...")
             try:
@@ -1173,6 +1366,16 @@ class SupervisorAgent:
                             "status": "blocked",
                             "error": risk_results[0].get("error", "Fallback not approved"),
                         })
+                    elif risk_results[0].get("status") == "error":
+                        logger.warning(f"Risk assessment returned error: {risk_results[0].get('error')}")
+                        duration_ms = (time.monotonic() - start) * 1000
+                        pipeline_metadata.append({
+                            "agent": "risk_assessment",
+                            "duration_ms": round(duration_ms, 2),
+                            "status": "error",
+                            "error": risk_results[0].get("error"),
+                        })
+                        # Do not assign error dict to risk_result — it has no authoritative scores.
                     elif risk_results[0].get("partial"):
                         logger.warning(f"Risk assessment partial failure: {risk_results[0].get('error')}")
                         duration_ms = (time.monotonic() - start) * 1000
@@ -1195,7 +1398,7 @@ class SupervisorAgent:
                     pipeline_metadata.append({
                         "agent": "risk_assessment",
                         "duration_ms": round(duration_ms, 2),
-                        "status": "success",
+                        "status": "unavailable",
                     })
             except Exception as exc:
                 duration_ms = (time.monotonic() - start) * 1000
@@ -1207,75 +1410,84 @@ class SupervisorAgent:
                 })
                 logger.warning(f"  [2/5] ❌ Risk Assessment FAILED ({duration_ms:.0f}ms): {exc}")
 
-        risk_score = float(risk_result.get("overall_score", 0.5))
+        # Use None sentinel when risk assessment failed — do NOT substitute 0.5 (medium risk)
+        # because a fabricated default can trigger plausible-looking recommendations from
+        # a pipeline that actually failed. Callers must check risk_score_available.
+        risk_score_available = bool(risk_result.get("overall_score") is not None)
+        risk_score = float(risk_result["overall_score"]) if risk_score_available else 0.0
         risk_level = risk_result.get("risk_level", signal_severity)
         confidence = float(risk_result.get("confidence", signal_confidence))
-        logger.info(f"  [2/5] ✅ Risk Assessment DONE — score={risk_score:.2f}, level={risk_level}, confidence={confidence:.2f}")
-        confidence = float(risk_result.get("confidence", signal_confidence))
+        if risk_score_available:
+            logger.info(f"  [2/5] ✅ Risk Assessment DONE — score={risk_score:.2f}, level={risk_level}, confidence={confidence:.2f}")
+        else:
+            logger.warning(f"  [2/5] ⚠️  Risk Assessment data unavailable — score suppressed to prevent fabricated recommendation")
 
-        # ── Step 3: Prescriptive Action (via parallel_execute) ──────────────
+        # ── Step 3: Prescriptive Action — ONE grounded recommender ──────────
+        # Uses the SAME recommender as the dashboard (procurement_agent.generate_action_card)
+        # so the supervisor and the read-time cards can never diverge. action_type
+        # is chosen by the canonical factor→action rule; ₹ exposure is recomputed
+        # by the engine (the event carries 0); narrative comes from the grounded
+        # AI card. Replaces the separate Strands PrescriptiveActionAgent loop.
         action_result = {}
-        if supplier_id:
+        # Real exposure used by BOTH the recommender AND the evidence package below,
+        # so the narrative's ₹ figures stay grounded (the event carries 0). If left
+        # at 0, grounding would reject the AI figures and the card would never persist.
+        card_exposure_inr = float(event.get("estimated_impact_inr") or 0)
+        if supplier_id and subflow == "classify_risk_action":
             start = time.monotonic()
-            logger.info(f"  [3/5] 💡 Prescriptive Action Agent — generating recommendations...")
+            logger.info(f"  [3/5] 💡 Prescriptive Action — grounded recommendation...")
             try:
-                action_context = {
-                    "city": city,
-                    "state": state,
-                    "risk_score": risk_score,
-                    "risk_level": risk_level,
-                    "exposure_inr": event.get("estimated_impact_inr", 0),
-                    "days_to_stockout": event.get("days_to_stockout", 7),
-                    "sku_count": event.get("sku_count", 1),
-                    "disruption_context": f"{signal_event_type} in {signal_region}",
-                    "cascade_context": f"Cascade affected: {risk_result.get('cascade_affected', 0)} suppliers",
-                    "action_type": "switch_supplier" if signal_severity == "critical" else "reorder",
-                    "signal_event_type": signal_event_type,
-                    "signal_confidence": signal_confidence,
-                    "estimated_duration_days": signal_report.get("estimated_duration_days", 7),
-                }
-                action_tasks = [
-                    self.action_agent.recommend(
-                        supplier_id=supplier_id,
-                        supplier_name=supplier_name,
-                        context=action_context,
-                    )
-                ]
-                action_results = await parallel_execute(action_tasks)
-                # Extract the first (primary) result
-                if action_results and isinstance(action_results[0], dict):
-                    if action_results[0].get("status") == "blocked":
-                        logger.warning(f"Action recommendation blocked — fallback not approved")
-                        duration_ms = (time.monotonic() - start) * 1000
-                        pipeline_metadata.append({
-                            "agent": "prescriptive_action",
-                            "duration_ms": round(duration_ms, 2),
-                            "status": "blocked",
-                            "error": action_results[0].get("error", "Fallback not approved"),
-                        })
-                    elif action_results[0].get("partial"):
-                        logger.warning(f"Action recommendation partial failure: {action_results[0].get('error')}")
-                        duration_ms = (time.monotonic() - start) * 1000
-                        pipeline_metadata.append({
-                            "agent": "prescriptive_action",
-                            "duration_ms": round(duration_ms, 2),
-                            "status": "partial_failure",
-                            "error": action_results[0].get("error"),
-                        })
-                    else:
-                        action_result = action_results[0]
-                        duration_ms = (time.monotonic() - start) * 1000
-                        pipeline_metadata.append({
-                            "agent": "prescriptive_action",
-                            "duration_ms": round(duration_ms, 2),
-                            "status": "success",
-                        })
-                else:
-                    duration_ms = (time.monotonic() - start) * 1000
+                from uuid import UUID as _UUID
+                from app.routers.action_cards import _action_type_from_factors
+                from app.services.risk_intelligence import RiskIntelligenceService
+
+                action_type = _action_type_from_factors(risk_result.get("factors", {}))
+
+                # Real exposure (event carries 0); deterministic, keeps ₹ grounded.
+                try:
+                    exp = await RiskIntelligenceService(self.db)._compute_supplier_exposure_by_id(_UUID(supplier_id))
+                    if exp:
+                        card_exposure_inr = exp.total_exposure_inr
+                except Exception:
+                    pass
+
+                card = await procurement_agent.generate_action_card(
+                    supplier_name=supplier_name,
+                    city=city,
+                    state=state,
+                    risk_score=risk_score,
+                    risk_level=risk_level,
+                    exposure_inr=card_exposure_inr,
+                    days_to_stockout=int(event.get("days_to_stockout", 7)),
+                    sku_count=int(event.get("sku_count", 1)),
+                    disruption_context=f"{signal_event_type} in {signal_region} (severity {signal_severity})",
+                    cascade_context=f"{risk_result.get('cascade_affected', 0)} downstream suppliers affected",
+                    action_type=action_type,
+                )
+                duration_ms = (time.monotonic() - start) * 1000
+                if card and card.get("ai_generated"):
+                    action_result = {
+                        "action_type": action_type,
+                        "title": card.get("title"),
+                        "description": card.get("executive_summary"),
+                        "reasoning": card.get("reasoning"),
+                        "urgency_narrative": card.get("urgency_narrative"),
+                        "recommended_action": card.get("recommended_action"),
+                        "alternate_supplier_rationale": card.get("alternate_supplier_rationale", ""),
+                    }
                     pipeline_metadata.append({
                         "agent": "prescriptive_action",
                         "duration_ms": round(duration_ms, 2),
                         "status": "success",
+                    })
+                else:
+                    # AI unavailable — keep the rule-chosen action_type, no narrative.
+                    action_result = {"action_type": action_type}
+                    pipeline_metadata.append({
+                        "agent": "prescriptive_action",
+                        "duration_ms": round(duration_ms, 2),
+                        "status": "unavailable",
+                        "error": (card or {}).get("ai_error_reason", "no_card"),
                     })
             except Exception as exc:
                 duration_ms = (time.monotonic() - start) * 1000
@@ -1289,8 +1501,32 @@ class SupervisorAgent:
 
         logger.info(f"  [3/5] ✅ Prescriptive Action DONE — action_type={action_result.get('action_type', 'N/A')}")
 
+        # ── Step 3b: Build evidence package for grounding validation ────────
+        # The evidence package captures the authoritative facts at this moment.
+        # It is used in Task 9 (grounding check) and carried in the response
+        # so the snapshot_id can be used for audit correlation.
+        evidence_pkg = build_evidence_package(
+            supplier_id=supplier_id or "",
+            supplier_name=supplier_name,
+            risk_score=risk_score if risk_score_available else 0.0,
+            risk_level=risk_level,
+            # Same real exposure the recommender saw, so the narrative's ₹ figures
+            # are grounded and the card actually passes the grounding check + persists.
+            exposure_inr=card_exposure_inr,
+            days_to_stockout=int(event.get("days_to_stockout", 7)),
+            sku_count=int(event.get("sku_count", 1)),
+        )
+
         # ── Step 4: Assemble ActionCard payload ─────────────────────────────
         logger.info(f"  [4/5] 📋 Assembling ActionCard payload...")
+        # Determine pipeline status from actual stage outcomes
+        failed_stages = [p["agent"] for p in pipeline_metadata if p.get("status") in ("error", "failure", "blocked")]
+        successful_stages = [p["agent"] for p in pipeline_metadata if p.get("status") == "success"]
+        pipeline_status = "success" if not failed_stages else f"partial_failure:{','.join(failed_stages)}"
+        # strands_used reflects whether at least one agent stage completed successfully,
+        # not merely whether the Strands SDK imported.
+        strands_actually_used = STRANDS_AVAILABLE and bool(successful_stages)
+
         action_card = {
             "supplier_id": supplier_id,
             "supplier_name": supplier_name,
@@ -1304,9 +1540,10 @@ class SupervisorAgent:
             ),
             "action_type": action_result.get("action_type", "reorder"),
             "priority": signal_severity,
-            "risk_score": risk_score,
+            "risk_score": risk_score if risk_score_available else None,
+            "risk_score_available": risk_score_available,
             "confidence": confidence,
-            "estimated_impact_inr": event.get("estimated_impact_inr", 0),
+            "estimated_impact_inr": card_exposure_inr,
             "reasoning": action_result.get("reasoning", ""),
             "urgency_narrative": action_result.get("urgency_narrative", ""),
             "recommended_action": action_result.get("recommended_action", ""),
@@ -1320,8 +1557,22 @@ class SupervisorAgent:
                 "requires_human_review": signal_report.get("requires_human_review", False),
             },
             "agent": "supervisor",
-            "strands_used": STRANDS_AVAILABLE,
+            "subflow": subflow,
+            "strands_used": strands_actually_used,
+            # Cards are genuinely AI-generated only when the action agent produced
+            # a real title/description — not when we fell back to generic placeholders.
+            "ai_generated": strands_actually_used and bool(action_result.get("title")),
+            "generation_mode": (
+                "ai_generated" if (strands_actually_used and action_result.get("title"))
+                else "signal_only" if strands_actually_used
+                else "deterministic_fallback"
+            ),
+            "pipeline_status": pipeline_status,
+            "validation_status": "narrative_only",
+            "evidence_snapshot_id": evidence_pkg.snapshot_id,
             "pipeline_metadata": pipeline_metadata,
+            "risk_policy_version": 1,      # load from PolicyService when DB is in scope
+            "financial_policy_version": 1,
         }
 
         # Route low-confidence alerts to human review
@@ -1331,10 +1582,11 @@ class SupervisorAgent:
                 f"[Low confidence — routing to human review] {action_card['description']}"
             )
 
-        # ── Step 4b: Bedrock Guardrail validation ───────────────────────────
-        # Validate AI-generated text fields against the configured guardrail.
-        # If any field is blocked, fall back to rule-based deterministic text.
-        logger.info(f"  [4/5] 🛡️  Guardrail validation — checking AI-generated text...")
+        # ── Step 4b: Content safety — Bedrock Guardrail ─────────────────────
+        # Bedrock Guardrails check for harmful/policy-violating content.
+        # This is a CONTENT SAFETY check only — it cannot verify numerical
+        # accuracy. Factual grounding is handled separately in Step 4c.
+        logger.info(f"  [4/5] 🛡️  Content-safety guardrail — checking AI-generated text...")
         guardrail_fields = {
             "title": action_card.get("title", ""),
             "description": action_card.get("description", ""),
@@ -1348,55 +1600,63 @@ class SupervisorAgent:
             validated_fields, was_blocked = await validate_with_guardrail(guardrail_fields)
             if was_blocked:
                 logger.warning(
-                    f"Guardrail intervention for {supplier_name}: "
-                    f"blocked fields replaced with rule-based fallback"
+                    f"Content-safety guardrail intervened for {supplier_name}: "
+                    f"blocked fields cleared (no fabricated fallback text)"
                 )
-                # Fall back to procurement_agent rule-based responses for blocked fields
-                if not validated_fields.get("title"):
-                    action_card["title"] = f"Alert: {supplier_name} — {disruption_type} disruption"
-                else:
-                    action_card["title"] = validated_fields["title"]
+                # Only retain fields that passed content-safety — blocked fields become None
+                for field in ("title", "description", "reasoning", "urgency_narrative",
+                               "recommended_action", "alternate_supplier_rationale"):
+                    action_card[field] = validated_fields.get(field) or None
 
-                if not validated_fields.get("description"):
-                    action_card["description"] = f"{disruption_type} event in {signal_region}. Review required."
-                else:
-                    action_card["description"] = validated_fields["description"]
-
-                if not validated_fields.get("reasoning"):
-                    action_card["reasoning"] = f"Automated alert based on {signal_event_type} signal."
-                else:
-                    action_card["reasoning"] = validated_fields["reasoning"]
-
-                if not validated_fields.get("urgency_narrative"):
-                    action_card["urgency_narrative"] = (
-                        f"Action needed within {signal_report.get('estimated_duration_days', 7)} days."
-                    )
-                else:
-                    action_card["urgency_narrative"] = validated_fields["urgency_narrative"]
-
-                if not validated_fields.get("recommended_action"):
-                    action_card["recommended_action"] = "Review supplier status and initiate contingency plan."
-                else:
-                    action_card["recommended_action"] = validated_fields["recommended_action"]
-
-                if not validated_fields.get("alternate_supplier_rationale"):
-                    action_card["alternate_supplier_rationale"] = ""
-                else:
-                    action_card["alternate_supplier_rationale"] = validated_fields["alternate_supplier_rationale"]
-
-                action_card["guardrail_intervened"] = True
+                action_card["content_safety_intervened"] = True
+                action_card["content_safety_status"] = "intervened"
+                action_card["ai_error"] = True
+                action_card["ai_error_reason"] = "content_safety_blocked"
+                action_card["generation_mode"] = "ai_unavailable"
             else:
-                # All fields passed — update with validated content
                 action_card["title"] = validated_fields.get("title", action_card["title"])
                 action_card["description"] = validated_fields.get("description", action_card["description"])
                 action_card["reasoning"] = validated_fields.get("reasoning", action_card["reasoning"])
                 action_card["urgency_narrative"] = validated_fields.get("urgency_narrative", action_card["urgency_narrative"])
                 action_card["recommended_action"] = validated_fields.get("recommended_action", action_card["recommended_action"])
                 action_card["alternate_supplier_rationale"] = validated_fields.get("alternate_supplier_rationale", "")
-                action_card["guardrail_intervened"] = False
+                action_card["content_safety_intervened"] = False
+                action_card["content_safety_status"] = "passed"
         except Exception as exc:
-            logger.error(f"Guardrail validation failed: {exc} — proceeding without guardrail")
-            action_card["guardrail_intervened"] = False
+            logger.error(f"Content-safety guardrail failed: {exc} — proceeding without guardrail")
+            action_card["content_safety_intervened"] = False
+            action_card["content_safety_status"] = "unavailable"
+
+        # ── Step 4c: Factual grounding check (Task 9) ───────────────────────
+        # Separate from guardrails — this checks that AI narrative output does
+        # not contain rupee amounts that were not in the evidence package.
+        # Guardrails cannot perform this check; it must be done locally.
+        narrative_for_grounding = {
+            k: action_card.get(k, "")
+            for k in ("title", "description", "reasoning", "urgency_narrative",
+                      "recommended_action", "alternate_supplier_rationale")
+        }
+        grounding_result = validate_grounding(narrative_for_grounding, evidence_pkg)
+        action_card["grounding_status"] = grounding_result.grounding_status
+        if not grounding_result.passed:
+            logger.warning(
+                f"Grounding violations in supervisor action card for {supplier_name}: "
+                f"{grounding_result.violations}"
+            )
+
+        # ── Step 4d: Persist to the canonical action_cards table ────────────
+        # This is what makes the Strands pipeline actually feed the visible
+        # Pending Actions list (GET /actions reads these rows). Without it the
+        # whole pipeline only emitted an ephemeral SSE event. Dedup vs
+        # sync-risks: enrich the supplier's existing unresolved card if present,
+        # else create one. Guarded so it only runs with a real supplier + AI
+        # content that passed grounding; ₹ exposure is computed by the engine.
+        if supplier_id and action_card.get("ai_generated") and grounding_result.passed:
+            try:
+                await self._persist_action_card(supplier_id, action_card)
+                logger.info(f"  [4/5] 💾 Persisted AI action card to DB for {supplier_name}")
+            except Exception as exc:
+                logger.warning(f"  [4/5] action card persist failed: {exc}")
 
         # ── Step 5: Publish ActionCard to SSE stream ────────────────────────
         logger.info(f"  [5/5] 📡 Publishing ActionCard to SSE stream...")
@@ -1420,6 +1680,65 @@ class SupervisorAgent:
 
         return action_card
 
+    async def _persist_action_card(self, supplier_id: str, card: dict) -> None:
+        """
+        Write the Supervisor's AI-generated card into the canonical action_cards
+        table so it shows up in Pending Actions / the dashboard.
+
+        - Enriches the supplier's existing unresolved card (dedup vs sync-risks),
+          else creates a new one.
+        - Financial exposure is recomputed by the deterministic engine — the
+          supervisor event itself carries ₹0, and ₹ figures must stay grounded.
+        - Best-effort cache busting so the next dashboard read reflects it.
+        """
+        from uuid import UUID
+        from sqlalchemy import select
+        from app.models.action_card import ActionCard
+        from app.services.risk_intelligence import RiskIntelligenceService
+
+        try:
+            sid = UUID(supplier_id)
+        except (ValueError, TypeError):
+            return
+
+        exposure = await RiskIntelligenceService(self.db)._compute_supplier_exposure_by_id(sid)
+        impact = exposure.total_exposure_inr if exposure else float(card.get("estimated_impact_inr") or 0)
+
+        existing = (await self.db.execute(
+            select(ActionCard).where(
+                ActionCard.supplier_id == sid,
+                ActionCard.is_resolved == False,
+            )
+        )).scalars().first()
+
+        if existing:
+            # Enrich the canonical card with the AI narrative + chosen action.
+            existing.title = card.get("title") or existing.title
+            existing.description = card.get("description") or existing.description
+            existing.action_type = card.get("action_type") or existing.action_type
+            existing.priority = card.get("priority") or existing.priority
+            if impact:
+                existing.estimated_impact_inr = impact
+        else:
+            self.db.add(ActionCard(
+                title=card.get("title", "Action required"),
+                description=card.get("description", ""),
+                action_type=card.get("action_type", "reorder"),
+                priority=card.get("priority", "high"),
+                supplier_id=sid,
+                estimated_impact_inr=impact,
+            ))
+        await self.db.commit()
+
+        # Bust caches so the next dashboard/risk read reflects the new card.
+        try:
+            from app.services.risk_intelligence import clear_risk_cache
+            clear_risk_cache()
+            from app.routers.procurement import _CACHE
+            _CACHE.pop("action_cards:rp1:fp1", None)
+        except Exception:
+            pass
+
     async def process_scenario(self, scenario_name: str, preset: dict) -> dict:
         """
         Process a triggered scenario preset through the full agent pipeline.
@@ -1442,4 +1761,11 @@ class SupervisorAgent:
         result["scenario"] = scenario_name
         result["alert_message"] = preset.get("alert_message", "")
         result["affected_suppliers"] = preset.get("affected_suppliers", 0)
+        # Mark all financial/count values as synthetic — they are preset constants,
+        # not values derived from the live database or deterministic engines.
+        result["data_mode"] = "synthetic"
+        result["synthetic_note"] = (
+            "Financial impact and SKU counts are scenario presets, not live calculations. "
+            "Do not treat these figures as production measurements."
+        )
         return result

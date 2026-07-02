@@ -89,7 +89,8 @@ async def test_guardrail_passes_all_fields(mock_db, sample_event):
         assert result["title"] == "AI Generated Title"
         assert result["description"] == "AI Generated Description"
         assert result["reasoning"] == "AI reasoning text"
-        assert result["guardrail_intervened"] is False
+        assert result["content_safety_intervened"] is False
+        assert result["content_safety_status"] == "passed"
         mock_guardrail.assert_called_once()
 
 
@@ -156,7 +157,8 @@ async def test_guardrail_blocks_fields_triggers_fallback(mock_db, sample_event):
         assert result["urgency_narrative"] == "Blocked urgency"  # not blocked
         assert result["recommended_action"] == "Review supplier status and initiate contingency plan."
         assert result["alternate_supplier_rationale"] == ""
-        assert result["guardrail_intervened"] is True
+        assert result["content_safety_intervened"] is True
+        assert result["content_safety_status"] == "intervened"
 
 
 @pytest.mark.asyncio
@@ -207,7 +209,8 @@ async def test_guardrail_exception_fails_open(mock_db, sample_event):
         # Original AI-generated content should be preserved (fail-open)
         assert result["title"] == "Original Title"
         assert result["description"] == "Original Description"
-        assert result["guardrail_intervened"] is False
+        assert result["content_safety_intervened"] is False
+        assert result["content_safety_status"] == "unavailable"
 
 
 @pytest.mark.asyncio

@@ -13,8 +13,8 @@ import type {
   ExecutiveBrief,
   AlternateSuppliersResponse,
   ChatResponse,
-  SimulateMitigationResponse,
   HealthStatus,
+  SupplierDependency,
 } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -49,6 +49,8 @@ export const api = {
     request<SupplierListResponse>(`/suppliers?limit=${limit}&offset=${offset}`),
   getAlternateSuppliersDirect: (supplierId: string) =>
     request<AlternateSuppliersResponse>(`/suppliers/${supplierId}/alternate-suppliers`),
+  getAlternateSupplierDetail: (altSupplierId: string, primarySupplierId?: string) =>
+    request<any>(`/suppliers/alternate-detail/${altSupplierId}${primarySupplierId ? `?primary_supplier_id=${primarySupplierId}` : ''}`),
 
   // SKUs
   getSKUs: (limit = 100, offset = 0) =>
@@ -74,22 +76,55 @@ export const api = {
     request<IntelligentActionCard[]>(`/procurement/action-cards${ttlSeconds ? `?ttl_seconds=${ttlSeconds}` : ''}`),
   getExecutiveBrief: (ttlSeconds?: number) =>
     request<ExecutiveBrief>(`/procurement/executive-brief${ttlSeconds ? `?ttl_seconds=${ttlSeconds}` : ''}`),
-  getAlternateSuppliers: (id: string) =>
-    request<any>(`/procurement/alternate-suppliers/${id}`),
-
-  // Mitigation simulation
-  simulateMitigationAction: (supplierId: string) =>
-    request<SimulateMitigationResponse>('/actions/simulate-mitigation', {
-      method: 'POST',
-      body: JSON.stringify({ supplier_id: supplierId }),
-    }),
-
+  // Force the backend to drop its warm AI cache so the next fetch regenerates.
+  // Without this, "Refresh" only clears the React Query cache while the backend
+  // keeps serving its 10-min cached AI result (the cards/brief never change).
+  invalidateProcurementCache: () =>
+    request<{ status: string }>('/procurement/cache/invalidate', { method: 'POST' }),
   // Chat
   sendChatMessage: (message: string, sessionId?: string | null) =>
     request<ChatResponse>('/chat', {
       method: 'POST',
       body: JSON.stringify({ message, session_id: sessionId ?? null }),
     }),
+
+  // Action card resolution
+  // Fix 3: send null (not empty string) when no note — avoids polluting the DB audit trail
+  resolveActionCard: (actionCardId: string, resolutionNote?: string) =>
+    request<{ status: string; action_card_id: string }>(`/actions/${actionCardId}/resolve`, {
+      method: 'PATCH',
+      body: JSON.stringify({ resolution_note: resolutionNote?.trim() || null }),
+    }),
+
+  // Resolves ALL unresolved action cards for a supplier at once.
+  // Use this from the mitigation plan page so that taking action on a supplier
+  // immediately clears it from the dashboard and risks page.
+  resolveAllSupplierCards: (supplierId: string, resolutionNote?: string) =>
+    request<{ status: string; supplier_id: string; count: number }>(`/actions/resolve-supplier/${supplierId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ resolution_note: resolutionNote?.trim() || null }),
+    }),
+
+  unresolveActionCard: (actionCardId: string) =>
+    request<{ status: string; action_card_id: string }>(`/actions/${actionCardId}/unresolve`, {
+      method: 'PATCH',
+    }),
+
+  // Reopens ALL resolved action cards for a supplier at once.
+  // Use this when toggling a resolved supplier back to pending.
+  unresolveAllSupplierCards: (supplierId: string) =>
+    request<{ status: string; supplier_id: string; count: number }>(`/actions/unresolve-supplier/${supplierId}`, {
+      method: 'PATCH',
+    }),
+
+  // Syncs action cards with live risk data — creates cards for any medium/high/critical
+  // supplier that doesn't already have an unresolved card. Idempotent.
+  syncRisks: () =>
+    request<{ synced: number; already_covered: number }>('/actions/sync-risks', { method: 'POST' }),
+
+  // Supplier Dependencies
+  getSupplierDependencies: () =>
+    request<SupplierDependency[]>('/suppliers/dependencies/all'),
 
   // Health
   getHealth: () => request<HealthStatus>('/health'),

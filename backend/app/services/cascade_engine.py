@@ -165,6 +165,96 @@ class CascadePropagationEngine:
             nodes=nodes,
         )
 
+    async def get_dependency_exposure(
+        self, db: AsyncSession, supplier_id: UUID, source_impact: float
+    ) -> CascadeResult:
+        """
+        Reverse direction: find what a supplier depends ON (its upstream
+        inputs) and compute the cascade exposure if those inputs fail.
+
+        Used for Tier-1 suppliers whose downstream cascade is empty because
+        nothing depends on them — they sit at the top of the consumption
+        chain, but they ARE exposed via their Tier-2 raw-material and
+        packaging dependencies.
+        """
+        dep_query = text("""
+            WITH RECURSIVE deps AS (
+                -- Base: direct dependencies of this supplier
+                SELECT
+                    sd.depends_on_id  AS supplier_id,
+                    s.name            AS supplier_name,
+                    1                 AS depth,
+                    sd.criticality,
+                    sd.dependency_type,
+                    ARRAY[sd.depends_on_id::text] AS path
+                FROM supplier_dependencies sd
+                JOIN suppliers s ON s.id = sd.depends_on_id
+                WHERE sd.supplier_id = :source_id
+
+                UNION ALL
+
+                -- Recursive: dependencies of already-found dependencies
+                SELECT
+                    sd.depends_on_id,
+                    s.name,
+                    d.depth + 1,
+                    sd.criticality,
+                    sd.dependency_type,
+                    d.path || sd.depends_on_id::text
+                FROM supplier_dependencies sd
+                JOIN suppliers s ON s.id = sd.depends_on_id
+                JOIN deps d ON sd.supplier_id = d.supplier_id
+                WHERE d.depth < :max_depth
+                AND NOT (sd.depends_on_id::text = ANY(d.path))
+            )
+            SELECT supplier_id, supplier_name, depth, criticality, dependency_type, path
+            FROM deps
+            ORDER BY depth, criticality DESC
+        """)
+
+        result = await db.execute(
+            dep_query,
+            {"source_id": str(supplier_id), "max_depth": MAX_DEPTH},
+        )
+        rows = result.fetchall()
+
+        source_name_q = await db.execute(
+            text("SELECT name FROM suppliers WHERE id = :id"),
+            {"id": str(supplier_id)},
+        )
+        source_name_row = source_name_q.fetchone()
+        source_name = source_name_row[0] if source_name_row else "Unknown"
+
+        nodes = []
+        for row in rows:
+            depth = row[2]
+            criticality = row[3]
+            propagated = source_impact * criticality * (DECAY_FACTOR ** depth)
+
+            if propagated >= MIN_IMPACT_THRESHOLD:
+                nodes.append(CascadeNode(
+                    supplier_id=str(row[0]),
+                    supplier_name=row[1],
+                    depth=depth,
+                    propagated_impact=round(propagated, 4),
+                    criticality=criticality,
+                    dependency_type=row[4],
+                    path=[str(supplier_id)] + (row[5] if row[5] else []),
+                ))
+
+        max_depth = max((n.depth for n in nodes), default=0)
+        total_impact = sum(n.propagated_impact for n in nodes)
+
+        return CascadeResult(
+            source_supplier_id=str(supplier_id),
+            source_supplier_name=source_name,
+            source_impact=source_impact,
+            total_affected=len(nodes),
+            max_depth_reached=max_depth,
+            total_propagated_impact=round(total_impact, 4),
+            nodes=nodes,
+        )
+
     async def propagate_all_active(self, db: AsyncSession) -> list[CascadeResult]:
         """
         Propagate all currently active disruptions through the network.

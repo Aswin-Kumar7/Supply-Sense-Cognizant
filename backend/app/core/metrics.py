@@ -18,7 +18,11 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import DefaultDict
 
-_LOCK = threading.Lock()
+# RLock (reentrant) is required: record_request() and record_bedrock_call() hold
+# _LOCK and then call LatencySeries.record(), which acquires _LOCK again on the
+# same thread. A plain Lock would self-deadlock there (and did — it hung every
+# successful Bedrock call). RLock lets the owning thread re-acquire safely.
+_LOCK = threading.RLock()
 
 
 @dataclass

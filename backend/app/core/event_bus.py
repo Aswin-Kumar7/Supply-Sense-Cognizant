@@ -15,7 +15,7 @@ Why this design:
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Any
 from dataclasses import dataclass, field, asdict
@@ -31,7 +31,7 @@ class SupplyChainEvent:
     message: str
     data: dict = field(default_factory=dict)
     id: str = field(default_factory=lambda: str(uuid4()))
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_json(self) -> str:
         return json.dumps(asdict(self))
@@ -72,11 +72,17 @@ class EventBus:
                 try:
                     queue.put_nowait(event)
                 except asyncio.QueueFull:
-                    # Drop events for slow consumers rather than blocking
-                    dead_queues.append(queue)
-                    logger.warning("Dropping event for slow SSE consumer")
+                    # Drop oldest event and enqueue new one instead of killing the consumer
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    try:
+                        queue.put_nowait(event)
+                    except asyncio.QueueFull:
+                        dead_queues.append(queue)
+                        logger.warning("Dropping slow SSE consumer after retry")
 
-            # Clean up dead queues
             for q in dead_queues:
                 self._subscribers.remove(q)
 

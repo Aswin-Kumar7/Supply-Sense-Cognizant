@@ -9,10 +9,21 @@ const DashboardPage          = React.lazy(() => import('./pages/Dashboard').then
 const RisksPage              = React.lazy(() => import('./pages/RisksPage'))
 const RiskDetailPage         = React.lazy(() => import('./pages/RiskDetailPage'))
 const RiskMitigationPlan     = React.lazy(() => import('./pages/RiskMitigationPlan'))
+const ExpediteOrdersPage     = React.lazy(() => import('./pages/ExpediteOrdersPage'))
+const IncreaseStockPage      = React.lazy(() => import('./pages/IncreaseStockPage'))
+const SubstituteSkusPage     = React.lazy(() => import('./pages/SubstituteSkusPage'))
 const CompaniesPage          = React.lazy(() => import('./pages/CompaniesPage'))
 const CompanyDetailPage      = React.lazy(() => import('./pages/CompanyDetailPage'))
-const AlternateSuppliersPage = React.lazy(() => import('./pages/AlternateSuppliersPage'))
+const AlternateSuppliersPage       = React.lazy(() => import('./pages/AlternateSuppliersPage'))
+const AlternateSupplierDetailPage  = React.lazy(() => import('./pages/AlternateSupplierDetailPage'))
+const DisruptionsPage        = React.lazy(() => import('./pages/DisruptionsPage'))
+const DisruptionDetailPage   = React.lazy(() => import('./pages/DisruptionDetailPage'))
+const PendingActionsPage     = React.lazy(() => import('./pages/PendingActionsPage'))
+const ActivityLogPage             = React.lazy(() => import('./pages/ActivityLogPage'))
+const ResolvedActionDetailPage    = React.lazy(() => import('./pages/ResolvedActionDetailPage'))
+const OrderSummaryPage            = React.lazy(() => import('./pages/OrderSummaryPage'))
 const SettingsPage           = React.lazy(() => import('./pages/SettingsPage'))
+const HelpPage               = React.lazy(() => import('./pages/HelpPage'))
 
 function LazyRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -46,6 +57,18 @@ export const router = createBrowserRouter([
         element: <LazyRoute><RiskMitigationPlan /></LazyRoute>,
       },
       {
+        path: 'risks/:id/expedite',
+        element: <LazyRoute><ExpediteOrdersPage /></LazyRoute>,
+      },
+      {
+        path: 'risks/:id/increase-stock',
+        element: <LazyRoute><IncreaseStockPage /></LazyRoute>,
+      },
+      {
+        path: 'risks/:id/substitute-skus',
+        element: <LazyRoute><SubstituteSkusPage /></LazyRoute>,
+      },
+      {
         path: 'companies',
         element: <LazyRoute><CompaniesPage /></LazyRoute>,
       },
@@ -58,8 +81,50 @@ export const router = createBrowserRouter([
         element: <LazyRoute><AlternateSuppliersPage /></LazyRoute>,
       },
       {
+        path: 'alternate-suppliers/:altId',
+        element: <LazyRoute><AlternateSupplierDetailPage /></LazyRoute>,
+      },
+      {
+        path: 'disruptions',
+        element: <LazyRoute><DisruptionsPage /></LazyRoute>,
+      },
+      {
+        path: 'disruptions/:id',
+        element: <LazyRoute><DisruptionDetailPage /></LazyRoute>,
+      },
+      {
+        path: 'actions',
+        element: <LazyRoute><PendingActionsPage /></LazyRoute>,
+      },
+      {
+        path: 'activity',
+        element: <LazyRoute><ActivityLogPage /></LazyRoute>,
+      },
+      {
+        path: 'activity/:cardId',
+        element: <LazyRoute><ResolvedActionDetailPage /></LazyRoute>,
+      },
+      {
+        path: 'order-summary',
+        element: <LazyRoute><OrderSummaryPage /></LazyRoute>,
+      },
+      {
         path: 'settings',
         element: <LazyRoute><SettingsPage /></LazyRoute>,
+      },
+      {
+        path: 'help',
+        element: <LazyRoute><HelpPage /></LazyRoute>,
+      },
+      {
+        path: '*',
+        element: (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem 2rem', textAlign: 'center', gap: '1rem' }}>
+            <div style={{ fontSize: '3rem', fontWeight: 900, color: 'var(--ink-5)', fontFamily: 'JetBrains Mono, monospace' }}>404</div>
+            <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--ink-2)' }}>Page not found</div>
+            <a href="/" style={{ fontSize: '0.875rem', color: 'var(--ink-3)', textDecoration: 'underline' }}>Back to dashboard</a>
+          </div>
+        ),
       },
     ],
   },

@@ -1,525 +1,153 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { queryKeys } from '../hooks/queryKeys'
-import { useWeightedRiskAnalysis, useProcurementCards } from '../hooks/useQueries'
-import { Badge } from '../components/ui/Badge'
-import type { SupplierRiskAnalysis, IntelligentActionCard, MitigationSimulation } from '../types'
+import { useWeightedRiskAnalysis, useProcurementCards, useActionCards } from '../hooks/useQueries'
+import {
+  LineChart, CloudLightning, ShieldAlert, CalendarDays, Box,
+  CheckCircle2, Cpu,
+  Network, XCircle, Timer, Banknote, Layers,
+  TrendingDown
+} from 'lucide-react'
+import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
+import { AiBadge } from '../components/ui/AiBadge'
 
+/* ── Typography & formatting utils ───────────────────────────────────────── */
 function formatINR(n: number) {
-  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(1)}Cr`
-  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(1)}L`
+  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(2)}Cr`
+  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(2)}L`
   if (n >= 1_000)      return `₹${(n / 1_000).toFixed(0)}K`
   return `₹${n.toFixed(0)}`
 }
 
-function Skeleton({ w = '100%', h = 20 }: { w?: string | number; h?: number }) {
-  return <div className="skeleton" style={{ width: w, height: h, borderRadius: 6 }} />
+function Skeleton({ w = '100%', h = 16 }: { w?: string | number; h?: number }) {
+  return <div style={{ width: w, height: h, borderRadius: 8, background: '#E5E7EB', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }} />
 }
 
-const RISK_BORDER: Record<string, string> = {
-  critical: '#DC2626', high: '#D97706', medium: '#2563EB', low: '#059669',
+const RISK_COLORS: Record<string, { bg: string, border: string, text: string }> = {
+  critical: { bg: '#FEF2F2', border: '#FCA5A5', text: '#DC2626' },
+  high:     { bg: '#FFFBEB', border: '#FDE68A', text: '#D97706' },
+  medium:   { bg: '#EFF6FF', border: '#BFDBFE', text: '#2563EB' },
+  low:      { bg: '#ECFDF5', border: '#A7F3D0', text: '#059669' },
 }
 
-/* ── Deterministic sparkline ─────────────────────────────────────────── */
+/* ── Sparkline ───────────────────────────────────────────────────────── */
 function seededNoise(seed: number, i: number): number {
-  // simple deterministic hash → [-1, 1]
   const x = Math.sin(seed * 9301 + i * 49297 + 233) * 10000
   return (x - Math.floor(x)) * 2 - 1
 }
 
-function SparklineChart({ supplierId, currentScore, riskLevel }: {
-  supplierId: string
-  currentScore: number
-  riskLevel: string
-}) {
-  const color = RISK_BORDER[riskLevel] ?? '#2563EB'
-
+function SparklineMini({ supplierId, currentScore, color }: { supplierId: string; currentScore: number; color: string }) {
   const points = useMemo(() => {
-    // Hash the supplierId to a seed number
     const seed = supplierId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-    const n = 30
+    const n = 20
     const pts: number[] = []
-
-    // Work backwards: day 30 = today (currentScore), vary earlier days
     for (let i = 0; i < n; i++) {
       const dayOffset = n - 1 - i
       const drift = dayOffset * 0.003 * seededNoise(seed, i * 3)
       const noise = 0.04 * seededNoise(seed, i)
-      const val = Math.max(0, Math.min(1, currentScore + drift + noise))
-      pts.push(val)
+      pts.push(Math.max(0, Math.min(1, currentScore + drift + noise)))
     }
-    pts[n - 1] = currentScore // pin current day exactly
+    pts[n - 1] = currentScore
     return pts
   }, [supplierId, currentScore])
 
-  const W = 200
-  const H = 44
-  const PAD = 4
-
-  const min = Math.min(...points)
-  const max = Math.max(...points)
-  const range = max - min || 0.01
+  const W = 80, H = 24, PAD = 2
+  const min = Math.min(...points), max = Math.max(...points), range = max - min || 0.01
 
   const toX = (i: number) => PAD + (i / (points.length - 1)) * (W - PAD * 2)
   const toY = (v: number) => H - PAD - ((v - min) / range) * (H - PAD * 2)
 
-  const pathD = points.map((v, i) =>
-    `${i === 0 ? 'M' : 'L'} ${toX(i).toFixed(1)},${toY(v).toFixed(1)}`
-  ).join(' ')
-
-  const fillD = `${pathD} L ${toX(points.length - 1).toFixed(1)},${H} L ${toX(0).toFixed(1)},${H} Z`
+  const pathD = points.map((v, i) => `${i === 0 ? 'M' : 'L'} ${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ')
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-      <svg width={W} height={H} style={{ overflow: 'visible' }}>
-        {/* Area fill */}
-        <path d={fillD} fill={color} fillOpacity="0.08" />
-        {/* Line */}
-        <path d={pathD} fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-        {/* Current dot */}
-        <circle
-          cx={toX(points.length - 1)}
-          cy={toY(points[points.length - 1])}
-          r="3.5"
-          fill={color}
-        />
-      </svg>
-      <div style={{ fontSize: '0.5625rem', color: 'var(--ink-4)', letterSpacing: '0.04em' }}>30-day trend</div>
-    </div>
+    <svg width={W} height={H} style={{ overflow: 'visible' }}>
+      <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={toX(points.length - 1)} cy={toY(points[points.length - 1])} r="3" fill={color} />
+    </svg>
   )
 }
 
-/* ── Signal confidence grid ──────────────────────────────────────────── */
-const SIGNAL_META: Record<string, { label: string; icon: string; description: string }> = {
-  reliability:    { label: 'Reliability',    icon: '📊', description: 'Historical delivery performance & SLA compliance' },
-  disruption:     { label: 'Active Disruption', icon: '⚠️', description: 'Live disruption events impacting operations' },
-  geopolitical:   { label: 'Geo / Weather',  icon: '🌍', description: 'Regional weather, strikes, policy changes' },
-  financial:      { label: 'Financial Risk',  icon: '💰', description: 'Payment delays, credit signals, capacity constraints' },
-  lead_time:      { label: 'Lead Time',       icon: '🕐', description: 'Delivery window deviation vs contracted SLA' },
-  inventory:      { label: 'Inventory',       icon: '📦', description: 'Stockout proximity & reorder urgency' },
+/* ── Signal Matrix (Data Table Style) ────────────────────────────────── */
+const SIGNAL_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  delivery_reliability:    { label: 'Delivery Reliability',      icon: <LineChart size={14} /> },
+  disruption_severity:     { label: 'Disruption Severity',       icon: <CloudLightning size={14} /> },
+  festival_proximity:      { label: 'Seasonal Demand',           icon: <CalendarDays size={14} /> },
+  dependency_exposure:     { label: 'Dependency Risk',           icon: <ShieldAlert size={14} /> },
+  logistics_vulnerability: { label: 'Logistics Volatility',      icon: <Layers size={14} /> },
+  inventory_pressure:      { label: 'Inventory Pressure',        icon: <Box size={14} /> },
 }
 
-function SignalConfidenceGrid({ risk }: { risk: SupplierRiskAnalysis }) {
+function SignalDataTable({ risk }: { risk: SupplierRiskAnalysis }) {
   const factors = risk.factors ?? {}
-  const accent = RISK_BORDER[risk.risk_level] ?? '#2563EB'
-
-  // Map factor keys — backend may use slightly different names, do best-effort match
-  const getFactorScore = (key: string): number | null => {
-    const direct = factors[key]
-    if (direct) return direct.value
-    // Fuzzy match
-    const match = Object.entries(factors).find(([k]) =>
-      k.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(k.toLowerCase())
-    )
-    return match ? match[1].value : null
-  }
-
   const signals = Object.entries(SIGNAL_META).map(([key, meta]) => {
-    const score = getFactorScore(key)
+    const f = factors[key]
+    const score = f ? f.value : null
     const fired = score !== null ? score > 0.4 : false
-    return { key, meta, score, fired }
-  })
-
-  const firedCount = signals.filter(s => s.fired).length
+    const explanation = f ? f.explanation : ''
+    return { key, meta, score, fired, explanation }
+  }).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
   return (
-    <div>
-      {/* Summary bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-        <div style={{
-          padding: '0.375rem 0.875rem',
-          background: firedCount >= 4 ? '#FEF2F2' : firedCount >= 2 ? '#FFFBEB' : '#F0FDF4',
-          border: `1px solid ${firedCount >= 4 ? '#FECACA' : firedCount >= 2 ? '#FDE68A' : '#BBF7D0'}`,
-          borderRadius: '0.5rem',
-          fontSize: '0.75rem',
-          fontWeight: 700,
-          color: firedCount >= 4 ? '#DC2626' : firedCount >= 2 ? '#D97706' : '#059669',
-        }}>
-          {firedCount} / {signals.length} signals triggered
-        </div>
-        <span style={{ fontSize: '0.75rem', color: 'var(--ink-4)' }}>
-          Overall confidence: {(risk.confidence * 100).toFixed(0)}%
-        </span>
-      </div>
-
-      {/* Signal cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.875rem' }}>
-        {signals.map(({ key, meta, score, fired }) => (
-          <div key={key} style={{
-            padding: '1rem',
-            background: fired ? `${accent}0A` : 'var(--bg-app)',
-            border: `1px solid ${fired ? `${accent}30` : 'var(--border)'}`,
-            borderRadius: '0.875rem',
-            position: 'relative',
-            overflow: 'hidden',
-            boxShadow: fired ? `0 2px 8px ${accent}10` : 'none',
-            transition: 'transform 0.15s',
-          }}
-          onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-          onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-          >
-            {/* Fired indicator strip */}
-            {fired && (
-              <div style={{
-                position: 'absolute', top: 0, left: 0, right: 0, height: '4px',
-                background: accent,
-              }} />
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '1rem' }}>{meta.icon}</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: fired ? 'var(--ink-1)' : 'var(--ink-2)' }}>
-                {meta.label}
-              </span>
-              <span style={{
-                marginLeft: 'auto',
-                fontSize: '0.625rem', fontWeight: 700, padding: '2px 8px', borderRadius: '999px',
-                background: fired ? accent : 'var(--bg-hover)',
-                color: fired ? '#fff' : 'var(--ink-4)',
-                border: `1px solid ${fired ? accent : 'var(--border-strong)'}`
-              }}>
-                {fired ? 'FIRED' : 'OK'}
-              </span>
-            </div>
-            {score !== null && (
-              <>
-                <div style={{ height: '6px', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: '999px', overflow: 'hidden', marginBottom: '0.5rem' }}>
-                  <div style={{
-                    width: `${(score * 100).toFixed(0)}%`,
-                    height: '100%',
-                    background: fired ? accent : 'var(--ink-4)',
-                    borderRadius: '999px',
-                    transition: 'width 0.6s ease',
-                  }} />
+    <div style={{ width: '100%', border: '1px solid #E5E7EB', borderRadius: '12px', overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+        <thead style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+          <tr>
+            <th style={{ padding: '10px 12px', fontWeight: 600, color: '#4B5563', width: '45%' }}>Signal</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600, color: '#4B5563', width: '20%' }}>Status</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600, color: '#4B5563', width: '35%' }}>Severity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {signals.map((s, i) => (
+            <tr key={s.key} className="signal-row" style={{ borderBottom: i === signals.length - 1 ? 'none' : '1px solid #F3F4F6', background: s.fired ? '#FAFAFA' : '#FFF' }}>
+              <td style={{ padding: '12px 12px', verticalAlign: 'top' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#111827', fontWeight: 600 }}>
+                  <span style={{ color: '#9CA3AF', display: 'flex', alignItems: 'center' }}>{s.meta.icon}</span>
+                  {s.meta.label}
                 </div>
-                <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', lineHeight: 1.4 }}>
-                  <span style={{ fontWeight: 600, color: fired ? accent : 'var(--ink-3)' }}>{(score * 100).toFixed(0)}%</span> — {meta.description}
-                </div>
-              </>
-            )}
-            {score === null && (
-              <div style={{ fontSize: '0.6875rem', color: 'var(--ink-5)', marginTop: '0.5rem' }}>No signal data</div>
-            )}
-          </div>
-        ))}
-      </div>
+                {s.explanation && (
+                  <div style={{ fontSize: '11px', color: '#64748B', marginTop: '4px', paddingLeft: '22px', lineHeight: 1.4, fontWeight: 400 }}>
+                    {s.explanation}
+                  </div>
+                )}
+              </td>
+              <td style={{ padding: '12px 12px', verticalAlign: 'top' }}>
+                {s.fired ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#DC2626', fontWeight: 600, padding: '2px 8px', background: '#FEF2F2', borderRadius: '8px' }}>
+                    <XCircle size={12} /> Critical
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#6B7280', padding: '2px 0' }}>
+                    Nominal
+                  </span>
+                )}
+              </td>
+              <td style={{ padding: '12px 12px', verticalAlign: 'top' }}>
+                {s.score !== null ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                    <div style={{ flex: 1, height: '4px', background: '#E5E7EB', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${s.score * 100}%`, height: '100%', background: s.fired ? '#DC2626' : '#9CA3AF' }} />
+                    </div>
+                    <span style={{ fontFamily: 'monospace', fontSize: '12px', color: s.fired ? '#111827' : '#6B7280', width: '30px', textAlign: 'right' }}>
+                      {(s.score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                ) : (
+                  <span style={{ color: '#D1D5DB' }}>--</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
 
-/* ── Info stat box ──────────────────────────────────────────────────── */
-function StatBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <div style={{
-      background: 'var(--bg-hover)', border: '1px solid #E2E8F0', borderRadius: '0.625rem', padding: '0.875rem',
-    }}>
-      <div style={{ fontSize: '0.6875rem', color: 'var(--ink-3)', fontWeight: 500, marginBottom: '0.25rem' }}>{label}</div>
-      <div style={{ fontSize: '1.125rem', fontWeight: 700, color: color ?? 'var(--ink-1)', lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', marginTop: '0.25rem' }}>{sub}</div>}
-    </div>
-  )
-}
-
-/* ── Factor breakdown ────────────────────────────────────────────────── */
-function FactorBreakdown({ risk }: { risk: SupplierRiskAnalysis }) {
-  const factors = Object.entries(risk.factors ?? {}).sort(([, a], [, b]) => b.weighted - a.weighted)
-  const accent = RISK_BORDER[risk.risk_level] ?? '#2563EB'
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      {factors.map(([name, f]) => (
-        <div key={name} style={{ background: 'var(--bg-app)', padding: '0.875rem', borderRadius: '0.625rem', border: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.875rem', color: 'var(--ink-1)', fontWeight: 700, textTransform: 'capitalize' }}>
-              {name.replace(/_/g, ' ')}
-            </span>
-            <span style={{ fontSize: '0.75rem', fontFamily: 'JetBrains Mono, monospace', color: 'var(--ink-3)', fontWeight: 500 }}>
-              <span style={{ color: accent, fontWeight: 700 }}>{(f.value * 100).toFixed(0)}%</span> · w:{(f.weighted * 100).toFixed(1)}%
-            </span>
-          </div>
-          <div style={{ height: '8px', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: '999px', overflow: 'hidden', marginBottom: '0.5rem' }}>
-            <div style={{
-              width: `${Math.min(100, f.value * 100).toFixed(0)}%`,
-              height: '100%',
-              background: accent,
-              borderRadius: '999px',
-              transition: 'width 0.6s cubic-bezier(0.34,1.56,0.64,1)',
-            }} />
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--ink-3)', lineHeight: 1.5 }}>{f.explanation}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ── AI Recommendation with mitigation plan redirect ───────────────── */
-function AIRecommendationPanel({
-  card,
-  supplierId,
-}: {
-  card: IntelligentActionCard | undefined
-  supplierId: string
-}) {
-  const navigate = useNavigate()
-
-  if (!card) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div style={{ fontSize: '0.875rem', color: 'var(--ink-4)' }}>
-          AI analysis not available for this supplier.
-        </div>
-        <button
-          onClick={() => navigate(`/risks/${supplierId}/mitigation`)}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-            padding: '0.875rem 1.25rem',
-            background: 'linear-gradient(135deg, #1D4ED8, #2563EB)',
-            color: '#fff',
-            borderRadius: '0.625rem',
-            border: 'none', cursor: 'pointer',
-            fontSize: '0.875rem', fontWeight: 700,
-            fontFamily: 'inherit',
-            boxShadow: '0 2px 8px rgba(37,99,235,0.35)',
-            transition: 'transform 100ms, box-shadow 100ms',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.transform = 'translateY(-1px)'
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,0.45)'
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.transform = 'translateY(0)'
-            e.currentTarget.style.boxShadow = '0 2px 8px rgba(37,99,235,0.35)'
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M2 8h10M8 4l4 4-4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          View Full Mitigation Plan
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-      {card.recommended_action && (
-        <div style={{ background: 'linear-gradient(to bottom right, #F8FAFC, #EFF6FF)', border: '1px solid #BFDBFE', borderRadius: '0.75rem', padding: '1rem', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', fontWeight: 800, color: '#1D4ED8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.5rem' }}>
-            <span>🤖</span> Recommended Action
-          </div>
-          <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1E3A8A', lineHeight: 1.5 }}>
-            {card.recommended_action}
-          </div>
-        </div>
-      )}
-
-      {card.urgency_narrative && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: '0.625rem',
-          padding: '0.875rem 1rem',
-          background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '0.625rem',
-          boxShadow: 'var(--shadow-sm)'
-        }}>
-          <span style={{ fontSize: '1.25rem', flexShrink: 0 }}>⏱️</span>
-          <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#92400E', lineHeight: 1.5 }}>{card.urgency_narrative}</div>
-        </div>
-      )}
-
-      {card.reasoning && (
-        <div style={{ padding: '0 0.5rem' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.5rem' }}>
-            Reasoning
-          </div>
-          <div style={{ fontSize: '0.875rem', color: 'var(--ink-2)', lineHeight: 1.6 }}>{card.reasoning}</div>
-        </div>
-      )}
-
-      {card.cost_of_delay_narrative && (
-        <div style={{
-          padding: '0.875rem 1rem',
-          background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '0.625rem',
-          boxShadow: 'var(--shadow-sm)'
-        }}>
-          <div style={{ fontSize: '0.625rem', fontWeight: 800, color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
-            Cost of Delay
-          </div>
-          <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#7F1D1D', lineHeight: 1.5 }}>{card.cost_of_delay_narrative}</div>
-        </div>
-      )}
-
-      {card.alternate_supplier_rationale && (
-        <div style={{ padding: '0 0.5rem' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.5rem' }}>
-            Alternate Supplier
-          </div>
-          <div style={{ fontSize: '0.875rem', color: 'var(--ink-2)', lineHeight: 1.6 }}>{card.alternate_supplier_rationale}</div>
-        </div>
-      )}
-
-      {/* CTA → Mitigation Plan */}
-      <div style={{ paddingTop: '1rem', borderTop: '1px solid var(--border)', marginTop: '0.5rem' }}>
-        <button
-          onClick={() => navigate(`/risks/${supplierId}/mitigation`)}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.625rem',
-            width: '100%',
-            padding: '1rem 1.25rem',
-            background: 'var(--ink-1)',
-            color: '#fff',
-            borderRadius: '0.75rem',
-            border: 'none', cursor: 'pointer',
-            fontSize: '0.9375rem', fontWeight: 700,
-            fontFamily: 'inherit',
-            boxShadow: 'var(--shadow-md)',
-            transition: 'transform 100ms, box-shadow 100ms, background 100ms',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.transform = 'translateY(-2px)'
-            e.currentTarget.style.boxShadow = 'var(--shadow-lg)'
-            e.currentTarget.style.background = '#000'
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.transform = 'translateY(0)'
-            e.currentTarget.style.boxShadow = 'var(--shadow-md)'
-            e.currentTarget.style.background = 'var(--ink-1)'
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-            <rect x="1" y="3" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <path d="M5 8h6M8 5l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          View Full Mitigation Plan
-          <span style={{ fontSize: '0.75rem', opacity: 0.75, fontWeight: 500 }}>→ Strands Analysis</span>
-        </button>
-        <div style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', textAlign: 'center', marginTop: '0.625rem', fontWeight: 500 }}>
-          Step-by-step actions · TFE simulation · Alternate supplier analysis
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ── Mitigation panel ────────────────────────────────────────────────── */
-function MitigationSection({ supplierId }: { supplierId: string }) {
-  const [sim, setSim] = useState<MitigationSimulation | null>(null)
-  const [loading, setLoading] = useState(false)
-  const navigate = useNavigate()
-
-  const run = useCallback(async () => {
-    setLoading(true)
-    try {
-      const result = await api.getMitigationSimulation(supplierId)
-      setSim(result)
-    } finally {
-      setLoading(false)
-    }
-  }, [supplierId])
-
-  if (!sim) {
-    return (
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
-        <button
-          onClick={run}
-          disabled={loading}
-          className="btn btn-secondary"
-          style={{ flex: 1 }}
-        >
-          {loading ? (
-            <><svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ animation: 'spin 1s linear infinite' }}><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="20 10"/></svg> Running simulation…</>
-          ) : '⚡ Run Quick Simulation'}
-        </button>
-        <button
-          onClick={() => navigate(`/risks/${supplierId}/mitigation`)}
-          style={{
-            padding: '0 1.25rem',
-            background: 'var(--ink-1)', color: '#fff',
-            borderRadius: '0.5rem', border: 'none', cursor: 'pointer',
-            fontSize: '0.8125rem', fontWeight: 600, fontFamily: 'inherit',
-          }}
-        >
-          Full Plan →
-        </button>
-      </div>
-    )
-  }
-
-  const pct = sim.risk_before > 0
-    ? Math.min(100, ((sim.risk_before - sim.risk_after) / sim.risk_before) * 100)
-    : 0
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-      {/* Exposure comparison */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.625rem' }}>
-        <StatBox label="Current Exposure" value={formatINR(sim.current_exposure_inr)} color="#DC2626" />
-        <StatBox label="After Mitigation" value={formatINR(sim.mitigated_exposure_inr)} color="#059669" />
-        <StatBox label="Potential Saving" value={formatINR(sim.savings_inr)} color="#2563EB" />
-      </div>
-
-      {/* Risk reduction bar */}
-      <div style={{ padding: '0.75rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.625rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#15803D' }}>Risk Reduction Potential</span>
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#15803D' }}>{pct.toFixed(0)}%</span>
-        </div>
-        <div style={{ height: '8px', background: '#DCFCE7', borderRadius: '999px', overflow: 'hidden' }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: '#059669', borderRadius: '999px', transition: 'width 0.8s ease' }} />
-        </div>
-      </div>
-
-      {/* Options */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-        {sim.options.map((opt, i) => (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', gap: '1rem',
-            padding: '1rem',
-            background: 'var(--bg-app)', border: '1px solid var(--border)', borderRadius: '0.875rem',
-            boxShadow: 'var(--shadow-sm)',
-            transition: 'border-color 0.15s, box-shadow 0.15s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--ink-4)'; e.currentTarget.style.boxShadow = 'var(--shadow-md)'; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
-          >
-            <div style={{
-              width: '28px', height: '28px', borderRadius: '50%',
-              background: 'var(--ink-1)', color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '0.8125rem', fontWeight: 800, flexShrink: 0,
-            }}>{i + 1}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--ink-1)' }}>{opt.description}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--ink-4)', marginTop: '4px' }}>
-                <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{opt.time_to_effect_days}d</span> to effect · <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{(opt.confidence * 100).toFixed(0)}%</span> confidence
-              </div>
-            </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#059669' }}>−{formatINR(opt.exposure_reduction_inr)}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <button
-        onClick={() => navigate(`/risks/${supplierId}/mitigation`)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-          padding: '0.625rem',
-          background: 'none', border: '1px solid #E2E8F0',
-          borderRadius: '0.5rem', cursor: 'pointer',
-          fontSize: '0.8125rem', fontWeight: 600, color: '#2563EB',
-          fontFamily: 'inherit',
-        }}
-      >
-        View Full Strands Mitigation Plan →
-      </button>
-    </div>
-  )
-}
-
-/* ── Cascade section ─────────────────────────────────────────────────── */
-function CascadeSection({ supplierId }: { supplierId: string }) {
+/* ── Cascade Impact (Compact Tree) ───────────────────────────────────── */
+function CascadeTree({ supplierId }: { supplierId: string }) {
   const { data: cascade, isLoading } = useQuery({
     queryKey: queryKeys.risk(supplierId + '-cascade'),
     queryFn: () => api.getCascadeAnalysis(supplierId),
@@ -528,213 +156,363 @@ function CascadeSection({ supplierId }: { supplierId: string }) {
 
   if (isLoading) return <Skeleton h={80} />
   if (!cascade || cascade.total_affected === 0) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '0.625rem',
-        padding: '0.875rem', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '0.625rem',
-      }}>
-        <span style={{ fontSize: '1rem' }}>✅</span>
-        <span style={{ fontSize: '0.875rem', color: '#15803D' }}>No cascade propagation detected — this supplier failure is isolated.</span>
-      </div>
-    )
+    return <div style={{ fontSize: '12px', color: '#6B7280' }}>No downstream dependencies detected.</div>
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.5rem', alignItems: 'center' }}>
-        <Badge level={cascade.severity} />
-        <span style={{ fontSize: '0.875rem', color: 'var(--ink-3)' }}>
-          <strong style={{ color: 'var(--ink-1)' }}>{cascade.total_affected}</strong> downstream suppliers affected · max propagation depth <strong style={{ color: 'var(--ink-1)' }}>{cascade.max_depth}</strong>
-        </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#374151' }}>
+        <Network size={14} color="#6B7280" />
+        <span><strong style={{ color: '#111827' }}>{cascade.total_affected}</strong> systems affected, tier <strong>{cascade.max_depth}</strong> limit</span>
       </div>
-      {cascade.nodes.slice(0, 6).map(node => (
-        <div key={node.supplier_id} style={{
-          display: 'flex', alignItems: 'center', gap: '0.875rem',
-          padding: '0.875rem 1rem',
-          paddingLeft: `${1 + node.depth * 1.5}rem`,
-          background: 'var(--bg-app)', border: '1px solid var(--border)', borderRadius: '0.625rem',
-        }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--border-strong)', fontFamily: 'monospace' }}>{'└─'.repeat(Math.min(node.depth, 2))}</span>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--ink-1)', flex: 1 }}>{node.supplier_name}</span>
-          <span style={{ fontSize: '0.8125rem', fontFamily: 'JetBrains Mono, monospace', color: '#DC2626', fontWeight: 700 }}>
-            {(node.propagated_impact * 100).toFixed(0)}% impact
-          </span>
-          <span style={{ fontSize: '0.75rem', color: 'var(--ink-4)', textTransform: 'capitalize' }}>{node.dependency_type}</span>
-        </div>
-      ))}
+      
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid #E5E7EB', marginLeft: '6px', paddingLeft: '10px' }}>
+        {(cascade.nodes ?? []).slice(0, 4).map(node => (
+          <div key={node.supplier_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', padding: '2px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#D1D5DB', fontFamily: 'monospace' }}>{'└'.padEnd(node.depth + 1, '─')}</span>
+              <span style={{ color: '#111827', fontWeight: 500 }}>{node.supplier_name}</span>
+              <span style={{ color: '#9CA3AF', fontSize: '11px' }}>{node.dependency_type}</span>
+            </div>
+            <span style={{ fontFamily: 'monospace', color: '#DC2626', fontWeight: 600 }}>{(node.propagated_impact * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
 
-/* ── Risk Detail Page ────────────────────────────────────────────────── */
+/* ── Metric Block ────────────────────────────────────────────────────── */
+function MetricItem({ label, value, icon, alert = false }: { label: string, value: string, icon: React.ReactNode, alert?: boolean }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#6B7280', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+        {icon} {label}
+      </div>
+      <div style={{ fontSize: '18px', fontWeight: 600, color: alert ? '#DC2626' : '#111827', fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+/* ── Main Page Component ─────────────────────────────────────────────── */
 export default function RiskDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const { data: risks, isCustom: customWeightsActive } = useWeightedRiskAnalysis()
+  const { data: risks } = useWeightedRiskAnalysis()
   const { data: cards } = useProcurementCards()
+  const { data: actionData } = useActionCards()
 
   const riskList = (risks as SupplierRiskAnalysis[] | undefined) ?? []
   const risk = riskList.find(r => r.supplier_id === id)
-  const card = (cards as IntelligentActionCard[] | undefined ?? []).find(c => c.supplier_id === id)
+  const card = ((cards as IntelligentActionCard[] | undefined) ?? []).find(c => c.supplier_id === id)
+
+  const supplierActionCards = (actionData?.action_cards ?? []).filter((c: any) => c.supplier_id === id)
+  const isResolved = supplierActionCards.length > 0 && supplierActionCards.every((c: any) => c.is_resolved)
+  const resolvedCard = supplierActionCards
+    .filter((c: any) => c.is_resolved)
+    .sort((a: any, b: any) => new Date(b.resolved_at ?? b.created_at).getTime() - new Date(a.resolved_at ?? a.created_at).getTime())[0]
 
   if (!id) return null
 
-  const accent = RISK_BORDER[risk?.risk_level ?? 'medium'] ?? '#2563EB'
+  if (isResolved && resolvedCard) {
+    return (
+      <div style={{ padding: '40px 24px', maxWidth: '640px', margin: '0 auto', fontFamily: "'Inter', sans-serif" }}>
+        <button onClick={() => navigate('/risks')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '6px', padding: 0, marginBottom: '24px', fontWeight: 600 }}>
+          ← Back to Risks Registry
+        </button>
+        <div style={{ border: '1px solid #E2E8F0', background: '#FFFFFF', borderRadius: '16px', padding: '40px 32px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 8px 24px rgba(15,23,42,0.03)' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', border: '1px solid #A7F3D0' }}>
+            <CheckCircle2 size={24} color="#059669" />
+          </div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '0 0 8px', color: '#0F172A', letterSpacing: '-0.02em' }}>Risk Incident Resolved</h2>
+          <p style={{ fontSize: '0.875rem', color: '#64748B', margin: '0 0 28px', lineHeight: 1.5 }}>All preventive and corrective action items for <strong style={{ color: '#0F172A' }}>{risk?.supplier_name || 'this supplier'}</strong> have been completed successfully.</p>
+          <button 
+            onClick={() => navigate(`/activity/${resolvedCard.id}`)} 
+            style={{ padding: '10px 20px', fontSize: '0.875rem', background: '#0F172A', color: '#FFFFFF', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}
+          >
+            View Incident Report
+          </button>
+        </div>
+      </div>
+    )
+  }
+  const rColor = risk ? RISK_COLORS[risk.risk_level] || RISK_COLORS.medium : RISK_COLORS.medium
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
-      {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <button
-          onClick={() => navigate('/risks')}
-          style={{ fontSize: '0.8125rem', color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
-        >
-          ← Risks
-        </button>
-        <span style={{ color: 'var(--ink-5)' }}>/</span>
-        <span style={{ fontSize: '0.8125rem', color: 'var(--ink-1)', fontWeight: 500 }}>{risk?.supplier_name ?? 'Loading…'}</span>
-        {risk && (
-          <>
-            <span style={{ color: 'var(--ink-5)' }}>/</span>
-            <span style={{ fontSize: '0.8125rem', color: 'var(--ink-3)' }}>Risk Detail</span>
-          </>
-        )}
-      </div>
-
-      {/* Custom weights notice */}
-      {customWeightsActive && (
-        <div style={{
-          padding: '0.625rem 1rem',
-          background: '#EFF6FF',
-          border: '1px solid #BFDBFE',
-          borderRadius: '0.625rem',
-          fontSize: '0.8125rem',
-          color: '#1D4ED8',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-        }}>
-          <span>⚖️</span>
-          <span><strong>Custom risk weights active</strong> — this score is recomputed using your Settings configuration, not the backend default.</span>
-        </div>
-      )}
-
-      {/* ── Hero card ── */}
-      {risk ? (
-        <div style={{
-          background: 'var(--bg-card)',
-          border: `1px solid ${accent}40`,
-          borderTop: `6px solid ${accent}`,
-          borderRadius: '1rem',
-          padding: '2rem',
-          boxShadow: 'var(--shadow-md)',
-          position: 'relative',
-          overflow: 'hidden',
-        }}>
-          {/* Decorative background glow */}
-          <div style={{
-            position: 'absolute', top: 0, right: 0, width: '300px', height: '300px',
-            background: `radial-gradient(circle at top right, ${accent}15, transparent 70%)`,
-            pointerEvents: 'none',
-          }} />
-
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1.5rem', position: 'relative', zIndex: 1 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                <Badge level={risk.risk_level} />
-                {risk.human_review_required && (
-                  <span style={{ fontSize: '0.75rem', padding: '0.25rem 0.625rem', borderRadius: '999px', background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A', fontWeight: 600 }}>
-                    👤 Human Review Required
-                  </span>
-                )}
-                <span style={{ fontSize: '0.75rem', color: 'var(--ink-4)', fontWeight: 500 }}>
-                  Confidence: {(risk.confidence * 100).toFixed(0)}%
-                </span>
-              </div>
-              <h1 style={{ fontSize: '1.875rem', fontWeight: 800, color: 'var(--ink-1)', letterSpacing: '-0.03em', lineHeight: 1.2 }}>
-                {risk.supplier_name}
-              </h1>
-              {card && (
-                <p style={{ fontSize: '0.9375rem', color: 'var(--ink-3)', marginTop: '0.5rem', maxWidth: '640px', lineHeight: 1.6 }}>
-                  {card.executive_summary}
-                </p>
-              )}
-            </div>
-
-            {/* Score + sparkline */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.75rem', flexShrink: 0, background: 'var(--bg-app)', padding: '1.25rem', borderRadius: '0.875rem', border: '1px solid var(--border)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
-              <div style={{ textAlign: 'center', width: '100%' }}>
-                <div style={{ fontSize: '3.5rem', fontWeight: 900, color: accent, letterSpacing: '-0.04em', lineHeight: 0.9 }}>
-                  {(risk.overall_score * 100).toFixed(0)}<span style={{ fontSize: '1.5rem', color: 'var(--ink-4)', fontWeight: 700 }}>%</span>
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--ink-3)', marginTop: '0.375rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Risk Score</div>
-              </div>
-              <SparklineChart
-                supplierId={risk.supplier_id}
-                currentScore={risk.overall_score}
-                riskLevel={risk.risk_level}
-              />
-            </div>
-          </div>
-
-          {/* Key KPI stats */}
-          {card && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginTop: '1.25rem' }}>
-              <StatBox label="Financial Exposure" value={formatINR(card.financial_exposure_inr)} color="#DC2626" />
-              <StatBox label="Days to Stockout"   value={`${card.days_to_stockout}d`} color={card.days_to_stockout < 7 ? '#DC2626' : '#D97706'} />
-              <StatBox label="SKUs Affected"       value={String(card.affected_skus)} />
-              <StatBox label="Escalation Window"   value={card.escalation_window} />
-            </div>
+    <div style={{ 
+      display: 'flex', flexDirection: 'column', minHeight: '100%', 
+      background: '#F8FAFC', color: '#0F172A', 
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      overflowY: 'auto',
+      animation: 'risk-detail-fade-in 0.3s ease-out'
+    }}>
+      <style>{`
+        @keyframes risk-detail-fade-in {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .premium-card {
+          background: #FFFFFF;
+          border: 1px solid #E2E8F0;
+          border-radius: 16px;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 8px 24px rgba(15, 23, 42, 0.03);
+          transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .premium-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02), 0 16px 32px rgba(15, 23, 42, 0.06);
+          border-color: #CBD5E1;
+        }
+        .nav-link {
+          color: #64748B;
+          transition: color 150ms ease;
+          text-decoration: none;
+          font-weight: 500;
+        }
+        .nav-link:hover {
+          color: #0F172A;
+        }
+        .action-button {
+          background: #0F172A;
+          color: #FFFFFF;
+          border: none;
+          border-radius: 8px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .action-button:hover {
+          background: #334155;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+        }
+        .action-button:active {
+          transform: translateY(0);
+        }
+        .signal-row {
+          transition: background-color 150ms ease;
+        }
+        .signal-row:hover {
+          background-color: #F8FAFC !important;
+        }
+      `}</style>
+      
+      {/* ── Top Navigation Bar ────────────────────────────────────────── */}
+      <div style={{ 
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+        padding: '14px 24px', background: '#FFF', borderBottom: '1px solid #E2E8F0',
+        position: 'sticky', top: 0, zIndex: 10,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
+          <span 
+            onClick={() => navigate('/')} 
+            className="nav-link"
+            style={{ cursor: 'pointer' }}
+          >
+            Dashboard
+          </span>
+          <span>/</span>
+          <span 
+            onClick={() => navigate('/risks')} 
+            className="nav-link"
+            style={{ cursor: 'pointer' }}
+          >
+            Risk Analysis
+          </span>
+          <span>/</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0F172A' }}>{risk?.supplier_name ?? <Skeleton w={120} h={16} />}</span>
+          {risk && (
+            <span style={{ 
+              fontSize: '0.6875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+              padding: '2px 8px', borderRadius: '20px', background: rColor.bg, color: rColor.text, border: `1px solid ${rColor.border}`,
+              marginLeft: '8px'
+            }}>
+              {risk.risk_level} Risk
+            </span>
           )}
         </div>
-      ) : (
-        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '0.875rem', padding: '1.5rem' }}>
-          <Skeleton h={140} />
-        </div>
-      )}
-
-      {/* ── Signal Confidence Grid ── */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem', padding: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)' }}>Signal Confidence Breakdown</h3>
-          <span style={{ fontSize: '0.6875rem', color: 'var(--ink-4)', padding: '2px 8px', background: 'var(--border-strong)', borderRadius: '0.375rem' }}>
-            AI · Strands Agents
-          </span>
-        </div>
-        {risk ? <SignalConfidenceGrid risk={risk} /> : <Skeleton h={160} />}
+        <button 
+          onClick={() => navigate('/risks')}
+          style={{
+            background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px',
+            padding: '4px 12px', fontSize: '0.75rem', fontWeight: 600, color: '#64748B',
+            cursor: 'pointer', transition: 'all 150ms ease'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#CBD5E1'; e.currentTarget.style.color = '#0F172A' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.color = '#64748B' }}
+        >
+          Back to Registry
+        </button>
       </div>
 
-      {/* ── Main 2-col grid: Factor Breakdown + AI Recommendation ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
-
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem', padding: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)', marginBottom: '1rem' }}>Risk Factor Breakdown</h3>
-          {risk ? <FactorBreakdown risk={risk} /> : <Skeleton h={200} />}
+      <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        
+        {/* ── Executive Dashboard Strip ─────────────────────────────────── */}
+        <div style={{ 
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px',
+          background: '#FFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02), 0 4px 12px rgba(15,23,42,0.015)'
+        }}>
+          {/* Main Score & Trend */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderRight: '1px solid #F1F5F9', paddingRight: '20px' }}>
+            <div style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748B', fontWeight: 700 }}>Risk Score</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ fontSize: '1.75rem', fontWeight: 800, fontFamily: "'Inter', monospace", color: rColor.text, lineHeight: 1, letterSpacing: '-0.03em' }}>
+                {risk ? `${(risk.overall_score * 100).toFixed(0)}%` : '--'}
+              </div>
+              {risk && <SparklineMini supplierId={risk.supplier_id} currentScore={risk.overall_score} color={rColor.text} />}
+            </div>
+          </div>
+          
+          <div style={{ borderRight: '1px solid #F1F5F9', paddingRight: '20px' }}>
+            <MetricItem label="Financial Exposure" value={card ? formatINR(card.financial_exposure_inr) : '--'} icon={<Banknote size={14} />} alert={true} />
+          </div>
+          <div style={{ borderRight: '1px solid #F1F5F9', paddingRight: '20px' }}>
+            <MetricItem label="Days of Stock Left" value={card ? `${card.days_to_stockout}d` : '--'} icon={<Timer size={14} />} alert={card && card.days_to_stockout < 5} />
+          </div>
+          <div style={{ borderRight: '1px solid #F1F5F9', paddingRight: '20px' }}>
+            <MetricItem label="Products at Risk" value={card ? String(card.affected_skus) : '--'} icon={<Box size={14} />} />
+          </div>
+          <div>
+            <MetricItem label="Act Within" value={card ? (card.escalation_window ?? '--') : '--'} icon={<TrendingDown size={14} />} />
+          </div>
         </div>
 
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem', padding: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-          <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)', marginBottom: '1rem' }}>AI Recommendation</h3>
-          <AIRecommendationPanel card={card} supplierId={id} />
-        </div>
-      </div>
+        {/* ── Main Layout: 2 Columns ────────────────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: '24px', alignItems: 'start' }}>
+          
+          {/* Left Col: AI Insight & Cascade Network */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* AI Strategic Assessment */}
+            {card && (() => {
+              return (
+                <div className="premium-card" style={{ overflow: 'hidden' }}>
+                  <div style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Cpu size={16} color="#4F46E5" />
+                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>Strategic Assessment</span>
+                    <span style={{ marginLeft: 'auto' }}>
+                      <AiBadge mode={card.generation_mode} showLabel />
+                    </span>
+                  </div>
+                  <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    <div>
+                      {card.recommended_action ? (
+                        <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: '0 0 8px', color: '#0F172A', letterSpacing: '-0.02em' }}>{card.recommended_action}</h3>
+                      ) : null}
+                      {card.reasoning ? (
+                        <p style={{ fontSize: '0.875rem', color: '#475569', lineHeight: 1.6, margin: 0 }}>{card.reasoning}</p>
+                      ) : (
+                        <p style={{ fontSize: '0.875rem', color: '#94A3B8', lineHeight: 1.6, margin: 0, fontStyle: 'italic' }}>
+                          {card.ai_error
+                            ? 'AI unavailable — AWS Bedrock unreachable.'
+                            : card.generation_mode === 'deterministic_fallback'
+                            ? 'Computed from live data — AI narrative not generated.'
+                            : 'Awaiting AI analysis…'}
+                        </p>
+                      )}
 
-      {/* ── Cascade Propagation ── */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem', padding: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-        <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)', marginBottom: '1rem' }}>Cascade Propagation</h3>
-        <CascadeSection supplierId={id} />
-      </div>
+                      {/* Always-present, grounded basis for the chosen action — lets a
+                          human validate WHY this action was selected, even if AI is down. */}
+                      {card.action_rationale ? (
+                        <div style={{ marginTop: '12px', padding: '10px 12px', background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: '8px' }}>
+                          <div style={{ fontSize: '0.625rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#0369A1', marginBottom: '4px' }}>
+                            Why this action
+                          </div>
+                          <p style={{ fontSize: '0.8125rem', color: '#0C4A6E', lineHeight: 1.5, margin: 0 }}>
+                            {card.action_rationale}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
 
-      {/* ── Mitigation Simulation ── */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid #E2E8F0', borderRadius: '0.875rem', padding: '1.25rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--ink-1)' }}>Mitigation Simulation</h3>
-          <span style={{ fontSize: '0.6875rem', color: '#7C3AED', padding: '2px 8px', background: '#F5F3FF', borderRadius: '0.375rem', fontWeight: 600 }}>
-            ⚡ Strands Powered
-          </span>
+                    {/* Severity + Cost — two clear panels */}
+                    {(() => {
+                      const days = card.days_to_stockout ?? 999
+                      const severity = days <= 3 ? 'critical' : days <= 7 ? 'high' : 'medium'
+                      const severityConfig = {
+                        critical: { label: 'CRITICAL', sub: 'Stock runs out in under 3 days', bg: '#FEF2F2', border: '#FCA5A5', text: '#991B1B', badge: '#DC2626' },
+                        high:     { label: 'HIGH',     sub: `Stock runs out in ${days} days — urgent intervention required`, bg: '#FFF7ED', border: '#FDBA74', text: '#9A3412', badge: '#EA580C' },
+                        medium:   { label: 'MEDIUM',   sub: `${days} days of stock remaining — monitor parameters`, bg: '#FFFBEB', border: '#FDE68A', text: '#92400E', badge: '#D97706' },
+                      }[severity]
+                      const dailyLoss = Math.round((card.financial_exposure_inr ?? 0) * 0.15)
+                      return (
+                        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                          {/* Severity panel */}
+                          <div style={{ flex: 1, minWidth: '200px', background: severityConfig.bg, border: `1px solid ${severityConfig.border}`, padding: '16px', borderRadius: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                              <ShieldAlert size={14} color={severityConfig.badge} />
+                              <span style={{ fontSize: '0.6875rem', fontWeight: 800, color: severityConfig.badge, letterSpacing: '0.06em' }}>
+                                {severityConfig.label} SEVERITY
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.8125rem', color: severityConfig.text, lineHeight: 1.5, fontWeight: 600 }}>
+                              {severityConfig.sub}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: severityConfig.text, opacity: 0.8, marginTop: '8px' }}>
+                              Window limit: <strong>{card.escalation_window ?? (card.ai_error ? 'N/A (AI unavailable)' : '—')}</strong>
+                            </div>
+                          </div>
+                          {/* Cost of waiting panel */}
+                          <div style={{ flex: 1, minWidth: '200px', background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '16px', borderRadius: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                              <Timer size={14} color="#475569" />
+                              <span style={{ fontSize: '0.6875rem', fontWeight: 800, color: '#475569', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                                Cost of Waiting
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0F172A', fontFamily: "'Inter', monospace", lineHeight: 1, letterSpacing: '-0.02em' }}>
+                              ~{formatINR(dailyLoss)}<span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748B' }}> / day</span>
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '8px', lineHeight: 1.4 }}>
+                              Estimated disruption leakage from SLA penalties + unfulfilled customer demand.
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    <button
+                      onClick={() => navigate(`/risks/${id}/mitigation`)}
+                      className="action-button"
+                      style={{
+                        width: '100%', padding: '12px 20px', fontSize: '0.875rem', marginTop: '4px'
+                      }}
+                    >
+                      Explore Mitigation Solutions →
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Cascade Network */}
+            <div className="premium-card" style={{ padding: '20px' }}>
+              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, margin: '0 0 16px', color: '#0F172A' }}>Cascade Network Impact</h3>
+              <CascadeTree supplierId={id!} />
+            </div>
+
+          </div>
+
+          {/* Right Col: Live Risk Signals */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* Risk Telemetry */}
+            <div className="premium-card" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '0.875rem', fontWeight: 700, margin: 0, color: '#0F172A' }}>Live Risk Signals</h3>
+                <span style={{ fontSize: '0.625rem', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Telemetry Matrix</span>
+              </div>
+              {risk ? <SignalDataTable risk={risk} /> : <Skeleton h={150} />}
+            </div>
+
+          </div>
+
         </div>
-        <MitigationSection supplierId={id} />
       </div>
     </div>
   )

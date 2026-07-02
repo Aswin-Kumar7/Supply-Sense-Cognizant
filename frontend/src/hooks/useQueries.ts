@@ -31,6 +31,7 @@ export function useDisruptions() {
     queryKey: queryKeys.disruptions,
     queryFn: () => concurrencyLimitedFetch(() => api.getDisruptionTimeline()),
     staleTime: staleTimes.realtime,
+    refetchInterval: 30_000,  // match action cards — disruptions can change via synthetic engine
   })
 }
 
@@ -105,5 +106,13 @@ export function useHealth() {
     queryFn: () => concurrencyLimitedFetch(() => api.getHealth()),
     staleTime: 20_000,
     refetchInterval: 30_000,
+  })
+}
+
+export function useSupplierDependencies() {
+  return useQuery({
+    queryKey: queryKeys.supplierDependencies,
+    queryFn: () => concurrencyLimitedFetch(() => api.getSupplierDependencies()),
+    staleTime: staleTimes.static,
   })
 }

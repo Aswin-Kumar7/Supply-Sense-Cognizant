@@ -13,7 +13,9 @@ class ActionCardRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_all(self, limit: int = 50, offset: int = 0):
+    async def get_all(self, limit: int = 500, offset: int = 0):
+        # Limit raised to 500 — the frontend's resolvedSupplierIds calculation
+        # must see ALL cards for every supplier to determine resolved status correctly.
         query = (
             select(ActionCard)
             .order_by(ActionCard.created_at.desc())

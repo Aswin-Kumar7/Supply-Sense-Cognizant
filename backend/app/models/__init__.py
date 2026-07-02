@@ -12,6 +12,8 @@ from app.models.risk import RiskSnapshot
 from app.models.action_card import ActionCard
 from app.models.festival import FestivalCalendar
 from app.models.analysis_cache import AnalysisCache
+from app.models.analysis_snapshot import AnalysisSnapshot
+from app.models.analysis_trace import AnalysisTrace
 
 __all__ = [
     "Supplier",
@@ -24,4 +26,6 @@ __all__ = [
     "ActionCard",
     "FestivalCalendar",
     "AnalysisCache",
+    "AnalysisSnapshot",
+    "AnalysisTrace",
 ]

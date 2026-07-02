@@ -3,6 +3,7 @@ Centralized application configuration.
 Uses pydantic-settings for type-safe environment variable parsing.
 """
 
+from typing import Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -13,18 +14,30 @@ class Settings(BaseSettings):
     app_version: str = "0.5.0"
     environment: str = "development"
 
-    # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@database-1.c25uokww4a3c.us-east-1.rds.amazonaws.com:5432/supplysense"
+    # Database — must be set in .env (no hardcoded default)
+    database_url: str
+
+    # AWS credentials (read from .env — passed explicitly to boto3 clients)
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
 
     # AWS Bedrock
     aws_region: str = "us-east-1"
-    bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    bedrock_model_id: str = "amazon.nova-lite-v1:0"
     bedrock_max_tokens: int = 2048
     bedrock_temperature: float = 0.3
+    # Planning model — used only for the rare, high-stakes "design a fitted
+    # mitigation plan" call (model routing). Falls back to bedrock_model_id when
+    # unset, so the cheap workhorse model keeps handling narration/re-checks.
+    # Set this in .env to e.g. a Claude Sonnet/Opus id to upgrade plan quality
+    # without changing code; everything else stays on the cheap model.
+    bedrock_planning_model_id: Optional[str] = None
+    bedrock_planning_max_tokens: int = 3072
+    bedrock_planning_temperature: float = 0.4
     # Guardrail ID — optional. When set, attached to every Bedrock invocation.
     # Blocks: hallucinated supplier names, rupee figures not matching engine outputs,
     #         false certainty claims when confidence is low.
-    bedrock_guardrail_id: str | None = None
+    bedrock_guardrail_id: Optional[str] = None
     bedrock_guardrail_version: str = "DRAFT"
 
     # Server

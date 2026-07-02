@@ -111,8 +111,8 @@ export function FallbackApprovalBanner() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                color: '#D97706',
-                fontWeight: 700,
+                color: '#D29729',
+                fontWeight: 500,
                 fontSize: '0.875rem',
                 marginBottom: '0.25rem',
               }}
@@ -121,14 +121,14 @@ export function FallbackApprovalBanner() {
             </div>
             <div
               style={{
-                color: '#92400E',
+                color: '#D29729',
                 fontSize: '0.8125rem',
                 lineHeight: 1.5,
               }}
             >
-              <span style={{ color: '#B45309', fontWeight: 600 }}>Operation:</span> {req.operation}
+              <span style={{ color: '#B45309', fontWeight: 500 }}>Operation:</span> {req.operation}
               <br />
-              <span style={{ color: '#B45309', fontWeight: 600 }}>Reason:</span> {req.reason}
+              <span style={{ color: '#B45309', fontWeight: 500 }}>Reason:</span> {req.reason}
             </div>
           </div>
 
@@ -140,11 +140,11 @@ export function FallbackApprovalBanner() {
               style={{
                 padding: '0.5rem 0.875rem',
                 borderRadius: '0.5rem',
-                border: '1px solid #34D399',
+                border: '1px solid #4A8B50',
                 background: '#ECFDF5',
-                color: '#059669',
+                color: '#4A8B50',
                 fontSize: '0.8125rem',
-                fontWeight: 600,
+                fontWeight: 500,
                 cursor: respondingTo.has(req.request_id) ? 'not-allowed' : 'pointer',
                 opacity: respondingTo.has(req.request_id) ? 0.5 : 1,
                 transition: 'background 0.15s',
@@ -161,11 +161,11 @@ export function FallbackApprovalBanner() {
               style={{
                 padding: '0.5rem 0.875rem',
                 borderRadius: '0.5rem',
-                border: '1px solid #FCA5A5',
+                border: '1px solid #e06252',
                 background: '#FEF2F2',
-                color: '#DC2626',
+                color: '#c55b55',
                 fontSize: '0.8125rem',
-                fontWeight: 600,
+                fontWeight: 500,
                 cursor: respondingTo.has(req.request_id) ? 'not-allowed' : 'pointer',
                 opacity: respondingTo.has(req.request_id) ? 0.5 : 1,
                 transition: 'background 0.15s',
