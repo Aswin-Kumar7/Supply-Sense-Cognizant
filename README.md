@@ -1,292 +1,195 @@
 # SupplySense
 
-**AI-Powered Retail Supply Chain Resilience Platform**
+**AI-driven supply-chain disruption prediction & prescriptive mitigation for Indian retail.**
 
-Built for the Cognizant Technoverse Hackathon · Problem Domain: Predictive Stockout Management
+SupplySense continuously scores supplier risk, forecasts stockouts, quantifies financial exposure in ₹, maps sub-tier dependency blast radius, and — most importantly — **recommends the specific mitigation action that fits each situation** (switch supplier, expedite, buffer stock, substitute SKU, or reorder), with an AI advisor you can ask "what-if" questions in plain language.
 
-SupplySense predicts supplier disruptions, quantifies cascading financial risk, and delivers prescriptive procurement actions — 7–14 days before a stockout hits. It covers Indian FMCG supply chains with deterministic risk scoring, multi-agent AI analysis, and real-time monitoring.
-
----
-
-## Problem Statement
-
-Tier-1 and Tier-2 suppliers in Indian retail constantly face unforeseen disruptions — cyclones, floods, strikes, raw material shortages — that result in costly stockouts. Current management practices offer no early warning within the critical 7–14 day intervention window. SupplySense closes that gap by combining live inventory data, external disruption signals, and AI-driven scenario analysis to surface actionable insights before damage occurs.
+> **⚠️ Data notice:** This version runs entirely on **deterministic seed data** (see [`backend/seeders/seed_min10.py`](backend/seeders/seed_min10.py)) — 10 suppliers with engineered disruption scenarios. Live event ingestion is simulated by a synthetic engine. The system is architected so real feeds (see [Scaling & Future Development](#-scaling--future-development)) plug into the same pipeline without redesign.
 
 ---
 
-## Architecture Overview
+## Table of contents
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        React 18 + TypeScript Frontend               │
-│                                                                     │
-│  Dashboard  ·  Risk Monitor  ·  SKU Forecast                       │
-│  Risk Detail  ·  Suppliers  ·  Alternates  ·  Settings             │
-│                                                                     │
-│  useWeightedRiskAnalysis()  <--  localStorage weights               │
-│  TanStack Query (30s stale, 10m gc)  ·  SSE real-time feed         │
-│  Recharts  ·  react-simple-maps (India heatmap)                    │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ REST + SSE  /api/v1/...
-┌──────────────────────────────▼──────────────────────────────────────┐
-│                     FastAPI  (Python 3.12, async)                   │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │                  Service Layer                                │  │
-│  │  RiskEngine  ·  StockoutEngine  ·  CascadeEngine            │  │
-│  │  FinancialEngine  ·  ProcurementAgent  ·  SyntheticEngine   │  │
-│  │  RiskIntelligence  ·  DashboardService  ·  DisruptionSvc    │  │
-│  └──────────────────────┬───────────────────────────────────────┘  │
-│                         │                                           │
-│  ┌──────────────────────▼───────────────────────────────────────┐  │
-│  │               AWS Strands Multi-Agent Pipeline               │  │
-│  │                                                              │  │
-│  │  Supervisor --> Signal Intelligence                          │  │
-│  │             --> Risk Assessment                              │  │
-│  │             --> Prescriptive Action                          │  │
-│  │                                                              │  │
-│  │  BedrockModel (Claude 3 Haiku · us-east-1)                  │  │
-│  │  AWS Guardrails (ID: big59xwx9384)                          │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  Async Event Bus (asyncio pub/sub) --> SSE fan-out to clients      │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ asyncpg  SQLAlchemy 2.0
-┌──────────────────────────────▼──────────────────────────────────────┐
-│              AWS RDS PostgreSQL  (us-east-1)                        │
-│  suppliers · skus · disruptions · delivery_records                  │
-│  risk_snapshots · action_cards · festivals · analysis_cache        │
-└─────────────────────────────────────────────────────────────────────┘
-```
+- [Overview](#overview)
+- [Key features](#key-features)
+- [System architecture](#system-architecture)
+- [Tech stack](#tech-stack)
+- [Project structure](#project-structure)
+- [Getting started](#getting-started)
+- [How it works — the AI trust boundary](#how-it-works--the-ai-trust-boundary)
+- [Scaling & future development](#-scaling--future-development)
+- [Contributors](#contributors)
 
 ---
 
-## Key Features
+## Overview
 
-### Real-Time Risk Monitoring
-- **Supplier Risk Heatmap** — India map with per-state colour coding (low / medium / high / critical)
-- **Live Activity Feed** — SSE stream of disruption alerts, risk updates, stockout warnings with severity badges
-- **Synthetic Disruption Engine** — generates realistic events at configurable intervals to demo live monitoring without external APIs
+Retail procurement teams lose money when a supplier disruption (a cyclone, a labour strike, an FSSAI quality hold, a demand surge) turns into a stockout before anyone acts. SupplySense is a decision-intelligence platform that:
 
-### Deterministic Risk Scoring Engine
-Six-factor weighted model (all arithmetic, fully auditable):
+1. **Detects & scores risk** per supplier from delivery history, active disruptions, inventory pressure, dependency exposure and festival/seasonal demand.
+2. **Quantifies the money at stake** (Total Financial Exposure) in Indian Rupees — deterministically and auditably.
+3. **Designs a fitted mitigation plan** — the deterministic engine prices every option, while AI selects *which* actions fit the specific scenario and writes the reasoning. Numbers come from engines; narrative comes from AI. Neither crosses the line.
+4. **Answers questions conversationally** — a LangGraph tool-using advisor lets a manager ask "how exposed are we if Dakshin is disrupted?" and get a grounded, multi-step answer over live data.
 
-| Factor | Weight | Signals Used |
-|---|---|---|
-| Delivery Reliability | 25% | 90-day on-time rate, avg delay days |
-| Disruption Severity | 25% | Active disruptions x severity multipliers |
-| Inventory Pressure | 20% | Days of stock cover vs safety stock threshold |
-| Logistics Vulnerability | 15% | Risk zone (cyclone / flood / strike-prone) |
-| Dependency Exposure | 10% | SKU count, alternate supplier availability |
-| Festival Proximity | 5% | Diwali / Holi / harvest season demand surge |
+The design principle throughout: **AI reasons; deterministic engines own the numbers.** Every rupee figure is engine-computed and grounding-checked, so the AI can never fabricate a financial value.
 
-Risk levels: **Low** (0–0.45) · **Medium** (0.45–0.65) · **High** (0.65–0.80) · **Critical** (0.80–1.0)
+## Key features
 
-### Client-Side Custom Weight Recomputation
-Users can override scoring weights in Settings without redeploying:
-- Drag sliders → live preview shows score delta and risk level change per supplier
-- Click Save → weights stored in `localStorage` under `ss_risk_weights`
-- All risk-displaying pages (Dashboard, Risks, Risk Detail) pick up weights instantly via `useWeightedRiskAnalysis()` — zero API calls
-
-### Stockout Forecasting (7–14 Day Window)
-```
-days_to_stockout = current_stock / adjusted_daily_demand
-adjusted_demand  = base_demand x festival_multiplier x disruption_factor
-```
-- Projects per-SKU depletion dates with INR revenue-at-risk quantification
-- Flags critical SKUs (< 7 days to stockout)
-- Accounts for lead-time degradation during active disruptions
-
-### Cascade Impact Analysis
-- Identifies downstream SKUs affected when a Tier-2 supplier fails
-- Computes propagation depth (Tier-1 → Tier-2 → alternate sourcing)
-- Simulates financial exposure across the cascade chain
-
-### AI Multi-Agent Pipeline (AWS Strands)
-
-```
-User query
-    │
-    ▼
-PrescriptiveActionAgent
-    ├── Tool: query_supplier_risk    (live DB lookup)
-    ├── Tool: query_sku_stockout     (stockout engine)
-    ├── Tool: get_financial_summary  (financial engine)
-         │
-         ▼
-    BedrockModel (Claude 3 Haiku · us-east-1)
-    + AWS Guardrails validation
-         │
-         ▼
-    Structured response with sources + confidence
-```
-
-Four specialist agents:
-- **Signal Intelligence** — classifies disruption events, identifies affected suppliers
-- **Risk Assessment** — cascade impact scoring, financial exposure
-- **Prescriptive Action** — generates alternate sourcing recommendations, TFE calculations
-
-### Scenario Simulation
-One-click trigger of four pre-configured crisis scenarios:
-
-| Scenario | Suppliers Affected | SKUs at Risk |
-|---|---|---|
-| Chennai Cyclone | 2 coastal suppliers | 6 SKUs |
-| Maharashtra Transport Strike | 3 suppliers | 8 SKUs |
-| Kolkata Flash Floods | 2 warehouse zones | 5 SKUs |
-| Diwali Demand Surge | All suppliers | 18 SKUs |
-
-### Procurement Action Cards
-AI-generated, confidence-scored recommendations surfaced automatically when risk crosses thresholds:
-- Alternate supplier sourcing with cost delta
-- Emergency purchase order suggestions
-- Buffer stock build-up recommendations
-- Lead-time renegotiation triggers
-
----
-
-## Tech Stack
-
-| Layer | Technology |
+| Feature | What it does |
 |---|---|
-| Frontend | React 18, TypeScript 5, Vite, TailwindCSS 3 |
-| State / Data | TanStack Query v5, React Router v7 |
-| Charts | Recharts 2, react-simple-maps |
-| Backend | FastAPI, Python 3.12, Uvicorn |
-| ORM | SQLAlchemy 2.0 async + asyncpg |
-| Database | PostgreSQL 15 (AWS RDS) |
-| AI Agents | AWS Strands Agents SDK 0.1.0 |
-| LLM | AWS Bedrock — Claude 3 Haiku (us-east-1) |
-| Guardrails | AWS Bedrock Guardrails |
-| Real-time | Server-Sent Events (SSE) via sse-starlette |
+| **Risk intelligence** | Multi-factor supplier risk scoring with trend history |
+| **Financial exposure engine** | ₹-denominated TFE: revenue at risk, SLA penalties, stockout cost |
+| **Stockout forecasting** | Days-to-stockout per SKU with critical/high classification |
+| **Cascade / blast-radius** | Recursive n-tier dependency propagation |
+| **Scenario-fit mitigation** | Situation-aware recommendation (switch / expedite / stock / substitute / reorder), priced by the engine, chosen & narrated by AI |
+| **Conversational advisor** | LangGraph ReAct chatbot with 8 read-only tools + multi-turn memory |
+| **Multi-agent pipeline** | Strands supervisor (signal → risk → action agents) processes disruption events |
+| **Live event stream** | Server-Sent Events push disruption alerts to the UI in real time |
+| **Guardrails & grounding** | Prompt-injection/leak filters, Pydantic output contracts, rupee-figure grounding |
 
----
+## System architecture
 
-## Project Structure
+```mermaid
+flowchart TD
+    subgraph SRC["Event source (currently synthetic)"]
+      SE["Synthetic engine<br/>timed disruption events"]
+    end
 
+    subgraph DATA["Data layer"]
+      PG[("PostgreSQL / Neon<br/>suppliers · SKUs · deliveries<br/>disruptions · festivals · alternates")]
+    end
+
+    subgraph ENGINES["Deterministic engines (own the numbers)"]
+      RE["Risk engine"]
+      FE["Financial engine"]
+      CE["Cascade engine"]
+      STE["Stockout engine"]
+    end
+
+    subgraph AI["AI layer (owns the reasoning)"]
+      BR["AWS Bedrock — Amazon Nova Lite"]
+      SUP["Strands supervisor<br/>signal / risk / action agents"]
+      LG["LangGraph advisor<br/>ReAct chatbot + memory"]
+      GR["Guardrails + grounding<br/>evidence trust boundary"]
+    end
+
+    subgraph API["FastAPI · /api/v1"]
+      EP["REST endpoints"]
+      SSE["SSE event stream"]
+    end
+
+    UI["React + TypeScript SPA<br/>dashboard · risks · mitigation · chat"]
+
+    SE -->|events| SUP
+    SE -->|publish| SSE
+    PG --> ENGINES
+    ENGINES --> RISKINT["Risk-intelligence orchestrator<br/>+ procurement service"]
+    RISKINT --> AI
+    BR --- SUP
+    BR --- LG
+    AI --> GR
+    RISKINT --> EP
+    GR --> EP
+    EP --> UI
+    SSE --> UI
+    LG --> EP
 ```
-supplysense/
-├── backend/
-│   ├── app/
-│   │   ├── agents/          # AWS Strands multi-agent pipeline
-│   │   ├── core/            # Config, DB, event bus, logging, Bedrock client
-│   │   ├── models/          # SQLAlchemy ORM (suppliers, SKUs, disruptions, ...)
-│   │   ├── repositories/    # Data-access layer
-│   │   ├── routers/         # FastAPI route handlers (12 routers)
-│   │   ├── schemas/         # Pydantic request/response schemas
-│   │   ├── services/        # Business logic (risk, stockout, cascade, financial, ...)
-│   │   └── main.py
-│   ├── seeders/             # Deterministic synthetic data (FMCG, 5+10 suppliers)
-│   ├── requirements.txt
-│   └── requirements-ai.txt  # strands-agents (optional)
-├── frontend/
-│   └── src/
-│       ├── components/      # Reusable UI (Badge, MetricCard, IndiaMap)
-│       ├── hooks/           # useWeightedRiskAnalysis, useRiskWeights, useQueries
-│       ├── pages/           # Dashboard, Risks, RiskDetail, Settings, ...
-│       └── router.tsx
-├── infrastructure/          # SQL init scripts
-├── shared/                  # API contracts
-└── .env.example
-```
 
----
+**Request flow (example — a mitigation plan):**
 
-## API Endpoints
+1. The UI requests a supplier's mitigation plan from FastAPI (`/api/v1/...`).
+2. `RiskIntelligenceService` gathers the live scenario from Postgres (exposure, days of cover, disruption type, demand multiplier, real alternate economics).
+3. The **financial engine** builds a *scenario-fit* option set and prices each option deterministically.
+4. The **AI layer** (Bedrock) selects which viable actions fit and writes the reasoning — constrained by the engine's viable set and a no-fabrication system prompt.
+5. **Grounding** rejects any rupee figure the AI wasn't given; the response is assembled with engine numbers + AI narrative and returned.
+6. Disruption events flow separately through the **Strands supervisor** and are pushed to the UI over **SSE**.
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/v1/health` | Health check + DB status |
-| GET | `/api/v1/dashboard/overview` | KPI summary (risk counts, revenue at risk) |
-| GET | `/api/v1/suppliers` | All suppliers with current risk |
-| GET | `/api/v1/suppliers/{id}/risk` | Full risk breakdown with factor scores |
-| GET | `/api/v1/skus` | All SKUs with stockout forecast |
-| GET | `/api/v1/skus/stockout-risk` | SKUs sorted by days to stockout |
-| GET | `/api/v1/disruptions` | Active disruption timeline |
-| GET | `/api/v1/risk/analysis` | Weighted risk analysis (all suppliers) |
-| GET | `/api/v1/action-cards` | AI-generated procurement recommendations |
-| POST | `/api/v1/scenarios/{name}/trigger` | Trigger crisis scenario |
-| GET | `/api/v1/events` | SSE stream (real-time disruption feed) |
+## Tech stack
 
----
+| Layer | Technologies |
+|---|---|
+| **Frontend** | React 18, TypeScript, Vite, TanStack Query, React Router 7, Tailwind CSS + shadcn, lucide-react, MapLibre GL / react-simple-maps, Recharts |
+| **Backend** | Python, FastAPI, SQLAlchemy (async) + asyncpg, Pydantic / pydantic-settings, sse-starlette |
+| **AI / Agents** | AWS Bedrock (Amazon Nova Lite), LangGraph (conversational advisor), Strands Agents SDK (event supervisor), LangChain-AWS |
+| **Database** | PostgreSQL (Neon serverless), Alembic migrations |
+| **Cloud** | AWS Bedrock (inference), Neon (managed Postgres); SQS/S3 provisioned for the future event backbone |
+| **Tooling** | pytest, pyflakes, TruffleHog + Gitleaks (secret-scan CI) |
 
-## Seed Data
 
-Deterministic FMCG supply chain with:
-- **5 Tier-1 vendors** (Bharat Agro, Sunrise Foods, GreenLeaf, PureFarm, NorthStar)
-- **10 Tier-2 suppliers** + **8 alternate suppliers**
-- **18 SKUs** across oils, grains, pulses, snacks
-- **10 active disruptions** (5 critical · 2 medium · 3 low)
-- **90 days** of delivery history with supplier-realistic delay distributions
-- **Risk scores**: Sunrise 0.88 · NorthStar 0.83 · GreenLeaf 0.82 · PureFarm 0.78 · Bharat 0.65
-
----
-
-## Quick Start
+## Getting started
 
 ### Prerequisites
-- Python 3.12+
-- Node 18+
-- PostgreSQL (or use AWS RDS URL from `.env`)
-- AWS credentials with Bedrock access (us-east-1)
+- Python 3.11+, Node.js 18+
+- A PostgreSQL database (e.g. a free Neon project)
+- AWS credentials with Bedrock access to Amazon Nova Lite
 
-### Backend
+### 1. Backend
 
 ```bash
 cd backend
-python3.11 -m venv .venv
-.venv\Scripts\activate          # Windows
-source .venv/bin/activate        # Mac/Linux
-
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pip install -r requirements-ai.txt   # optional: Strands agents
+```
 
-cp .env.example .env
-# Edit .env with your DB URL and AWS credentials
+Create `backend/.env` (never commit this file — it is git-ignored):
 
+```env
+# backend/.env — fill with YOUR values; do not commit
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>/<db>
+AWS_REGION=ap-south-1
+AWS_ACCESS_KEY_ID=<your-key>
+AWS_SECRET_ACCESS_KEY=<your-secret>
+BEDROCK_MODEL_ID=amazon.nova-lite-v1:0
+# Optional: route the high-stakes planning call to a stronger model when available
+# BEDROCK_PLANNING_MODEL_ID=
+```
+
+Seed the database and run the API:
+
+```bash
+python -m seeders.seed_min10        # ⚠️ drops & rebuilds the public schema, then seeds
 uvicorn app.main:app --reload --port 8000
 ```
 
-Seed the database (first run):
+API docs: `http://localhost:8000/docs` · Health: `http://localhost:8000/api/v1/health`
 
-```bash
-cd backend/seeders
-python seed_all.py
-```
-
-### Frontend
+### 2. Frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev
-# App runs at http://localhost:5173
+npm run dev            # http://localhost:5173
 ```
 
----
+## How it works — the AI trust boundary
 
-## Environment Variables
+SupplySense deliberately separates two responsibilities so AI output is always safe to show a CFO:
 
-| Variable | Required | Description |
+- **Deterministic engines own every number.** Risk scores, ₹ exposure, option costs, savings and timelines are computed in auditable Python — never by the model.
+- **AI owns reasoning & language.** It selects which mitigation actions physically fit the scenario, and writes the explanation.
+- **The boundary is enforced.** Pydantic contracts (`extra="forbid"`) reject unexpected fields; a grounding check rejects any rupee amount the AI wasn't explicitly given; input/output guardrails block prompt-injection and prompt-leaks. If Bedrock is unreachable, the whole app degrades consistently to a deterministic fallback — the UI never shows "AI online" and "AI offline" at the same time.
+
+## 🚀 Scaling & future development
+
+The current build proves the intelligence layer on seed data. The roadmap turns it into a live, real-time platform:
+
+- **SAP integration (primary).** Replace seed data with **live SAP endpoints** — SAP ERP / S/4HANA and Ariba APIs for real supplier master data, purchase orders, ASNs, delivery/goods-receipt history and inventory — so risk and exposure are computed on the organisation's actual procurement data.
+- **Event-driven backbone.** Promote the in-process event bus to a durable broker (SQS/SNS or Kafka), replacing the synthetic engine with real connectors (news/GDELT, weather, logistics/AIS) and making decisioning reactive rather than polled.
+- **Anomaly detection.** Statistical/ML detection on lead-time, ETA and demand deviation to predict disruptions *before* stockout.
+- **Durable state & audit.** Move sessions, caches and the chat checkpointer to Postgres/Redis; persist every AI recommendation with its evidence snapshot as an audit trail.
+- **Model routing.** Route high-stakes plan design to a stronger model via `BEDROCK_PLANNING_MODEL_ID`, keeping the cheap model for narration.
+- **Hardening.** API auth/authz, rate limiting, tracing/observability, expanded test coverage.
+
+## Contributors
+
+| Contributor | Role | Focus areas |
 |---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string (asyncpg) |
-| `AWS_ACCESS_KEY_ID` | Yes | AWS credentials for Bedrock |
-| `AWS_SECRET_ACCESS_KEY` | Yes | AWS credentials for Bedrock |
-| `AWS_REGION` | Yes | AWS region (us-east-1) |
-| `BEDROCK_MODEL_ID` | No | Claude model ID (default: claude-3-haiku) |
-| `BEDROCK_GUARDRAIL_ID` | No | AWS Guardrail ID for hallucination prevention |
-| `BACKEND_PORT` | No | Server port (default: 8000) |
+| **Aswin Kumar** | Full-stack Lead | System architecture & technical direction; FastAPI services, async data models, SSE streaming; Bedrock integration, Strands multi-agent pipeline, prompt engineering, AI reasoning, grounding checks, guardrails & fallback strategy; AWS & Neon cloud provisioning; Frontend UI works |
+| **Smriti** | Full-stack Lead | Core deterministic engines (risk, financial, cascade, stockout, mitigation); AI trust-boundary design, Pydantic output contracts, LangGraph ReAct conversational advisor; AWS & Neon cloud integration, DB schema, Alembic migrations; Frontend Dashboard UI works & chatbot UI |
+| **Malar** | Frontend & Cloud Engineer | Frontend pages, reusable components & UI polish; Backend API integration support & Pydantic schema helpers; Neon DB planning & environment config; Documentation & QA testing |
+| **Naveen** | Backend & Integration Engineer | Frontend dashboard components & data-visualisation; Backend data-integration modules & seed-data pipeline; AWS environment setup & DB migration support; Data-validation & QA Testing |
+
 
 ---
 
-## Design Decisions
-
-**Deterministic scoring over AI scoring** — Risk is arithmetic. Weighted factors give auditors a reproducible, explainable trail. AI is reserved for reasoning and natural language tasks.
-
-**Client-side weight recomputation** — Avoids a round-trip to the backend when users adjust weights. The backend returns raw factor values (0–1); the frontend multiplies by weights and recomputes locally. Instant feedback, no API cost.
-
-**SSE over WebSockets** — The live feed is read-only and append-only. SSE is simpler to proxy, requires no upgrade handshake, and reconnects automatically. WebSockets would add complexity with no benefit here.
-
-**asyncio.Queue fan-out** — Each SSE client gets its own queue. Slow clients don't block fast ones. Future scaling path: swap for Redis Pub/Sub with zero application-layer changes.
-
-**Strands errors surface directly** — Removed all fallback approval loops. When Strands fails, the error message is returned immediately instead of blocking the UI for 60 seconds waiting for user approval.
+*SupplySense · v0.5.0 — a Team Cipher project. Built for Cognizant Technoverse 2026.*
