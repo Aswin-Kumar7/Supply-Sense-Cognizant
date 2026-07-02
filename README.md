@@ -14,7 +14,6 @@ SupplySense continuously scores supplier risk, forecasts stockouts, quantifies f
 - [Key features](#key-features)
 - [System architecture](#system-architecture)
 - [Tech stack](#tech-stack)
-- [Project structure](#project-structure)
 - [Getting started](#getting-started)
 - [How it works — the AI trust boundary](#how-it-works--the-ai-trust-boundary)
 - [Scaling & future development](#-scaling--future-development)
@@ -51,58 +50,64 @@ The design principle throughout: **AI reasons; deterministic engines own the num
 
 ```mermaid
 flowchart TD
-    subgraph SRC["Event source (currently synthetic)"]
-      SE["Synthetic engine<br/>timed disruption events"]
-    end
-
-    subgraph DATA["Data layer"]
-      PG[("PostgreSQL / Neon<br/>suppliers · SKUs · deliveries<br/>disruptions · festivals · alternates")]
-    end
-
-    subgraph ENGINES["Deterministic engines (own the numbers)"]
-      RE["Risk engine"]
-      FE["Financial engine"]
-      CE["Cascade engine"]
-      STE["Stockout engine"]
-    end
-
-    subgraph AI["AI layer (owns the reasoning)"]
-      BR["AWS Bedrock — Amazon Nova Lite"]
-      SUP["Strands supervisor<br/>signal / risk / action agents"]
-      LG["LangGraph advisor<br/>ReAct chatbot + memory"]
-      GR["Guardrails + grounding<br/>evidence trust boundary"]
-    end
+    UI["React + TypeScript SPA<br/>dashboard · risks · mitigation · chat"]
 
     subgraph API["FastAPI · /api/v1"]
-      EP["REST endpoints"]
+      REST["REST endpoints"]
       SSE["SSE event stream"]
     end
 
-    UI["React + TypeScript SPA<br/>dashboard · risks · mitigation · chat"]
+    subgraph GUARD["Guardrails & grounding"]
+      GIN["Input guardrail<br/>injection / empty block"]
+      GOUT["Output guardrail<br/>prompt-leak block"]
+      GND["Grounding + content safety<br/>reject ungrounded ₹ / unsafe text"]
+    end
 
-    SE -->|events| SUP
+    subgraph AICORE["AI layer — AWS Bedrock (Nova Lite)"]
+      LG["LangGraph advisor<br/>ReAct chatbot + memory"]
+      PA["Procurement agent<br/>mitigation / action narrative"]
+      SUP["Strands supervisor<br/>signal / risk / action agents"]
+    end
+
+    subgraph DET["Deterministic core (owns the numbers)"]
+      ORCH["Risk-intelligence orchestrator<br/>+ procurement service"]
+      ENG["Engines: risk · financial<br/>cascade · stockout"]
+    end
+
+    PG[("PostgreSQL / Neon")]
+    SE["Synthetic engine<br/>(event source — currently synthetic)"]
+
+    %% Chat: input guardrail -> advisor -> output guardrail
+    UI -->|question| REST
+    REST -->|user input| GIN
+    GIN --> LG
+    LG -->|read-only tools| ENG
+    LG -->|answer| GOUT
+    GOUT --> REST
+
+    %% Risk / mitigation request
+    REST -->|request| ORCH
+    ORCH --> ENG
+    ENG --> PG
+    ORCH --> PA
+    PA --> GND
+    GND --> REST
+    REST -->|response| UI
+
+    %% Background event pipeline
     SE -->|publish| SSE
-    PG --> ENGINES
-    ENGINES --> RISKINT["Risk-intelligence orchestrator<br/>+ procurement service"]
-    RISKINT --> AI
-    BR --- SUP
-    BR --- LG
-    AI --> GR
-    RISKINT --> EP
-    GR --> EP
-    EP --> UI
-    SSE --> UI
-    LG --> EP
+    SSE -->|live alerts| UI
+    SE -->|critical event| SUP
+    SUP --> GND
+    SUP -->|persist ActionCard| PG
+    PG -->|cards surface| REST
 ```
 
-**Request flow (example — a mitigation plan):**
+**Two request flows and one background pipeline (as wired in the code):**
 
-1. The UI requests a supplier's mitigation plan from FastAPI (`/api/v1/...`).
-2. `RiskIntelligenceService` gathers the live scenario from Postgres (exposure, days of cover, disruption type, demand multiplier, real alternate economics).
-3. The **financial engine** builds a *scenario-fit* option set and prices each option deterministically.
-4. The **AI layer** (Bedrock) selects which viable actions fit and writes the reasoning — constrained by the engine's viable set and a no-fabrication system prompt.
-5. **Grounding** rejects any rupee figure the AI wasn't given; the response is assembled with engine numbers + AI narrative and returned.
-6. Disruption events flow separately through the **Strands supervisor** and are pushed to the UI over **SSE**.
+- **Chat (conversational advisor).** UI → REST `/chat` → **input guardrail** (`sanitize_user_input` blocks injection/empty) → **LangGraph advisor** (Bedrock + read-only tools that query the engines) → **output guardrail** (`validate_ai_output` blocks prompt-leaks) → REST → UI.
+- **Risk / mitigation (request-driven).** UI → REST → **risk-intelligence orchestrator** gathers the live scenario, the **engines** price everything deterministically from Postgres → **procurement agent** (Bedrock) writes the narrative → **grounding** rejects any rupee figure the AI wasn't given → REST → UI.
+- **Event pipeline (background).** The synthetic engine **publishes** events to the **SSE** stream (live UI alerts); a *critical* event additionally runs the **Strands supervisor** (signal → risk → action agents), whose output passes **grounding + content-safety** and is **persisted as an `ActionCard` in Postgres** — which the REST endpoints then surface. Strands never returns to the UI directly; it writes to the database.
 
 ## Tech stack
 
@@ -111,7 +116,7 @@ flowchart TD
 | **Frontend** | React 18, TypeScript, Vite, TanStack Query, React Router 7, Tailwind CSS + shadcn, lucide-react, MapLibre GL / react-simple-maps, Recharts |
 | **Backend** | Python, FastAPI, SQLAlchemy (async) + asyncpg, Pydantic / pydantic-settings, sse-starlette |
 | **AI / Agents** | AWS Bedrock (Amazon Nova Lite), LangGraph (conversational advisor), Strands Agents SDK (event supervisor), LangChain-AWS |
-| **Database** | PostgreSQL (Neon serverless), Alembic migrations |
+| **Database** | PostgreSQL (Neon serverless); schema created from SQLAlchemy models (`create_all`) |
 | **Cloud** | AWS Bedrock (inference), Neon (managed Postgres); SQS/S3 provisioned for the future event backbone |
 | **Tooling** | pytest, pyflakes, TruffleHog + Gitleaks (secret-scan CI) |
 
