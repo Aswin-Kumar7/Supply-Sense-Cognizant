@@ -8,7 +8,7 @@ import {
   useDisruptions, useStockoutForecast,
   useActionCards, useProcurementCards, useWeightedRiskAnalysis,
 } from '../hooks/useQueries'
-import type { SupplierRiskAnalysis, IntelligentActionCard } from '../types'
+import type { SupplierRiskAnalysis, IntelligentActionCard, StockoutSummary, Disruption } from '../types'
 import {
   AlertTriangle, TrendingDown, Shield,
   Package, Activity, ChevronRight,
@@ -119,7 +119,8 @@ function Card({ children, style, hover }: { children: React.ReactNode; style?: R
     <div
       style={{
         background: '#FFFFFF',
-        border: 'none',
+        borderWidth: 0,
+        borderStyle: 'none',
         borderRadius: '16px',
         overflow: 'hidden',
         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 10px 20px rgba(0, 0, 0, 0.02)',
@@ -144,12 +145,22 @@ function Card({ children, style, hover }: { children: React.ReactNode; style?: R
   )
 }
 
-function CardHeader({ title, sub, right }: { title: string; sub?: string; right?: React.ReactNode }) {
+function CardHeader({ title, sub, right, icon: Icon, color }: { title: string; sub?: string; right?: React.ReactNode; icon?: any; color?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid #F1F5F9' }}>
-      <div>
-        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{title}</div>
-        {sub && <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>{sub}</div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {Icon && color && (
+          <span style={{
+            width: 30, height: 30, borderRadius: 9, background: `${color}1A`,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <Icon size={16} strokeWidth={2} style={{ color }} />
+          </span>
+        )}
+        <div>
+          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>{title}</div>
+          {sub && <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>{sub}</div>}
+        </div>
       </div>
       {right}
     </div>
@@ -200,9 +211,9 @@ function DashboardHeader({
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      borderBottom: '1px solid #F1F5F9',
-      paddingBottom: '24px',
-      marginBottom: '12px',
+      borderBottom: '1px solid #E8ECF3',
+      paddingBottom: '16px',
+      marginBottom: '0',
       animation: 'dash-fade-in 0.25s ease-out',
       flexWrap: 'wrap',
       gap: '16px'
@@ -225,22 +236,22 @@ function DashboardHeader({
           <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>{date}</span>
         </div>
         <h1 style={{
-          fontSize: '2rem',
+          fontSize: '1.5rem',
           fontWeight: 800,
           color: '#0F172A',
-          letterSpacing: '-0.04em',
+          letterSpacing: '-0.03em',
           margin: 0,
-          lineHeight: 1.15
+          lineHeight: 1.2
         }}>
           Operational Overview
         </h1>
         <p style={{
-          fontSize: '0.875rem',
+          fontSize: '0.8125rem',
           color: '#64748B',
           fontWeight: 400,
-          marginTop: '8px',
+          marginTop: '5px',
           marginBottom: 0,
-          lineHeight: 1.6
+          lineHeight: 1.5
         }}>
           {loading ? 'Analyzing supply network pathways...' :
             riskCount === 0 ? `Monitoring ${totalSuppliers} active supply paths. All nodes stable.` :
@@ -444,13 +455,48 @@ function MitigationGraph({ totalSaved, resolvedCards }: { totalSaved: number, re
     return `₹${v.toFixed(0)}`
   }
 
+  // Growth realised within the currently selected window (chart is cumulative → monotonic).
+  const windowDelta = useMemo(() => {
+    if (chartData.length < 2) return 0
+    const firstNonZero = chartData.find(d => d.saved > 0)?.saved ?? 0
+    const last = chartData[chartData.length - 1].saved
+    if (firstNonZero <= 0) return last > 0 ? 100 : 0
+    return ((last - firstNonZero) / firstNonZero) * 100
+  }, [chartData])
+
   return (
-    <Card style={{ animation: 'dash-fade-in 0.3s ease-out', padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
+    <Card style={{
+      animation: 'dash-fade-in 0.3s ease-out',
+      padding: '20px 24px',
+      background: 'linear-gradient(135deg, #EFF6FF 0%, #F5FBFF 30%, #FFFFFF 55%)',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A', marginBottom: '4px' }}>Money Saved</div>
-          <div style={{ fontSize: '1.625rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <span style={{
+              width: 26, height: 26, borderRadius: 8, background: 'rgba(56,189,248,0.16)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <TrendingDown size={15} strokeWidth={2.2} style={{ color: '#0284C7', transform: 'scaleY(-1)' }} />
+            </span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0F172A' }}>Money Saved</span>
+          </div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: 1 }}>
             {formatValue(totalSaved)}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '3px',
+              fontSize: '0.7rem', fontWeight: 700, color: '#059669',
+              background: '#ECFDF5', border: '1px solid #A7F3D0',
+              padding: '3px 8px', borderRadius: '20px',
+            }}>
+              ▲ {windowDelta.toFixed(0)}%
+            </span>
+            <span style={{ fontSize: '0.75rem', color: '#64748B' }}>realised savings this period</span>
           </div>
         </div>
 
@@ -478,7 +524,7 @@ function MitigationGraph({ totalSaved, resolvedCards }: { totalSaved: number, re
           ))}
         </div>
       </div>
-      <div style={{ height: 300 }}>
+      <div style={{ flex: 1, minHeight: 172 }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
@@ -533,23 +579,32 @@ function KpiCard({ label, value, sub, progress, onClick, loading, delay = 0 }: {
     <Card hover={!!onClick} style={{
       cursor: onClick ? 'pointer' : 'default',
       animation: `dash-fade-in 0.3s ease-out ${delay}ms both`,
-      padding: '20px 24px',
+      padding: '16px 18px',
+      background: `linear-gradient(140deg, ${color}14 0%, ${color}05 26%, #FFFFFF 62%)`,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} onClick={onClick}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500, marginBottom: '6px' }}>{label}</div>
+          <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
           {loading ? <Skeleton w="55%" h={28} /> : <Num size="1.875rem">{value}</Num>}
           <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '6px', fontWeight: 400 }}>{sub}</div>
         </div>
-        <Icon size={18} strokeWidth={1.5} style={{ color: color, flexShrink: 0, marginLeft: '12px', marginTop: '2px' }} />
+        <div style={{
+          width: 40, height: 40, borderRadius: 12,
+          background: `${color}1F`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, marginLeft: 12,
+          boxShadow: `inset 0 0 0 1px ${color}26`,
+        }}>
+          <Icon size={19} strokeWidth={2} style={{ color: color }} />
+        </div>
       </div>
       {/* Dynamic progress bar detail */}
-      <div style={{ height: '4px', background: '#F1F5F9', borderRadius: '2px', marginTop: '14px', overflow: 'hidden' }}>
+      <div style={{ height: '5px', background: '#EEF1F6', borderRadius: '3px', marginTop: '14px', overflow: 'hidden' }}>
         <div style={{
           width: `${Math.min(100, Math.max(5, progress))}%`,
           height: '100%',
-          background: color,
-          borderRadius: '2px',
+          background: `linear-gradient(90deg, ${color}, ${color}B3)`,
+          borderRadius: '3px',
           transition: 'width 600ms cubic-bezier(0.16, 1, 0.3, 1)'
         }} />
       </div>
@@ -609,9 +664,9 @@ function SupplierRiskDistribution({ risks, cardMap, activeExposure, loading }: {
 
   return (
     <Card style={{ animation: 'dash-fade-in 0.35s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <CardHeader title="Suppliers Distribution" sub="Money at risk by supplier" />
-      <div style={{ display: 'flex', flex: 1, padding: '32px 24px', gap: '40px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ flex: 1, height: 200, position: 'relative', minWidth: 200, maxWidth: 240, margin: '0 auto' }}>
+      <CardHeader title="Suppliers Distribution" sub="Money at risk by supplier" icon={Package} color="#8B5CF6" />
+      <div style={{ display: 'flex', flex: 1, padding: '16px 24px', gap: '28px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ flex: 1, height: 176, position: 'relative', minWidth: 160, maxWidth: 190, margin: '0 auto' }}>
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', height: '100%', justifyContent: 'center' }}><Skeleton h={24} /><Skeleton h={24} /><Skeleton h={24} /></div>
           ) : (
@@ -621,13 +676,13 @@ function SupplierRiskDistribution({ risks, cardMap, activeExposure, loading }: {
                   <PieChart>
                     <Pie
                       data={filteredData}
-                      innerRadius={65}
-                      outerRadius={95}
+                      innerRadius={54}
+                      outerRadius={80}
                       paddingAngle={0}
                       dataKey="value"
                       stroke="none"
                       activeIndex={activeIndex !== null ? activeIndex : undefined}
-                      activeShape={{ outerRadius: 99 } as any}
+                      activeShape={{ outerRadius: 83 } as any}
                       onMouseEnter={(_, index) => setActiveIndex(index)}
                       onMouseLeave={() => setActiveIndex(null)}
                     >
@@ -652,24 +707,32 @@ function SupplierRiskDistribution({ risks, cardMap, activeExposure, loading }: {
                 <div style={{
                   fontSize: '0.625rem',
                   color: '#94A3B8',
-                  fontWeight: 600,
+                  fontWeight: 700,
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                  maxWidth: '120px'
+                  maxWidth: '108px',
+                  lineHeight: 1.2,
                 }}>
                   {activeItem ? activeItem.name : 'Total Risk'}
                 </div>
-                <Num size={activeItem ? "1.375rem" : "1.75rem"}>
-                  {activeItem ? formatINR(activeItem.value) : formatINR(activeExposure)}
-                </Num>
-                {activeItem && (
-                  <div style={{ fontSize: '0.625rem', color: activeItem.color, fontWeight: 700, marginTop: '2px' }}>
-                    {activeItem.percentage.toFixed(0)}% share
-                  </div>
-                )}
+                <div style={{ margin: '3px 0 2px', lineHeight: 1 }}>
+                  <Num size="1.5rem">
+                    {activeItem ? formatINR(activeItem.value) : formatINR(activeExposure)}
+                  </Num>
+                </div>
+                {/* Reserve the share line height always → value never shifts on hover */}
+                <div style={{
+                  fontSize: '0.625rem',
+                  fontWeight: 700,
+                  height: '0.9rem',
+                  lineHeight: '0.9rem',
+                  color: activeItem ? activeItem.color : 'transparent',
+                }}>
+                  {activeItem ? `${activeItem.percentage.toFixed(0)}% share` : ' '}
+                </div>
               </div>
             </>
           )}
@@ -679,7 +742,7 @@ function SupplierRiskDistribution({ risks, cardMap, activeExposure, loading }: {
             <div style={{ fontSize: '0.8125rem', color: '#94A3B8' }}>No suppliers found.</div>
           ) : distribution.map((entry, index) => {
             return (
-              <div key={entry.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: index < distribution.length - 1 ? '1px dashed #E2E8F0' : 'none' }}>
+              <div key={entry.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: index < distribution.length - 1 ? '1px dashed #E2E8F0' : 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ width: 16, height: 10, borderRadius: '4px', background: entry.color }} />
                   <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#0F172A' }}>{entry.name}</div>
@@ -693,8 +756,8 @@ function SupplierRiskDistribution({ risks, cardMap, activeExposure, loading }: {
           })}
         </div>
       </div>
-      <div style={{ padding: '0 24px 24px' }}>
-        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ padding: '0 24px 16px' }}>
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', color: '#64748B' }}>
             <AlertTriangle size={14} style={{ color: '#F59E0B' }} />
             <span>Highest exposure category: <strong style={{ color: '#0F172A' }}>{topCategory}</strong></span>
@@ -715,10 +778,17 @@ function PendingActions({ risks, cardMap, loading }: {
 }) {
   const navigate = useNavigate()
 
+  const totalPendingExposure = useMemo(
+    () => risks.reduce((s, r) => s + (cardMap.get(r.supplier_id)?.financial_exposure_inr ?? 0), 0),
+    [risks, cardMap]
+  )
+
   return (
     <Card style={{ animation: 'dash-fade-in 0.35s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
       <CardHeader
         title="Pending Actions"
+        icon={Activity}
+        color="#4F46E5"
         right={
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {risks.length > 0 && <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#64748B', background: '#F1F5F9', padding: '2px 6px', borderRadius: '3px' }}>{risks.length}</span>}
@@ -773,6 +843,134 @@ function PendingActions({ risks, cardMap, loading }: {
             </tbody>
           </table>
         )}
+      </div>
+      {!loading && risks.length > 0 && (
+        <div style={{ padding: '0 24px 24px' }}>
+          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8125rem', color: '#64748B' }}>
+              <Activity size={14} style={{ color: '#4F46E5' }} />
+              <span><strong style={{ color: '#0F172A' }}>{risks.length}</strong> supplier{risks.length !== 1 ? 's' : ''} awaiting action</span>
+            </div>
+            <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0F172A' }}>{formatINR(totalPendingExposure)}</div>
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+
+/* ── Critical Stockouts ──────────────────────────────────────────────── */
+function CriticalStockouts({ stockout, loading }: { stockout?: StockoutSummary; loading: boolean }) {
+  const navigate = useNavigate()
+  const rows = useMemo(() => {
+    const list = stockout?.forecasts ?? []
+    return [...list].sort((a, b) => a.days_to_stockout - b.days_to_stockout).slice(0, 5)
+  }, [stockout])
+
+  const dayColor = (d: number) => (d <= 3 ? '#EF4444' : d <= 7 ? '#F59E0B' : '#10B981')
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.4s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardHeader
+        title="Critical Stockouts"
+        sub="SKUs nearest to running out"
+        icon={Package}
+        color="#EC4899"
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {(stockout?.critical_count ?? 0) > 0 && <span style={{ fontSize: '0.625rem', fontWeight: 700, color: '#BE185D', background: '#FCE7F3', padding: '2px 6px', borderRadius: '3px' }}>{stockout!.critical_count} critical</span>}
+            <ViewAllBtn onClick={() => navigate('/risks')} />
+          </div>
+        }
+      />
+      <div style={{ padding: '6px 24px 18px', flex: 1 }}>
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '8px 0' }}><Skeleton h={38} /><Skeleton h={38} /><Skeleton h={38} /></div>
+        ) : rows.length === 0 ? (
+          <div style={{ padding: '28px 0', textAlign: 'center' }}>
+            <Shield size={22} style={{ color: '#E2E8F0', marginBottom: '6px' }} />
+            <div style={{ fontSize: '0.8125rem', color: '#0F172A', fontWeight: 600 }}>Stock healthy</div>
+            <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '2px' }}>No imminent stockouts</div>
+          </div>
+        ) : rows.map((f, i) => (
+          <div
+            key={f.sku_id}
+            onClick={() => navigate('/risks')}
+            className="dash-item-hover"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 4px', borderBottom: i < rows.length - 1 ? '1px solid #F8FAFC' : 'none', cursor: 'pointer', borderRadius: '8px' }}
+          >
+            <div style={{ minWidth: 0, marginRight: '10px' }}>
+              <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.sku_name}</div>
+              <div style={{ fontSize: '0.6875rem', color: '#94A3B8', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.supplier_name}</div>
+            </div>
+            <span style={{ fontSize: '0.6875rem', fontWeight: 700, color: dayColor(f.days_to_stockout), background: `${dayColor(f.days_to_stockout)}14`, padding: '3px 9px', borderRadius: '20px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+              {Math.max(0, Math.round(f.days_to_stockout))}d left
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+
+/* ── Active Disruptions ──────────────────────────────────────────────── */
+const SEV_COLOR: Record<string, string> = { critical: '#EF4444', high: '#F59E0B', medium: '#3B82F6', low: '#94A3B8' }
+
+function ActiveDisruptions({ disruptions, loading }: { disruptions: Disruption[]; loading: boolean }) {
+  const navigate = useNavigate()
+  const rows = useMemo(() => {
+    const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+    return disruptions
+      .filter(d => d.is_active)
+      .sort((a, b) => ((order[a.severity] ?? 4) - (order[b.severity] ?? 4)) || (b.impact_score - a.impact_score))
+      .slice(0, 5)
+  }, [disruptions])
+
+  return (
+    <Card style={{ animation: 'dash-fade-in 0.42s ease-out', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CardHeader
+        title="Active Disruptions"
+        sub="Live supply-chain events"
+        icon={AlertTriangle}
+        color="#F59E0B"
+        right={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {rows.length > 0 && <span style={{ fontSize: '0.625rem', fontWeight: 600, color: '#64748B', background: '#F1F5F9', padding: '2px 6px', borderRadius: '3px' }}>{rows.length}</span>}
+            <ViewAllBtn onClick={() => navigate('/disruptions')} />
+          </div>
+        }
+      />
+      <div style={{ padding: '6px 24px 18px', flex: 1 }}>
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '8px 0' }}><Skeleton h={38} /><Skeleton h={38} /><Skeleton h={38} /></div>
+        ) : rows.length === 0 ? (
+          <div style={{ padding: '28px 0', textAlign: 'center' }}>
+            <Shield size={22} style={{ color: '#E2E8F0', marginBottom: '6px' }} />
+            <div style={{ fontSize: '0.8125rem', color: '#0F172A', fontWeight: 600 }}>All calm</div>
+            <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: '2px' }}>No active disruptions</div>
+          </div>
+        ) : rows.map((d, i) => {
+          const c = SEV_COLOR[d.severity] ?? '#94A3B8'
+          return (
+            <div
+              key={d.id}
+              onClick={() => navigate('/disruptions')}
+              className="dash-item-hover"
+              style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 4px', borderBottom: i < rows.length - 1 ? '1px solid #F8FAFC' : 'none', cursor: 'pointer', borderRadius: '8px' }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0, boxShadow: `0 0 0 3px ${c}22` }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div>
+                <div style={{ fontSize: '0.6875rem', color: '#94A3B8', marginTop: '2px', textTransform: 'capitalize' }}>
+                  {d.disruption_type.replace(/_/g, ' ')}{d.region ? ` · ${d.region}` : ''}
+                </div>
+              </div>
+              <span style={{ fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: c, background: `${c}14`, padding: '3px 8px', borderRadius: '20px', flexShrink: 0 }}>{d.severity}</span>
+            </div>
+          )
+        })}
       </div>
     </Card>
   )
@@ -892,7 +1090,7 @@ export function Dashboard() {
     return list.length > 0 ? (disruptions_active / list.length) * 100 : 0
   }, [disruptions, disruptions_active])
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
       <style>{CSS}</style>
 
       <DashboardHeader
@@ -918,15 +1116,19 @@ export function Dashboard() {
           sub="Medium+ severity" progress={progressDisruptions} onClick={() => navigate('/disruptions')} loading={loadingD} delay={120} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-        <SupplierRiskDistribution risks={riskList} cardMap={cardMap} activeExposure={activeExposure} loading={loadingRisks} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '14px' }}>
         <PendingActions risks={sortedActive} cardMap={cardMap} loading={loadingRisks} />
+        <MitigationGraph
+          totalSaved={totalSaved}
+          resolvedCards={allCards.filter((c: any) => c.is_resolved && c.resolved_at && c.estimated_impact_inr > 0)}
+        />
       </div>
 
-      <MitigationGraph
-        totalSaved={totalSaved}
-        resolvedCards={allCards.filter((c: any) => c.is_resolved && c.resolved_at && c.estimated_impact_inr > 0)}
-      />
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '14px' }}>
+        <SupplierRiskDistribution risks={riskList} cardMap={cardMap} activeExposure={activeExposure} loading={loadingRisks} />
+        <CriticalStockouts stockout={stockout} loading={!stockout} />
+        <ActiveDisruptions disruptions={disruptions?.disruptions ?? []} loading={loadingD} />
+      </div>
     </div>
   )
 }

@@ -47,7 +47,7 @@ export function DashboardLayout() {
               flex: 1,
               overflowY: 'auto',
               overflowX: 'hidden',
-              padding: '32px 40px',
+              padding: '20px 32px',
               background: '#FAFAFC',
               backgroundImage: 'radial-gradient(rgba(15, 23, 42, 0.03) 1.5px, transparent 1.5px)',
               backgroundSize: '24px 24px',
